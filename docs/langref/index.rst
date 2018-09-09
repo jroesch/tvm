@@ -7,3 +7,4 @@ embedded languages in TVM stack.
    :maxdepth: 2
 
    hybrid_script
+   relay/index

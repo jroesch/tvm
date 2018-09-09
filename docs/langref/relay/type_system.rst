@@ -5,23 +5,21 @@ Type System
 We have briefly introduced types while detailing the the expression language
 of Relay, but have fully laid out the type system.
 
-Although the majority of Relay programs require no type annotations, Relay
-is statically typed. Each expression in Relay has a precisely known type.
+Although the majority of Relay programs are written without type annotations, 
+Relay is statically typed.
 
-You might ask why we want a statically typed IR, there are multiple advantages.
-- efficient layout and code generation for tensors
-- TODO
-- debugging transformations (most program transformations should be type perserving)
+Static types are useful because they enable efficient layout, memory reuse, and 
+code generation. They aid in debugging program transformations, but can also
+give us the expressivity afforded by more dynamic langauges. 
 
 We are able to omit these type annotations by a process known as type inference.
 Type inference is a technique that has its roots in the programming language
 community, and can be viewed as a method for generalizing shape inference to
-run over arbitrary user programs.
+run over arbitrary user programs containing control flow and recursion.
 
-Static typing means we know before executing the program properties about
-the values it manipulates. Static types are useful for compiler optimization
-because they communicate properties about the data we manipulate, such as
-runtime shape, data layout, storage.
+Static types are useful when performing compiler optimization because they 
+communicate properties about the data we manipulate, such as runtime shape, 
+data layout, storage without needing to run the program.
 
 Most current IRs use "shape inference" to recover Tensor dimensions from the user
 provided program. Machine learning users have enjoyed shape inference for
@@ -43,53 +41,25 @@ Below we briefly dicsuss the different kinds of types in Relay.
 Types
 =====
 
-BaseType
-~~~~~~~~~~
-Relay has a notion of a BaseType, which captures the set of types
-that can be stored in a Tensor. Relay's base types map to the set
-of types supported by TVM.
+Relay's type system has a "language of types" which allow us to write down the type of
+a Relay program. Below we detail the langauge of types and how we assign them to Relay
+programs.
 
-Each of the base types can be parametrized by number of bits, and
-lanes for vectorization purposes. We support four base types any:`Bool`,
-any:`Int`
-
-Type Variables
-~~~~~~~~~~~~~~
-
-Type Parameters
-~~~~~~
-TODO: type parameter
-
-Kind
+Type
 ~~~~
+The base type for all Relay types. All Relay types are sub-classes of this base type.
 
-Function Types
-~~~~~~~~~~
-TODO: rename function type?
-
-TypeQuantifier
-~~~~~~~~~~~~~~
-TODO
-
-Placeholders
-~~~~~~~~~~~~
-
-TODO
-
-Tuple Types
-~~~~~~~~~~~~~
-
-Reference Types
-~~~~~~~~~~~~~~~
-
-A reference type is simply a mutable memory location, since Relay is a pure
-language by default we need a way to introduce limited mutability. In this
-case mutable data is clearly marked in the type system as a reference type.
-
-    Ref<T>
+See :py:class:`~tvm.relay.type.Type` for its definition and documentation.
 
 Tensor Type
-~~~~~~~~~~~
+~~~~~~~~~~
+
+A concrete TensorType in Relay, see tvm/relay/type.h for more details.
+
+This is the type assigned to tensor's with a known dype and shape. For
+example a tensor of `float32` and `(5, 5)`.
+
+
 
 Tensor values in Relay are typed with tensor types. A tensor type is
 parametrized by a data type, and shape. The data type must be a base
@@ -101,37 +71,71 @@ The shape may be any valid Relay shape as described in the below
 section on shapes.
 
 
-======
-Shapes
-======
+See :py:class:`~tvm.relay.type.TensorType` for its definition and documentation.
 
-Shape Singleton
+Kind
+~~~~
+The kind of a type parameter, represents a variable shape,
+base type, type, or dimension.
+
+This controls what a type parameter is allowed to be instantiated
+       with. For example one's of kind BaseType can only be `float32`, `int32`,
+       and so on.
+       
+See :py:class:`~tvm.relay.type.Kind` for its definition and documentation.
+
+Type Parameter
+~~~~~~~~~~~~~~
+
+    """A type parameter used for generic types in Relay,
+    see tvm/relay/type.h for more details.
+
+    A type parameter represents a type placeholder which will
+    be filled in later on. This allows the user to write
+    functions which are generic over types.
+    """
+
+See :py:class:`~tvm.relay.type.TypeParam` for its definition and documentation.
+
+Type Constriant
 ~~~~~~~~~~~~~~~
-I don't like this name
 
-ShapeAttr
+Abstract class representing a type constraint, to be elaborated
+on in further releases.
+
+See :py:class:`~tvm.relay.type.TypeConstraint` for its definition and documentation.
+
+Function Type
+~~~~~~~~~~~~~
+    """A function type in Relay, see tvm/relay/type.h for more details.
+
+    This is the type assigned to functions in Relay. They consist of
+    a list of type parameters which enable the definition of generic
+    fucntions, a set of type constraints which we omit for the time
+    being, a sequence of argument types, and a return type.
+
+    We informally write them as:
+    `forall (type_params), (arg_types) -> ret_type where type_constraints`
+
+See :py:class:`~tvm.relay.type.FuncType` for its definition and documentation.
+
+Type Call
 ~~~~~~~~~
-TODO
 
-ShapeProjection
-~~~~~~~~~~~~~~~
-TODO
+See :py:class:`~tvm.relay.type.TypeCall` for its definition and documentation.
 
-ShapeBinaryOp
+Type Relation
 ~~~~~~~~~~~~~
 
-enum ShapeOp : int {
-  SHPLUS = 0,
-  SHSUB = 1,
-  SHMUL = 2,
-  SHDIV = 3
-};
+See :py:class:`~tvm.relay.type.TypeRelation` for its definition and documentation.
+
+Incomplete Type
+~~~~~~~~~~~~~~~
+ 
+See :py:class:`~tvm.relay.type.IncompleteType` for its definition and documentation.
 
 
-Shape Sequence
-~~~~~~~~
-A sequence of shapes ...
 
 
-ShapeBroadcast
-~~~~~~~~~~~~~~
+
+
