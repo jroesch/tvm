@@ -6,7 +6,6 @@
 #include <tvm/relay/pass.h>
 #include <tvm/relay/expr_visitor.h>
 #include <unordered_set>
-#include <memory>
 
 namespace tvm {
 namespace relay {
