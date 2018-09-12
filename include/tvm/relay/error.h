@@ -23,7 +23,7 @@ struct InternalError : Error {
 struct SpannedError {
   std::string msg;
   Span sp;
-  SpannedError(std::string msg, Span sp) : msg(msg), sp(sp) {}
+  SpannedError(const std::string &msg, Span sp) : msg(msg), sp(sp) {}
 };
 
 // FIX, we should change spanned errors to have a method which allow them to
