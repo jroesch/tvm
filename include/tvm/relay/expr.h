@@ -378,7 +378,7 @@ namespace std {
 template<>
 struct hash<::tvm::relay::LocalVar> {
   std::size_t operator()(const ::tvm::relay::LocalVar & lv) const {
-    return 1;
+    return lv.hash();
   }
 };
 
