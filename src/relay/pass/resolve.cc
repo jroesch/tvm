@@ -12,23 +12,24 @@
 namespace tvm {
 namespace relay {
 
-struct ResolveTypeType : TypeFVisitor {
+// TODO(@jroesch): We should probably generalize the subst code.
+struct ResolveTypeType : TypeMutator {
   const TypeUnifier &unifier;
 
   explicit ResolveTypeType(const TypeUnifier &unifier) : unifier(unifier) {}
 
-  Type VisitType(const Type &t) override {
+  Type Mutate(const Type &t) override {
     if (!t.defined()) {
       auto inc_ty = IncompleteTypeNode::make(TypeParamNode::Kind::kType);
       unifier->Insert(inc_ty);
       return inc_ty;
     } else {
-      return TypeFVisitor::VisitType(t);
+      return TypeMutator::Mutate(t);
     }
   }
 
-  Type VisitType_(const IncompleteTypeNode *op) override {
-    return unifier->Subst(GetRef<IncompleteType>(op));
+  Type VisitType_(const IncompleteTypeNode *op, const Type & self) override {
+    return unifier->subst(self);
   }
 };
 
@@ -51,7 +52,7 @@ struct ResolveTypeExpr : ExprMutator {
     // We will visit e like normal building a new
     // term, then resolve e's old type and write
     // it back into the new node.
-    auto new_e = ExprMutator::VisitExpr(e);
+    auto new_e = ExprMutator::Mutate(e);
     CHECK(e->checked_type_.defined());
     auto resolved_cty = VisitType(e->checked_type_);
     new_e->checked_type_ = resolved_cty;
@@ -59,13 +60,13 @@ struct ResolveTypeExpr : ExprMutator {
   }
 
   Type VisitType(const Type &t) {
-    return ResolveTypeType(unifier).VisitType(t);
+    return ResolveTypeType(unifier).Mutate(t);
   }
 };
 
 Type Resolve(const TypeUnifier &unifier, const Type &ty) {
   CHECK(ty.defined());
-  return ResolveTypeType(unifier).VisitType(ty);
+  return ResolveTypeType(unifier).Mutate(ty);
 }
 
 Expr Resolve(const TypeUnifier &unifier, const Expr &expr) {

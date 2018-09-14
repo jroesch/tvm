@@ -54,26 +54,21 @@ struct TypeVisitor : ::tvm::relay::TypeFunctor<void(const Type& n, Args...)> {
 };
 
 // A functional visitor for rebuilding an AST in place.
-struct TypeFVisitor : TypeFunctor<Type(const Type& n)> {
-  Type VisitType_(const TensorTypeNode* op) override {
+struct TypeMutator : TypeFunctor<Type(const Type& n, const Type & self)> {
+  virtual Type Mutate(const Type & self) {
+    return this->VisitType(self, self);
+  }
+  Type VisitType_(const TensorTypeNode* op, const Type & self) override {
     // TODO(@jroesch): maybe we should recursively visit
-    return TensorTypeNode::make(op->shape, op->dtype);
+    return self;
   }
 
-  Type VisitType_(const TypeParamNode* op) override {
-    return GetRef<TypeParam>(op);
+  Type VisitType_(const TypeParamNode* op, const Type & self) override {
+    return self;
   }
 
-  Type VisitType_(const FuncTypeNode* op) override {
-    Array<TypeParam> type_params;
-    for (auto type_param : op->type_params) {
-      auto new_type_param = VisitType(type_param);
-      if (const TypeParamNode* tin = new_type_param.as<TypeParamNode>()) {
-        type_params.push_back(GetRef<TypeParam>(tin));
-      } else {
-        CHECK(false) << new_type_param << std::endl;
-      }
-    }
+  Type VisitType_(const FuncTypeNode* op, const Type & self) override {
+    // TODO(@jroesch): handle poly
 
     Array<TypeConstraint> type_constraints;
     for (auto type_cs : op->type_constraints) {
@@ -87,31 +82,36 @@ struct TypeFVisitor : TypeFunctor<Type(const Type& n)> {
 
     std::vector<Type> args;
     for (auto arg_type : op->arg_types) {
-      args.push_back(VisitType(arg_type));
+      args.push_back(this->Mutate(arg_type));
     }
 
-    return FuncTypeNode::make(tvm::Array<Type>(args), VisitType(op->ret_type),
-                              type_params, type_constraints);
+    return FuncTypeNode::make(tvm::Array<Type>(args), Mutate(op->ret_type),
+                              {}, {});  // fix me
   }
 
-    Type VisitType_(const TupleTypeNode* op) override {
-      std::vector<Type> new_fields;
-      for (const Type& t : op->fields) {
-        new_fields.push_back(this->VisitType(t));
-      }
-      return TupleTypeNode::make(new_fields);
+  Type VisitType_(const TupleTypeNode* op, const Type & self) override {
+    std::vector<Type> new_fields;
+    for (const Type& t : op->fields) {
+      new_fields.push_back(this->Mutate(t));
     }
+    return TupleTypeNode::make(new_fields);
+  }
 
-  Type VisitType_(const TypeRelationNode* type_rel) override {
+  Type VisitType_(const TypeRelationNode* op, const Type & self) override {
+    return self;
+  }
+
+  Type VisitType_(const TypeCallNode* op, const Type & self) override {
+    auto func = this->Mutate(op->func);
     std::vector<Type> new_args;
-    for (const Type& t : type_rel->args) {
-      new_args.push_back(this->VisitType(t));
+    for (const Type& t : op->args) {
+      new_args.push_back(this->Mutate(t));
     }
     return TypeRelationNode::make(type_rel->name, type_rel->func_, new_args);
   }
 
-  Type VisitType_(const IncompleteTypeNode* op) override {
-    return GetRef<IncompleteType>(op);
+  Type VisitType_(const IncompleteTypeNode* op, const Type & self) override {
+    return self;
   }
 };
 

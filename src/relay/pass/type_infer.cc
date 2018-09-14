@@ -73,10 +73,31 @@ struct TypeContext {
     constraints.back().push_back(constraint);
   }
 
-  Type Lookup(const Var &id) {
-    auto type = var_map.find(id);
-    if (type != var_map.end()) {
-      return (*type).second;
+  struct LocalFrame {
+    TypeContext &tc;
+    explicit LocalFrame(TypeContext &tc) : tc(tc) { tc.stack.push_back({}); }
+    ~LocalFrame() { tc.stack.pop_back(); }
+  };
+};
+
+struct TypeNormalizer : TypeMutator {
+  TypeUnifier unifier;
+  explicit TypeNormalizer(const TypeUnifier &unifier) : unifier(unifier) {}
+
+  Type VisitType_(const TypeCallNode *ty_call, const Expr & self) {
+    Array<Type> normalized_args;
+
+    for (auto arg : ty_call->args) {
+      normalized_args.push_back(Mutate(arg));
+    }
+
+    auto all_concrete = true;
+    for (auto arg : normalized_args) {
+      all_concrete = all_concrete && !arg.as<IncompleteTypeNode>();
+    }
+
+    if (all_concrete) {
+      return normalized_args[normalized_args.size() - 1];
     } else {
       throw FatalTypeError("Could not resolve local id");
     }
@@ -157,6 +178,12 @@ TypeInferencer::TypeInferencer() {
 
 TypeInferencer::TypeInferencer(Environment env) : env(env) {
   this->unifier = TypeUnifierNode::make(UnionFindNode::make({}));
+}
+
+Type TypeInferencer::Normalize(const Type &t) {
+  auto nt = this->resolve(t);
+  auto normalizer = TypeNormalizer(this->unifier);
+  return normalizer.Mutate(nt);
 }
 
 CheckedExpr TypeInferencer::Infer(const Expr &expr) {

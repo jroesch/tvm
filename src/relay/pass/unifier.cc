@@ -147,26 +147,26 @@ Type TypeUnifierNode::Unify(const Type &t1, const Type &t2) {
   return unified;
 }
 
-struct IncompleteTypeSubst : TypeFVisitor {
+struct IncompleteTypeSubst : TypeMutator {
   const TypeUnifierNode *unifier;
 
   IncompleteTypeSubst(const TypeUnifierNode *unifier) : unifier(unifier) {}
 
   // type var: look it up in the type map and recurse
-  Type VisitType_(const IncompleteTypeNode *op) override {
+  Type VisitType_(const IncompleteTypeNode *op, const Type & self) override {
     auto tv = GetRef<IncompleteType>(op);
     auto parent = unifier->union_find->Find(tv);
     if (parent == tv) {
       return tv;
     }
-    return this->VisitType(parent);
+    return this->Mutate(parent);
   }
 };
 
 Type TypeUnifierNode::Subst(const Type &t) {
   IncompleteTypeSubst tvsubst(this);
   // normalize first so substitutions in quantifiers will be correct
-  Type ret = tvsubst.VisitType(t);
+  Type ret = tvsubst.Mutate(t);
   // if (!check_kind(ret)) {
   // std::stringstream ss;
   // ss << "Invalid Kinds in substituted type!";
