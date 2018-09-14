@@ -11,6 +11,7 @@
 #include <tvm/node.h>
 #include <tvm/attrs.h>
 #include <string>
+#include <functional>
 #include "./base.h"
 #include "./type.h"
 
@@ -370,4 +371,15 @@ RELAY_DEFINE_NODE_REF(If, IfNode, Expr);
 
 }  // namespace relay
 }  // namespace tvm
+
+namespace std {
+
+template<>
+struct hash<::tvm::relay::LocalVar> {
+  std::size_t operator()(const ::tvm::relay::LocalVar & lv) const {
+    return lv.hash();
+  }
+};
+
+}
 #endif  // TVM_RELAY_EXPR_H_
