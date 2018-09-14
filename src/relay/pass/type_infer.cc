@@ -58,17 +58,15 @@ struct TypeContext {
   };
 };
 
-struct TypeNormalizer : TypeFVisitor {
+struct TypeNormalizer : TypeMutator {
   TypeUnifier unifier;
   explicit TypeNormalizer(const TypeUnifier &unifier) : unifier(unifier) {}
 
-  Type VisitType_(const TypeCallNode *ty_call_node) {
-    auto ty_call = GetRef<TypeCall>(ty_call_node);
-
+  Type VisitType_(const TypeCallNode *ty_call, const Expr & self) {
     Array<Type> normalized_args;
 
     for (auto arg : ty_call->args) {
-      normalized_args.push_back(VisitType(arg));
+      normalized_args.push_back(Mutate(arg));
     }
 
     auto all_concrete = true;
@@ -164,7 +162,7 @@ TypeInferencer::TypeInferencer(Environment env) : env(env) {
 Type TypeInferencer::Normalize(const Type &t) {
   auto nt = this->resolve(t);
   auto normalizer = TypeNormalizer(this->unifier);
-  return normalizer.VisitType(nt);
+  return normalizer.Mutate(nt);
 }
 
 CheckedExpr TypeInferencer::Infer(const Expr &expr) {
