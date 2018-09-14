@@ -69,35 +69,42 @@ class ExprVisitor : public ::tvm::relay::ExprFunctor<void(const Expr& n)> {
   virtual void VisitType(const Type& t) {}
 };
 
-class ExprFVisitor : public ::tvm::relay::ExprFunctor<Expr(const Expr& n)> {
+// Note: although IRMutator in TVM return the old expr if the result is structurally unchanged (hash consing),
+// we do not does hash consing for ExprMutator, as relay is base on tree rather then graph - even if the old expression is returned,
+// it will be treated as a brand new one across many place.
+class ExprMutator : public ::tvm::relay::ExprFunctor<Expr(const Expr& n, const Expr & self)> {
  public:
-  Expr VisitExpr_(const LocalVarNode* op) override {
-    return GetRef<LocalVar>(op);
+  Expr Mutate(const Expr & self) {
+    return this->VisitExpr(self, self);
   }
 
-  Expr VisitExpr_(const ConstantNode* op) override { 
-    return GetRef<Constant>(op);
+  Expr VisitExpr_(const LocalVarNode* op, const Expr & self) override {
+    return self;
   }
 
-  Expr VisitExpr_(const GlobalVarNode* op) override {
-    return GetRef<GlobalVar>(op);
+  Expr VisitExpr_(const ConstantNode* op, const Expr & self) override {
+    return self;
   }
 
-  Expr VisitExpr_(const OpNode* op) override {
-    return GetRef<Op>(op);
+  Expr VisitExpr_(const GlobalVarNode* op, const Expr & self) override {
+    return self;
   }
 
-  Expr VisitExpr_(const TupleNode* op) override {
+  Expr VisitExpr_(const OpNode* op, const Expr & self) override {
+    return self;
+  }
+
+  Expr VisitExpr_(const TupleNode* op, const Expr & self) override {
     tvm::Array<Expr> fields;
     for (auto field : op->fields) {
-      fields.push_back(this->VisitExpr(field));
+      fields.push_back(this->Mutate(field));
     }
 
     return TupleNode::make(fields);
   }
 
-  Expr VisitExpr_(const ParamNode* op) override {
-    Expr var_expr = this->VisitExpr(op->var);
+  Expr VisitExpr_(const ParamNode* op, const Expr & self) override {
+    Expr var_expr = this->Mutate(op->var);
     if (const LocalVarNode* var_node = var_expr.as<LocalVarNode>()) {
       auto var = GetRef<LocalVar>(var_node);
       auto type = this->VisitType(op->type);
@@ -107,7 +114,7 @@ class ExprFVisitor : public ::tvm::relay::ExprFunctor<Expr(const Expr& n)> {
     }
   }
 
-  Expr VisitExpr_(const FunctionNode* op) override {
+  Expr VisitExpr_(const FunctionNode* op, const Expr & self) override {
     tvm::Array<TypeParam> ty_params;
 
     for (auto ty : op->type_params) {
@@ -122,7 +129,7 @@ class ExprFVisitor : public ::tvm::relay::ExprFunctor<Expr(const Expr& n)> {
 
     tvm::Array<Param> params;
     for (auto param : op->params) {
-      Expr param_expr = this->VisitExpr(param);
+      Expr param_expr = this->Mutate(param);
       if (const ParamNode* param_node = param_expr.as<ParamNode>()) {
         auto param = GetRef<Param>(param_node);
         params.push_back(param);
@@ -132,12 +139,12 @@ class ExprFVisitor : public ::tvm::relay::ExprFunctor<Expr(const Expr& n)> {
     }
 
     auto ret_type = this->VisitType(op->ret_type);
-    auto body = this->VisitExpr(op->body);
+    auto body = this->Mutate(op->body);
     return FunctionNode::make(params, ret_type, body, ty_params);
   }
 
-  Expr VisitExpr_(const CallNode* call_node) override {
-    auto fn = this->VisitExpr(call_node->op);
+  Expr VisitExpr_(const CallNode* call_node, const Expr & self) override {
+    auto fn = this->Mutate(call_node->op);
 
     tvm::Array<Type> ty_args;
     for (auto ty_arg : call_node->type_args) {
@@ -147,7 +154,7 @@ class ExprFVisitor : public ::tvm::relay::ExprFunctor<Expr(const Expr& n)> {
 
     tvm::Array<Expr> call_args;
     for (auto arg : call_node->args) {
-      call_args.push_back(this->VisitExpr(arg));
+      call_args.push_back(this->Mutate(arg));
     }
 
     auto call = CallNode::make(fn, call_args, call_node->attrs, ty_args);
@@ -155,23 +162,23 @@ class ExprFVisitor : public ::tvm::relay::ExprFunctor<Expr(const Expr& n)> {
     return call;
   }
 
-  Expr VisitExpr_(const LetNode* op) override {
-    Expr var_expr = this->VisitExpr(op->var);
+  Expr VisitExpr_(const LetNode* op, const Expr & self) override {
+    Expr var_expr = this->Mutate(op->var);
     if (const LocalVarNode* var_node = var_expr.as<LocalVarNode>()) {
       auto var = GetRef<LocalVar>(var_node);
       auto type = this->VisitType(op->value_type);
-      auto value = this->VisitExpr(op->value);
-      auto body = this->VisitExpr(op->body);
+      auto value = this->Mutate(op->value);
+      auto body = this->Mutate(op->body);
       return LetNode::make(var, value, body, type);
     } else {
       throw dmlc::Error("the default let visitor has error");
     }
   }
 
-  Expr VisitExpr_(const IfNode* op) override {
-    auto guard = this->VisitExpr(op->cond);
-    auto true_b = this->VisitExpr(op->true_value);
-    auto false_b = this->VisitExpr(op->false_value);
+  Expr VisitExpr_(const IfNode* op, const Expr & self) override {
+    auto guard = this->Mutate(op->cond);
+    auto true_b = this->Mutate(op->true_value);
+    auto false_b = this->Mutate(op->false_value);
     return IfNode::make(guard, true_b, false_b);
   }
 
