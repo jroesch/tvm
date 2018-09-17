@@ -53,10 +53,54 @@ struct TypeVisitor : ::tvm::relay::TypeFunctor<void(const Type& n, Args...)> {
   void VisitType_(const IncompleteTypeNode* op, Args... args) override {}
 };
 
+struct TypeShallowHashConser : TypeFunctor<Type(const Type & ret, const Type & self, const Type & orig)> {
+  Type VisitType_(const TensorTypeNode* op, const Type & self, const Type & orig) override {
+    // TODO(@jroesch): maybe we should recursively visit
+    return self;
+  }
+
+  Type VisitType_(const TypeParamNode* op, const Type & self, const Type & orig) override {
+    return self;
+  }
+
+  Type VisitType_(const FuncTypeNode* op, const Type & self, const Type & orig) override {
+    // TODO(@M.K.): fix after poly is handled
+    return self;
+  }
+
+  Type VisitType_(const TupleTypeNode* op, const Type & self, const Type & orig) override {
+    if (auto p = orig.as<TupleTypeNode>()) {
+      if (op->fields.size() != p->fields.size()) {
+        return self;
+      }
+      for (size_t i = 0; i < p->fields.size(); ++i) {
+        if (op->fields[i] != p->fields[i]) {
+          return self;
+        }
+      }
+      return orig;
+    }
+    return self;
+  }
+
+  Type VisitType_(const TypeRelationNode* op, const Type & self, const Type & orig) override {
+    return self;
+  }
+
+  Type VisitType_(const IncompleteTypeNode* op, const Type & self, const Type & orig) override {
+    return self;
+  }
+
+};
+
+inline Type TypeShallowHashCons(const Type & ret, const Type & orig) {
+  return TypeShallowHashConser()(ret, ret, orig);
+}
+
 // A functional visitor for rebuilding an AST in place.
 struct TypeMutator : TypeFunctor<Type(const Type& n, const Type & self)> {
   virtual Type Mutate(const Type & self) {
-    return this->VisitType(self, self);
+    return TypeShallowHashCons(this->VisitType(self, self), self);
   }
   Type VisitType_(const TensorTypeNode* op, const Type & self) override {
     // TODO(@jroesch): maybe we should recursively visit

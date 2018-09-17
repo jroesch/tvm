@@ -67,16 +67,15 @@ class ExprVisitor : public ::tvm::relay::ExprFunctor<void(const Expr& n)> {
   virtual void VisitType(const Type& t) {}
 };
 
-struct ShallowHashConser : ExprFunctor<Expr(const Expr & ret, const Expr & self, const Expr & orig)> {
+struct ExprShallowHashConser : ExprFunctor<Expr(const Expr & ret, const Expr & self, const Expr & orig)> {
   Expr VisitExpr_(const VarNode * ret, const Expr & self, const Expr & orig) override {
     return self;
   }
 
-  Expr VisitExpr_(const ConstantNode * ret, const Expr & self, const Expr & orig) override {
-    if (auto p = self.as<ConstantNode>()) {
-      
-    }
-    // todo: how?
+  Expr VisitExpr_(const ConstantNode * op, const Expr & self, const Expr & orig) override {
+    /*if (auto p = self.as<ConstantNode>()) {
+      op->data == p->data dont work
+    }*/
     return self;
   }
 
@@ -186,8 +185,8 @@ struct ShallowHashConser : ExprFunctor<Expr(const Expr & ret, const Expr & self,
 
 };
 
-inline Expr ShallowHashCons(const Expr & ret, const Expr & orig) {
-  return ShallowHashConser()(ret, ret, orig);
+inline Expr ExprShallowHashCons(const Expr & ret, const Expr & orig) {
+  return ExprShallowHashConser()(ret, ret, orig);
 }
 
 // Like IRMutator, ExprMutator return the old expr if result is structurally equivalent.
@@ -196,7 +195,7 @@ inline Expr ShallowHashCons(const Expr & ret, const Expr & orig) {
 class ExprMutator : public ::tvm::relay::ExprFunctor<Expr(const Expr& n, const Expr & self)> {
  public:
   Expr Mutate(const Expr & self) {
-    return ShallowHashCons(this->VisitExpr(self, self), self);
+    return ExprShallowHashCons(this->VisitExpr(self, self), self);
   }
 
   Expr VisitExpr_(const VarNode* op, const Expr & self) override {
