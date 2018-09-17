@@ -73,6 +73,9 @@ struct ShallowHashConser : ExprFunctor<Expr(const Expr & ret, const Expr & self,
   }
 
   Expr VisitExpr_(const ConstantNode * ret, const Expr & self, const Expr & orig) override {
+    if (auto p = self.as<ConstantNode>()) {
+      
+    }
     // todo: how?
     return self;
   }
