@@ -67,13 +67,133 @@ class ExprVisitor : public ::tvm::relay::ExprFunctor<void(const Expr& n)> {
   virtual void VisitType(const Type& t) {}
 };
 
+struct ShallowHashConser : ExprFunctor<Expr(const Expr & ret, const Expr & self, const Expr & orig)> {
+  Expr VisitExpr_(const VarNode * ret, const Expr & self, const Expr & orig) override {
+    return self;
+  }
+
+  Expr VisitExpr_(const ConstantNode * ret, const Expr & self, const Expr & orig) override {
+    // todo: how?
+    return self;
+  }
+
+  Expr VisitExpr_(const GlobalVarNode * op, const Expr & self, const Expr & orig) override {
+    return self;
+  }
+
+  Expr VisitExpr_(const OpNode * op, const Expr & self, const Expr & orig) override {
+    return self;
+  }
+
+  Expr VisitExpr_(const TupleNode * op, const Expr & self, const Expr & orig) override {
+    if (auto p = orig.as<TupleNode>()) {
+      if (op->fields.size() != p->fields.size()) {
+        return self;
+      }
+      for (size_t i = op->fields.size(); i < op->fields.size(); ++i) {
+        if (op->fields[i] != p->fields[i]) {
+          return self;
+        }
+      }
+      return orig;
+    } else {
+      return self;
+    }
+  }
+
+  Expr VisitExpr_(const ParamNode* op, const Expr & self, const Expr & orig) override {
+    if (auto p = orig.as<ParamNode>()) {
+      if (op->var == p->var && op->type == p->type) {
+        return orig;
+      }
+    }
+    return self;
+  }
+
+  Expr VisitExpr_(const FunctionNode* op, const Expr & self, const Expr & orig) override {
+    if (auto p = orig.as<FunctionNode>()) {
+      if (op->type_params.size() != p->type_params.size()) {
+        return self;
+      }
+      for (size_t i = 0; i < op->type_params.size(); ++i) {
+        if (op->type_params[i] != p->type_params[i]) {
+          return self;
+        }
+      }
+      if (op->params.size() != p->params.size()) {
+        return self;
+      }
+      for (size_t i = 0; i < op->params.size(); ++i) {
+        if (op->params[i] != p->params[i]) {
+          return self;
+        }
+      }
+      if (op->ret_type == p->ret_type && op->body == p->body) {
+        return orig;
+      }
+    }
+    return self;
+  }
+
+  Expr VisitExpr_(const CallNode* op, const Expr & self, const Expr & orig) override {
+    if (auto p = orig.as<CallNode>()) {
+      if (op->op != p->op) {
+        return self;
+      }
+      if (op->type_args.size() != p->type_args.size()) {
+        return self;
+      }
+      for (size_t i = 0; i < op->type_args.size(); ++i) {
+        if (op->type_args[i] != p->type_args[i]) {
+          return self;
+        }
+      }
+      if (op->args.size() != p->args.size()) {
+        return self;
+      }
+      for (size_t i = 0; i < op->args.size(); ++i) {
+        if (op->args[i] != p->args[i]) {
+          return self;
+        }
+      }
+      if (op->attrs == p->attrs) {
+        return orig;
+      }
+    }
+    return self;
+  }
+
+  Expr VisitExpr_(const LetNode* op, const Expr & self, const Expr & orig) override {
+    if (auto p = orig.as<LetNode>()) {
+      if (op->var == p->var && op->value_type == p->value_type && op->value == p->value && op->body == p->body) {
+        return orig;
+      }
+    }
+    return self;
+  }
+
+  Expr VisitExpr_(const IfNode* op, const Expr & self, const Expr & orig) override {
+    if (auto p = orig.as<IfNode>()) {
+      if (op->cond == p->cond && op->true_branch == p->true_branch && op->false_branch == p->false_branch) {
+        return orig;
+      }
+    }
+    return self;
+  }
+
+};
+
+inline Expr ShallowHashCons(const Expr & ret, const Expr & orig) {
+  return ShallowHashConser()(ret, ret, orig);
+}
+
 // Like IRMutator, ExprMutator return the old expr if result is structurally equivalent.
 // However, since we treat Expr as a tree, it will still be type checked/evaluated multiple time.
 // Use Let if you want to express sharing.
 class ExprMutator : public ::tvm::relay::ExprFunctor<Expr(const Expr& n, const Expr & self)> {
  public:
   Expr Mutate(const Expr & self) {
-    return this->VisitExpr(self, self);
+    return ShallowHashCons(this->VisitExpr(self, self), self);
   }
 
   Expr VisitExpr_(const VarNode* op, const Expr & self) override {
@@ -109,7 +229,7 @@ class ExprMutator : public ::tvm::relay::ExprFunctor<Expr(const Expr& n, const E
       return ParamNode::make(var, type);
     } else {
       LOG(FATAL) << "the default param visitor expected a Var found: "
-                   << var_expr << std::endl;
+                 << var_expr << std::endl;
       return Expr();
     }
   }
