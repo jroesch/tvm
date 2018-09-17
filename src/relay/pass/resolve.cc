@@ -29,7 +29,7 @@ struct ResolveTypeType : TypeMutator {
   }
 
   Type VisitType_(const IncompleteTypeNode *op, const Type & self) override {
-    return unifier->subst(self);
+    return unifier->Subst(self);
   }
 };
 

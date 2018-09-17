@@ -67,16 +67,16 @@ class ExprVisitor : public ::tvm::relay::ExprFunctor<void(const Expr& n)> {
   virtual void VisitType(const Type& t) {}
 };
 
-// Note: although IRMutator in TVM return the old expr if the result is structurally unchanged (hash consing),
-// we do not does hash consing for ExprMutator, as relay is base on tree rather then graph - even if the old expression is returned,
-// it will be treated as a brand new one across many place.
+// Like IRMutator, ExprMutator return the old expr if result is structurally equivalent.
+// However, since we treat Expr as a tree, it will still be type checked/evaluated multiple time.
+// Use Let if you want to express sharing.
 class ExprMutator : public ::tvm::relay::ExprFunctor<Expr(const Expr& n, const Expr & self)> {
  public:
   Expr Mutate(const Expr & self) {
     return this->VisitExpr(self, self);
   }
 
-  Expr VisitExpr_(const LocalVarNode* op, const Expr & self) override {
+  Expr VisitExpr_(const VarNode* op, const Expr & self) override {
     return self;
   }
 
@@ -103,8 +103,8 @@ class ExprMutator : public ::tvm::relay::ExprFunctor<Expr(const Expr& n, const E
 
   Expr VisitExpr_(const ParamNode* op, const Expr & self) override {
     Expr var_expr = this->Mutate(op->var);
-    if (const LocalVarNode* var_node = var_expr.as<LocalVarNode>()) {
-      auto var = GetRef<LocalVar>(var_node);
+    if (const VarNode* var_node = var_expr.as<VarNode>()) {
+      auto var = GetRef<Var>(var_node);
       auto type = this->VisitType(op->type);
       return ParamNode::make(var, type);
     } else {
@@ -169,8 +169,8 @@ class ExprMutator : public ::tvm::relay::ExprFunctor<Expr(const Expr& n, const E
 
   Expr VisitExpr_(const LetNode* op, const Expr & self) override {
     Expr var_expr = this->Mutate(op->var);
-    if (const LocalVarNode* var_node = var_expr.as<LocalVarNode>()) {
-      auto var = GetRef<LocalVar>(var_node);
+    if (const VarNode* var_node = var_expr.as<VarNode>()) {
+      auto var = GetRef<Var>(var_node);
       auto type = this->VisitType(op->value_type);
       auto value = this->Mutate(op->value);
       auto body = this->Mutate(op->body);
@@ -184,8 +184,8 @@ class ExprMutator : public ::tvm::relay::ExprFunctor<Expr(const Expr& n, const E
 
   Expr VisitExpr_(const IfNode* op, const Expr & self) override {
     auto guard = this->Mutate(op->cond);
-    auto true_b = this->Mutate(op->true_value);
-    auto false_b = this->Mutate(op->false_value);
+    auto true_b = this->Mutate(op->true_branch);
+    auto false_b = this->Mutate(op->false_branch);
     return IfNode::make(guard, true_b, false_b);
   }
 

@@ -72,7 +72,7 @@ struct TypeMutator : TypeFunctor<Type(const Type& n, const Type & self)> {
 
     Array<TypeConstraint> type_constraints;
     for (auto type_cs : op->type_constraints) {
-      auto new_type_cs = VisitType(type_cs);
+      auto new_type_cs = Mutate(type_cs);
       if (const TypeConstraintNode* tin = As<TypeConstraintNode>(new_type_cs)) {
         type_constraints.push_back(GetRef<TypeConstraint>(tin));
       } else {
@@ -99,15 +99,6 @@ struct TypeMutator : TypeFunctor<Type(const Type& n, const Type & self)> {
 
   Type VisitType_(const TypeRelationNode* op, const Type & self) override {
     return self;
-  }
-
-  Type VisitType_(const TypeCallNode* op, const Type & self) override {
-    auto func = this->Mutate(op->func);
-    std::vector<Type> new_args;
-    for (const Type& t : op->args) {
-      new_args.push_back(this->Mutate(t));
-    }
-    return TypeRelationNode::make(type_rel->name, type_rel->func_, new_args);
   }
 
   Type VisitType_(const IncompleteTypeNode* op, const Type & self) override {
