@@ -1,6 +1,6 @@
 /*!
  *  Copyright (c) 2018 by Contributors
- * \file local_var_well_formed.cc
+ * \file var_well_formed.cc
  * \brief Function for substituting a concrete type in place of a type ID
  */
 #include <tvm/relay/pass.h>
@@ -15,8 +15,8 @@ struct ShadowDetected { };
 struct DetectShadow : ExprVisitor {
   struct Insert {
     DetectShadow * ds;
-    LocalVar lv;
-    Insert(DetectShadow * ds, const LocalVar & lv) : ds(ds), lv(lv) {
+    Var lv;
+    Insert(DetectShadow * ds, const Var & lv) : ds(ds), lv(lv) {
       if (ds->s.count(lv) != 0) {
         throw ShadowDetected();
       }
@@ -28,7 +28,7 @@ struct DetectShadow : ExprVisitor {
       ds->s.erase(lv);
     }
   };
-  std::unordered_set<LocalVar> s;
+  std::unordered_set<Var> s;
   void VisitExpr_(const LetNode & l) {
     Insert ins(this, l.var);
     (*this)(l.value);  // we do letrec only for FunctionNode, but shadowing let in let binding is dangerous, and we should forbidden it.
@@ -43,7 +43,7 @@ struct DetectShadow : ExprVisitor {
   }
 };
 
-bool LocalVarWellFormed(const Expr & e) {
+bool VarWellFormed(const Expr & e) {
   try {
     DetectShadow()(e);
     return true;

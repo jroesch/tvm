@@ -375,8 +375,8 @@ RELAY_DEFINE_NODE_REF(If, IfNode, Expr);
 namespace std {
 
 template<>
-struct hash<::tvm::relay::LocalVar> {
-  std::size_t operator()(const ::tvm::relay::LocalVar & lv) const {
+struct hash<::tvm::relay::Var> {
+  std::size_t operator()(const ::tvm::relay::Var & lv) const {
     return lv.hash();
   }
 };
