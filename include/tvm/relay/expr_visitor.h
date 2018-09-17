@@ -73,9 +73,11 @@ struct ExprShallowHashConser : ExprFunctor<Expr(const Expr & ret, const Expr & s
   }
 
   Expr VisitExpr_(const ConstantNode * op, const Expr & self, const Expr & orig) override {
-    /*if (auto p = self.as<ConstantNode>()) {
-      op->data == p->data dont work
-    }*/
+    if (auto p = self.as<ConstantNode>()) {
+      if (op->data.same_as(p->data)) {
+        return orig;
+      }
+    }
     return self;
   }
 
