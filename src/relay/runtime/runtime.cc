@@ -7,6 +7,7 @@
 #include <tvm/relay/expr_functor.h>
 #include <tvm/relay/runtime/runtime.h>
 #include <tvm/relay/interpreter.h>
+#include "../backend/compile_engine.h"
 
 #include <vector>
 #include <iostream>
@@ -15,17 +16,54 @@ namespace tvm {
 namespace relay {
 namespace vm {
 
+Instruction::Instruction() {}
+
+Instruction::Instruction(const Instruction& instr) {
+  this->op = instr.op;
+  switch (instr.op) {
+    case Opcode::Push:
+      this->stack_index = instr.stack_index;
+      return;
+    case Opcode::Ret:
+      return;
+    case Opcode::AllocTensor:
+      this->tensor_info = instr.tensor_info;
+      return;
+    case Opcode::InvokePacked:
+      this->stack_index = instr.stack_index;
+      return;
+  }
+}
+
+// TODO(@jroesch): this leaks memory fix me
+Instruction::~Instruction() {}
+
 Instruction Push(size_t stack_index) {
-  return Instruction {
-    .op = Opcode::Push,
-    { .stack_index = stack_index }
-  };
+  Instruction instr;
+  instr.op = Opcode::Push;
+  instr.stack_index = stack_index;
+  return instr;
 }
 
 Instruction Ret() {
-  return Instruction {
-    .op = Opcode::Ret
-  };
+  Instruction instr;
+  instr.op = Opcode::Ret;
+  return instr;
+}
+
+Instruction InvokePacked(size_t stack_index) {
+  Instruction instr;
+  instr.op = Opcode::InvokePacked;
+  instr.stack_index = stack_index;
+  return instr;
+}
+
+Instruction AllocTensor(std::vector<int64_t> shape, DLDataType dtype) {
+  Instruction instr;
+  instr.op = Opcode::AllocTensor;
+  instr.tensor_info.shape = shape;
+  instr.tensor_info.dtype = dtype;
+  return instr;
 }
 
 void InstructionPrint(std::ostream& os, const Instruction& instr) {
@@ -36,6 +74,20 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     }
     case Opcode::Ret: {
       os << "ret";
+      break;
+    }
+    case Opcode::InvokePacked: {
+      os << "invoke_packed";
+      break;
+    }
+    case Opcode::AllocTensor: {
+      os << "alloc_tensor";
+      os << "(";
+      for (auto sh : instr.tensor_info.shape) {
+        os << sh << ", ";
+      }
+      os << ") ";
+      os << TVMType2Type(instr.tensor_info.dtype);
       break;
     }
   }
@@ -53,14 +105,53 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     std::unordered_map<Var, size_t, NodeHash, NodeEqual> var_map;
     size_t stack_index;
     bool seen_func;
+    CompileEngine engine;
+    std::vector<LoweredFunc> lowered_funcs;
 
-    VMCompiler() : instructions(), var_map(), stack_index(0), seen_func(false) {}
+    VMCompiler() :
+      instructions(), var_map(), stack_index(0),
+      seen_func(false), engine(CompileEngine::Global()) {}
+
+    inline void Emit(const Instruction& instr) {
+      instructions.push_back(instr);
+    }
 
     void VisitExpr_(const VarNode* var_node) {
       auto var = GetRef<Var>(var_node);
       auto it = this->var_map.find(var);
       CHECK(it != this->var_map.end());
       this->instructions.push_back(Push(it->second));
+    }
+
+    void VisitExpr_(const CallNode* call_node) {
+      auto func_node = call_node->op.as<FunctionNode>();
+      // First generate instructions to populate stack with arguments.
+      for (auto arg : call_node->args) {
+        this->VisitExpr(arg);
+      }
+
+      // Allocate space for the return tensor.
+      Type rtype = call_node->checked_type();
+      const TensorTypeNode* ttype = rtype.as<TensorTypeNode>();
+      CHECK(ttype);
+      std::vector<int64_t> shapes;
+      for (auto sh : ttype->shape) {
+        shapes.push_back(Downcast<tvm::Integer>(sh)->value);
+      }
+
+      auto dltype = Type2TVMType(ttype->dtype);
+      Emit(AllocTensor(shapes, dltype));
+      // Next generate the invoke instruction.
+      CHECK(func_node);
+      CHECK(func_node->IsPrimitive());
+      auto target = Target::create("llvm");
+      auto key = CCacheKeyNode::make(GetRef<Function>(func_node), target);
+      auto cfunc = engine->Lower(key);
+      // TODO: support lowered funcs for multiple targets
+      CHECK(cfunc->funcs.size() == 1);
+      auto op_index = this->lowered_funcs.size();
+      this->lowered_funcs.push_back(cfunc->funcs[0]);
+      this->instructions.push_back(InvokePacked(op_index));
     }
 
     void VisitExpr_(const FunctionNode* func_node) {
@@ -73,6 +164,31 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       this->VisitExpr(func_node->body);
     }
 };
+
+VirtualMachine CompileFunc(const Function& func) {
+  size_t params = func->params.size();
+  VMCompiler compiler;
+  compiler.VisitExpr(func);
+  compiler.instructions.push_back(Ret());
+  auto main_func = VMFunction(params, compiler.instructions);
+  runtime::Module mod;
+  VirtualMachine vm;
+  if (compiler.lowered_funcs.size() > 0) {
+    Target target = Target::create("llvm");
+    if (const auto* f = runtime::Registry::Get("relay.backend.build")) {
+      mod = (*f)(tvm::Array<LoweredFunc>(compiler.lowered_funcs.begin(), compiler.lowered_funcs.end()), target);
+    } else {
+      LOG(FATAL) << "relay.backend.build is not registered";
+    }
+    CHECK(mod.operator->());
+    for (auto lfunc : compiler.lowered_funcs) {
+      vm.packed_funcs.push_back(mod.GetFunction(lfunc->name));
+    }
+  }
+  vm.functions.push_back(main_func);
+
+  return vm;
+}
 
 void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func) {
   auto frame = VMFrame(ret_pc, bp, func_index, arg_count, code);
@@ -121,6 +237,10 @@ void VirtualMachine::Run() {
   main_loop:
     auto const& instr = this->code[this->pc];
     switch (instr.op) {
+      case Opcode::InvokePacked:
+        LOG(FATAL) << "YOOOOOO";
+      case Opcode::AllocTensor:
+        LOG(FATAL) << "ALLOC";
       case Opcode::Push:
         CHECK(bp + instr.stack_index < stack.size());
         stack.push_back(stack[bp + instr.stack_index]);
@@ -143,26 +263,17 @@ void VirtualMachine::Run() {
   }
 }
 
-VMFunction CompileFunc(const Function& func) {
-  size_t params = func->params.size();
-  VMCompiler compiler;
-  compiler.VisitExpr(func);
-  compiler.instructions.push_back(Ret());
-  return VMFunction(params, compiler.instructions);
-}
-
 TVM_REGISTER_API("relay._runtime._testeval")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
     Function to_compile = args[0];
     tvm::Array<Value> vargs = args[1];
-    VMFunction vm_func = CompileFunc(to_compile);
-    VMFunctionPrint(vm_func);
-    VirtualMachine vm;
+    VirtualMachine vm = CompileFunc(to_compile);
+    VMFunctionPrint(vm.functions[0]);
     std::cout << "Before convert" << std::endl;
     TensorValue tv = Downcast<TensorValue>(vargs[0]);
     auto vm_tensor = VMTensor(tv->data);
     std::cout << "before invoke" << std::endl;
-    VMObject result = vm.Invoke(vm_func, { vm_tensor });
+    VMObject result = vm.Invoke(vm.functions[0], { vm_tensor });
     std::cout << "testing eval" << std::endl;
     // directly returning ndarray causes segfault
     NDArray nd = ToNDArray(result);

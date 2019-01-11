@@ -54,18 +54,33 @@ inline NDArray ToNDArray(const VMObject& obj) {
 
 enum struct Opcode {
   Push,
-  Ret
+  Ret,
+  InvokePacked,
+  AllocTensor,
 };
 
 struct Instruction {
   Opcode op;
   union {
     size_t stack_index;
+
+    // TODO(@jroesch): Not a great representation, used for first version.
+    struct {
+      std::vector<int64_t> shape;
+      DLDataType dtype;
+    } tensor_info;
   };
+
+  Instruction();
+  Instruction(const Instruction& instr);
+  ~Instruction();
 };
 
-Instruction Push(const VMObject& push_value);
+Instruction Push(size_t stack_index);
 Instruction Ret();
+Instruction InvokePacked(size_t stack_index);
+Instruction AllocTensor(std::vector<size_t> shape, std::string dtype);
+
 
 struct VMFunction {
   size_t params;
@@ -93,9 +108,8 @@ struct VMFrame {
 };
 
 struct VirtualMachine {
-    tvm::runtime::Module module;
-
     // TODO(@jroesch):
+    std::vector<PackedFunc> packed_funcs;
     std::vector<VMFunction> functions;
     std::vector<VMFrame> frames;
     std::vector<VMObject> stack;
@@ -108,12 +122,13 @@ struct VirtualMachine {
     size_t PopFrame();
     VMObject Invoke(VMFunction func, std::vector<VMObject> args);
     void Run();
+
     VirtualMachine() :
       functions(), frames(), stack(),
       func_index(0), code(nullptr), pc(0), bp(0) {}
 };
 
-VMFunction CompileFunc(const Function& func);
+VirtualMachine CompileFunc(const Function& func);
 
 }  // namespace vm
 }  // namespace relay
