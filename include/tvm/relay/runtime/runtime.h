@@ -93,6 +93,8 @@ struct VMFrame {
 };
 
 struct VirtualMachine {
+    tvm::runtime::Module module;
+
     // TODO(@jroesch):
     std::vector<VMFunction> functions;
     std::vector<VMFrame> frames;
