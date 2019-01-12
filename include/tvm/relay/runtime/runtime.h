@@ -22,6 +22,7 @@ enum struct VMObjectTag {
   kExternalFunc,
 };
 
+
 // TODO(@jroesch): Eventually inline cell.
 // We can also use pointer tagging scheme ala
 // https://github.com/leanprover/lean/blob/master/src/library/vm/vm.h#L51
@@ -40,7 +41,7 @@ struct VMTensorCell : public VMObjectCell {
 
 using VMObject = std::shared_ptr<VMObjectCell>;
 
-VMObject VMTensor(const tvm::runtime::NDArray data) {
+VMObject VMTensor(const tvm::runtime::NDArray& data) {
   auto ptr = std::make_shared<VMTensorCell>(data);
   return std::dynamic_pointer_cast<VMObjectCell>(ptr);
 }
@@ -60,15 +61,21 @@ enum struct Opcode {
 };
 
 struct Instruction {
+  // TODO(@jroesch): Not a great representation, used for first version.
+  struct TensorInfo {
+      int64_t* shape;
+      size_t ndim;
+      DLDataType dtype;
+  };
+
   Opcode op;
   union {
     size_t stack_index;
-
-    // TODO(@jroesch): Not a great representation, used for first version.
+    TensorInfo tensor_info;
     struct {
-      std::vector<int64_t> shape;
-      DLDataType dtype;
-    } tensor_info;
+      size_t packed_index;
+      size_t arity;
+    };
   };
 
   Instruction();
@@ -79,7 +86,7 @@ struct Instruction {
 Instruction Push(size_t stack_index);
 Instruction Ret();
 Instruction InvokePacked(size_t stack_index);
-Instruction AllocTensor(std::vector<size_t> shape, std::string dtype);
+Instruction AllocTensor(std::vector<int64_t> shape, std::string dtype);
 
 
 struct VMFunction {

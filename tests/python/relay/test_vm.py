@@ -14,11 +14,11 @@ def test_id():
 def test_op():
     x = relay.var('x', shape=(10, 10))
     f = relay.Function([x], x + x)
-    x_data = np.random.rand(10, 10).astype('float64')
+    x_data = np.random.rand(10, 10).astype('float32')
     res = test_vm(f, [TensorValue(x_data)])
     tvm.testing.assert_allclose(res.asnumpy(), x_data + x_data)
 
 if __name__ == "__main__":
-    # test_id()
+    test_id()
     test_op()
 
