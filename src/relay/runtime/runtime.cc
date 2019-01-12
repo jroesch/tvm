@@ -33,6 +33,10 @@ Instruction::Instruction(const Instruction& instr) {
       this->packed_index = instr.packed_index;
       this->arity = instr.arity;
       return;
+    case Opcode::If:
+      this->true_offset = instr.true_offset;
+      this->false_offset = instr.false_offset;
+      return;
   }
 }
 
@@ -73,6 +77,14 @@ Instruction AllocTensor(const std::vector<int64_t> shape, DLDataType dtype) {
   return instr;
 }
 
+Instruction If(size_t true_branch, size_t false_branch) {
+  Instruction instr;
+  instr.op = Opcode::If;
+  instr.true_offset = true_branch;
+  instr.false_offset = false_branch;
+  return instr;
+}
+
 void InstructionPrint(std::ostream& os, const Instruction& instr) {
   switch (instr.op) {
     case Opcode::Push: {
@@ -99,6 +111,11 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
       os << ") ";
       os << TVMType2Type(instr.tensor_info.dtype);
       break;
+    }
+    case Opcode::If: {
+      os << "if "
+         << instr.true_offset << " "
+         << instr.false_offset;
     }
   }
 }
@@ -131,6 +148,22 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto it = this->var_map.find(var);
       CHECK(it != this->var_map.end());
       this->instructions.push_back(Push(it->second));
+    }
+
+    void VisitExpr_(const IfNode* if_node) {
+      this->VisitExpr(if_node->cond);
+      auto after_cond = this->instructions.size();
+      this->Emit(If(0, 0));
+      this->VisitExpr(if_node->true_branch);
+      auto after_true = this->instructions.size();
+      this->VisitExpr(if_node->false_branch);
+      // After we emit the true body, and false body,
+      // we patch up the if instruction.
+      auto true_offset = 1;
+      auto false_offset = after_true - after_cond;
+      this->instructions[after_cond].true_offset = true_offset;
+      this->instructions[after_cond].false_offset = false_offset;
+
     }
 
     void VisitExpr_(const CallNode* call_node) {
@@ -225,6 +258,13 @@ size_t VirtualMachine::PopFrame() {
   const VMFrame& fr = frames.back();
   auto stack_size = stack.size();
   // Copy return value;
+  CHECK(stack_size - fr.args - 1 < stack.size())
+    << "attempting to read stack slot: "
+    << stack_size - fr.args - 1
+    << " stack_size: "
+    << stack_size;
+
+  CHECK(0 <= stack_size - fr.args - 1);
   stack[stack_size - fr.args - 1] = stack[stack_size - 1];
   // Resize value stack.
   stack.resize(stack_size - fr.args);
@@ -238,17 +278,22 @@ size_t VirtualMachine::PopFrame() {
   return call_stack_size;
 }
 
-VMObject VirtualMachine::Invoke(VMFunction func, std::vector<VMObject> args) {
-  CHECK(args.size() == func.params);
+void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<VMObject>& args) {
+  auto stack_start = stack.size();
   stack.push_back(VMObject());
   for (auto arg : args) {
     stack.push_back(arg);
   }
   PushFrame(func.params, this->pc + 1, func);
+  CHECK(stack_start + func.params + 1 == stack.size());
   code = func.instructions.data();
   pc = 0;
   bp = stack.size() - func.params;
   std::cout << "final stack size: " << stack.size() << "bp: " << bp << std::endl;
+}
+
+VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObject>& args) {
+  InvokeGlobal(func, args);
   Run();
   std::cout << "final stack size: " << stack.size() << "bp: " << bp << std::endl;
   return stack.back();
@@ -261,9 +306,9 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, std::vector<VMObject
   std::vector<int> codes(arg_count);
   runtime::TVMArgsSetter setter(values.data(), codes.data());
 
-  std::cout << "InvokePacked: " << stack.size();
+  std::cout << "InvokePacked: " << stack.size() << std::endl;
 
-  auto stack_start = stack.size() - arg_count - 1;
+  auto stack_start = stack.size() - arg_count;
   for (size_t i = 0; i < arg_count; i++) {
     std::cout << "Getting: " << stack_start + i << std::endl;
     NDArray data = ToNDArray(stack[stack_start + i]);
@@ -272,8 +317,10 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, std::vector<VMObject
 
   TVMRetValue rv;
   func.CallPacked(TVMArgs(values.data(), codes.data(), arg_count), &rv);
-  stack[stack.size() - arg_count - 2] = stack[stack.size() - 1];
-  stack.resize(stack.size() - arg_count);
+  // We can do this more efficiently by reverse laying out the arguments
+  // and just shrinking the stack.
+  stack[stack.size() - arg_count] = stack[stack.size() - 1];
+  stack.resize(stack.size() - arg_count + 1);
 }
 
 void VirtualMachine::Run() {
@@ -286,15 +333,42 @@ void VirtualMachine::Run() {
     std::cout << "Executing: ";
     InstructionPrint(std::cout, instr);
     std::cout << std::endl;
+    std::cout << "Stack Size: " << stack.size() << std::endl;
     switch (instr.op) {
       case Opcode::InvokePacked: {
+        auto start_stack = stack.size();
         const auto& func = packed_funcs[instr.packed_index];
         const auto& arity = instr.arity;
         std::cout << "before call" << std::endl;
         std::cout << this->stack.size() << std::endl;
         InvokePacked(func, arity, stack);
+        CHECK(start_stack - arity + 1 == stack.size())
+          << "start_stack: " << start_stack
+          << "end_stack: " << stack.size();
         std::cout << "after call" << std::endl;
         pc++;
+        goto main_loop;
+      }
+      case Opcode::If: {
+        // How do we do this efficiently?
+        DLContext cpu_ctx;
+        cpu_ctx.device_type = kDLCPU;
+        cpu_ctx.device_id = 0;
+
+        const auto& cond = stack.back();
+        NDArray cpu_array = ToNDArray(cond).CopyTo(cpu_ctx);
+        CHECK_EQ(TVMType2Type(cpu_array->dtype), Bool());
+        bool branch = reinterpret_cast<uint8_t*>(cpu_array->data)[0];
+
+        // Remove cond.
+        stack.pop_back();
+
+        if (branch) {
+          pc += instr.true_offset;
+        } else {
+          pc += instr.false_offset;
+        }
+
         goto main_loop;
       }
       case Opcode::AllocTensor: {
@@ -316,12 +390,10 @@ void VirtualMachine::Run() {
         goto main_loop;
       }
       case Opcode::Ret: {
-        std::cout << "ret";
         // If we have hit the point from which we started
         // running, we should return to the caller breaking
         // the dispatch loop.
         if (PopFrame() == stack_start) {
-          std::cout << "finish";
           return;
         // Otherwise we are just returning from a local call.
         //
@@ -339,15 +411,20 @@ TVM_REGISTER_API("relay._runtime._testeval")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
     Function to_compile = args[0];
     tvm::Array<Value> vargs = args[1];
+
     VirtualMachine vm = CompileFunc(to_compile);
     VMFunctionPrint(vm.functions[0]);
     std::cout << "Before convert" << std::endl;
-    TensorValue tv = Downcast<TensorValue>(vargs[0]);
-    VMObject vm_tensor = VMTensor(tv->data);
-    std::cout << "before invoke" << std::endl;
-    VMObject result = vm.Invoke(vm.functions[0], { vm_tensor });
-    std::cout << "testing eval" << std::endl;
-    // directly returning ndarray causes segfault
+
+    std::vector<VMObject> vm_args;
+    for (auto arg : vargs) {
+      auto tvarg = Downcast<TensorValue>(arg);
+      vm_args.push_back(VMTensor(tvarg->data));
+    }
+
+    VMObject result = vm.Invoke(vm.functions[0], vm_args);
+
+    // Directly returning ndarray causes segfault.
     NDArray nd = ToNDArray(result);
     std::cout << "Getting ND finished";
     *ret = TensorValueNode::make(nd);

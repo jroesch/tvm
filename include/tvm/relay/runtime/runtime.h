@@ -58,6 +58,7 @@ enum struct Opcode {
   Ret,
   InvokePacked,
   AllocTensor,
+  If,
 };
 
 struct Instruction {
@@ -75,6 +76,10 @@ struct Instruction {
     struct {
       size_t packed_index;
       size_t arity;
+    };
+    struct {
+      size_t true_offset;
+      size_t false_offset;
     };
   };
 
@@ -127,8 +132,10 @@ struct VirtualMachine {
 
     void PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func);
     size_t PopFrame();
-    VMObject Invoke(VMFunction func, std::vector<VMObject> args);
+    void InvokeGlobal(const VMFunction& func, const std::vector<VMObject>& args);
     void Run();
+
+    VMObject Invoke(const VMFunction& func, const std::vector<VMObject>& args);
 
     VirtualMachine() :
       functions(), frames(), stack(),
