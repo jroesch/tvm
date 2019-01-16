@@ -5,7 +5,7 @@
  */
 
 #include <tvm/relay/expr_functor.h>
-#include <tvm/relay/runtime/runtime.h>
+#include <tvm/relay/vm/vm.h>
 #include <tvm/relay/interpreter.h>
 #include "../backend/compile_engine.h"
 

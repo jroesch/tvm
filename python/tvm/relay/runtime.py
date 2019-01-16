@@ -2,6 +2,9 @@
 """The interface of expr function exposed from C++."""
 from tvm._ffi.function import _init_api
 from ..relay import ir_pass
+from ..relay.backend.interpreter import TensorValue
+
+import numpy as np
 
 _init_api("relay._runtime", __name__)
 
@@ -12,6 +15,13 @@ def optimize(expr, mod=None):
     ck_fused = ir_pass.infer_type(fused_expr, mod=mod)
     return ck_fused
 
-def test_vm(expr, args):
+def test_vm(expr, *args):
+    cargs = []
+    for arg in args:
+        if isinstance(arg, np.ndarray):
+            cargs.append(TensorValue(arg))
+        else:
+            assert False
+
     expr = optimize(expr)
-    return _testeval(expr, args)
+    return _testeval(expr, carg)

@@ -56,13 +56,13 @@ inline NDArray ToNDArray(const VMObject& obj) {
 enum struct Opcode {
   Push,
   Ret,
+  Invoke,
   InvokePacked,
   AllocTensor,
   If,
 };
 
 struct Instruction {
-  // TODO(@jroesch): Not a great representation, used for first version.
   struct TensorInfo {
       int64_t* shape;
       size_t ndim;
