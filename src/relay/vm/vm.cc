@@ -88,6 +88,14 @@ Instruction If(size_t true_branch, size_t false_branch) {
   return instr;
 }
 
+
+Instruction Invoke(size_t func_index) {
+  Instruction instr;
+  instr.op = Opcode::Invoke;
+  instr.func_index = func_index;
+  return instr;
+}
+
 void InstructionPrint(std::ostream& os, const Instruction& instr) {
   switch (instr.op) {
     case Opcode::Push: {
@@ -134,6 +142,8 @@ void VMFunctionPrint(const VMFunction& vm_func) {
   }
 }
 
+using GlobalMap = std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual>;
+
 struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     std::vector<Instruction> instructions;
     std::unordered_map<Var, size_t, NodeHash, NodeEqual> var_map;
@@ -141,10 +151,11 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     bool seen_func;
     CompileEngine engine;
     std::vector<LoweredFunc> lowered_funcs;
+    GlobalMap* gmap;
 
-    VMCompiler() :
+    VMCompiler(GlobalMap* gmap) :
       instructions(), var_map(), stack_index(0),
-      seen_func(false), engine(CompileEngine::Global()) {}
+      seen_func(false), engine(CompileEngine::Global()), gmap(gmap)  {}
 
     inline void Emit(const Instruction& instr) {
       instructions.push_back(instr);
@@ -155,6 +166,13 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto it = this->var_map.find(var);
       CHECK(it != this->var_map.end());
       this->instructions.push_back(Push(it->second));
+    }
+
+    void VisitExpr_(const GlobalVarNode* gvar) {
+      auto global = GetRef<GlobalVar>(gvar);
+      auto it = this->gmap->find(global);
+      CHECK(it != this->gmap->end());
+      Emit(Invoke(it->second));
     }
 
     void VisitExpr_(const IfNode* if_node) {
@@ -173,22 +191,11 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
     }
 
-    void VisitExpr_(const CallNode* call_node) {
-      auto func_node = call_node->op.as<FunctionNode>();
-      CHECK(func_node);
-
-      std::cout << "Pushing Arguments on to stack" << std::endl;
-      // First generate instructions to populate stack with arguments.
-      std::cout << call_node->args << std::endl;
-      for (auto arg : call_node->args) {
-        this->VisitExpr(arg);
-      }
-
+    void EmitInvokePrimitive(const Function& func, const Type& ret_type) {
       std::cout << "Allocating space for return value" << std::endl;
       // Allocate space for the return tensor.
-      Type rtype = call_node->checked_type();
-      std::cout << "Return type: " << rtype << std::endl;
-      const TensorTypeNode* ttype = rtype.as<TensorTypeNode>();
+      std::cout << "Return type: " << ret_type << std::endl;
+      const TensorTypeNode* ttype = ret_type.as<TensorTypeNode>();
       CHECK(ttype);
 
       std::vector<int64_t> shapes;
@@ -204,18 +211,37 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
       std::cout << "Emit invoke" << std::endl;
       // Next generate the invoke instruction.
-      CHECK(func_node->IsPrimitive());
+      CHECK(func->IsPrimitive());
       auto target = Target::create("llvm");
-      auto key = CCacheKeyNode::make(GetRef<Function>(func_node), target);
+      auto key = CCacheKeyNode::make(func, target);
       auto cfunc = engine->Lower(key);
       // TODO: support lowered funcs for multiple targets
       CHECK(cfunc->funcs.size() == 1);
       auto op_index = this->lowered_funcs.size();
       this->lowered_funcs.push_back(cfunc->funcs[0]);
       // TODO(@jroesch): this doesn't support tuples right now.
-      size_t arity = func_node->params.size() + 1;
+      size_t arity = func->params.size() + 1;
       CHECK(arity < 10);
       Emit(InvokePacked(op_index, arity));
+    }
+
+    void VisitExpr_(const CallNode* call_node) {
+      // First generate instructions to populate stack with arguments.
+      std::cout << call_node->args << std::endl;
+      for (auto arg : call_node->args) {
+        this->VisitExpr(arg);
+      }
+
+      if (auto func_node = call_node->op.as<FunctionNode>()) {
+        CHECK(func_node->IsPrimitive());
+        EmitInvokePrimitive(
+          GetRef<Function>(func_node),
+          call_node->checked_type());
+      } else if (auto global_node = call_node->op.as<GlobalVarNode>()) {
+        LOG(FATAL) << "global";
+      } else {
+        LOG(FATAL) << "unsupported case in vm compiler: " << call_node->op;
+      }
     }
 
     void VisitExpr_(const FunctionNode* func_node) {
@@ -250,9 +276,10 @@ void PopulatePackedFuncMap(
   }
 }
 
-CompiledFunc CompileFunc(const Function& func) {
+
+CompiledFunc CompileFunc(GlobalMap* gmap, const Function& func) {
   size_t params = func->params.size();
-  VMCompiler compiler;
+  VMCompiler compiler(gmap);
   compiler.VisitExpr(func);
   compiler.instructions.push_back(Ret());
   VMFunction vm_func = VMFunction(params, compiler.instructions);
@@ -263,10 +290,25 @@ VirtualMachine CompileModule(const Module& mod) {
   VirtualMachine vm;
   std::vector<LoweredFunc> lowered_funcs;
 
+  GlobalMap gmap;
+
+
+  // First we populate global map.
+  size_t global_index = 0;
+  for (auto named_func : mod->functions) {
+    auto gvar = named_func.first;
+    gmap.insert({ gvar, global_index });
+    global_index += 1;
+  }
+
+  // Next we get ready by allocating space for
+  // the VMFunctions.
+  vm.functions.resize(mod->functions.size());
+
   for (auto named_func : mod->functions) {
     auto gvar = named_func.first;
     auto func = named_func.second;
-    auto cfunc = CompileFunc(func);
+    auto cfunc = CompileFunc(&gmap, func);
     auto lfuncs = cfunc.first;
     auto vm_func = cfunc.second;
 
@@ -275,7 +317,7 @@ VirtualMachine CompileModule(const Module& mod) {
       lfuncs.begin(),
       lfuncs.end());
 
-    vm.functions.push_back(vm_func);
+    vm.functions[gmap[gvar]] = vm_func;
   }
 
   PopulatePackedFuncMap(lowered_funcs, &vm.packed_funcs);

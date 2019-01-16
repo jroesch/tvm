@@ -848,7 +848,7 @@ class FuseMutator : private ExprMutator {
 };
 
 
-Expr FuseOps(const Expr& expr, int fuse_opt_level) {
+Expr FuseOps(const Expr& expr, int fuse_opt_level, const Module& module) {
   // First we convert all chains of fusable ops into
   // abstracted functions which we mark as primtive
   // then we convert these primtive functions into
@@ -858,7 +858,7 @@ Expr FuseOps(const Expr& expr, int fuse_opt_level) {
 
 TVM_REGISTER_API("relay._ir_pass.FuseOps")
 .set_body([](TVMArgs args, TVMRetValue *ret) {
-    *ret = FuseOps(args[0], args[1]);
+    *ret = FuseOps(args[0], args[1], args[2]);
 });
 }  // namespace relay
 }  // namespace tvm

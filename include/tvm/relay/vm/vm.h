@@ -102,6 +102,7 @@ struct VMFunction {
   std::vector<Instruction> instructions;
   VMFunction(size_t params, std::vector<Instruction> instructions)
     : params(params), instructions(instructions) {}
+  VMFunction() {}
 };
 
 void VMFunctionPrint(const VMFunction& vm_func);
@@ -128,6 +129,8 @@ struct VirtualMachine {
     std::vector<VMFunction> functions;
     std::vector<VMFrame> frames;
     std::vector<VMObject> stack;
+    std::vector<VMObject> constants;
+
     size_t func_index;
     const Instruction* code;
     size_t pc;
