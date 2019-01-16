@@ -140,3 +140,7 @@ class Module(RelayNode):
         tvm.TVMError if we cannot find corresponding global type var.
         """
         return _module.Module_GetGlobalTypeVar(self, name)
+
+ @staticmethod
+    def from_expr(expr):
+        return _module.Module_FromExpr(expr)

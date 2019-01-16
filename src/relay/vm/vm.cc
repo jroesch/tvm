@@ -37,6 +37,9 @@ Instruction::Instruction(const Instruction& instr) {
       this->true_offset = instr.true_offset;
       this->false_offset = instr.false_offset;
       return;
+    case Opcode::Invoke:
+      this->func_index = instr.func_index;
+      return;
   }
 }
 
@@ -115,6 +118,10 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     case Opcode::If: {
       os << "if "
          << instr.true_offset << " "
+         << instr.false_offset;
+    }
+    case Opcode::Invoke: {
+      os << "invoke "
          << instr.false_offset;
     }
   }
@@ -222,27 +229,56 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 };
 
-VirtualMachine CompileFunc(const Function& func) {
-  size_t params = func->params.size();
-  VMCompiler compiler;
-  compiler.VisitExpr(func);
-  compiler.instructions.push_back(Ret());
-  auto main_func = VMFunction(params, compiler.instructions);
+using CompiledFunc = std::pair<std::vector<LoweredFunc>, VMFunction>;
+
+void PopulatePackedFuncMap(
+  const std::vector<LoweredFunc>& lowered_funcs,
+  std::vector<PackedFunc>* packed_funcs) {
   runtime::Module mod;
-  VirtualMachine vm;
-  if (compiler.lowered_funcs.size() > 0) {
+  if (lowered_funcs.size() > 0) {
+    // TODO(@jroesch): we need to read target from build config
     Target target = Target::create("llvm");
     if (const auto* f = runtime::Registry::Get("relay.backend.build")) {
-      mod = (*f)(tvm::Array<LoweredFunc>(compiler.lowered_funcs.begin(), compiler.lowered_funcs.end()), target);
+      mod = (*f)(tvm::Array<LoweredFunc>(lowered_funcs.begin(), lowered_funcs.end()), target);
     } else {
       LOG(FATAL) << "relay.backend.build is not registered";
     }
     CHECK(mod.operator->());
-    for (auto lfunc : compiler.lowered_funcs) {
-      vm.packed_funcs.push_back(mod.GetFunction(lfunc->name));
+    for (auto lfunc : lowered_funcs) {
+      packed_funcs->push_back(mod.GetFunction(lfunc->name));
     }
   }
-  vm.functions.push_back(main_func);
+}
+
+CompiledFunc CompileFunc(const Function& func) {
+  size_t params = func->params.size();
+  VMCompiler compiler;
+  compiler.VisitExpr(func);
+  compiler.instructions.push_back(Ret());
+  VMFunction vm_func = VMFunction(params, compiler.instructions);
+  return { compiler.lowered_funcs, vm_func };
+}
+
+VirtualMachine CompileModule(const Module& mod) {
+  VirtualMachine vm;
+  std::vector<LoweredFunc> lowered_funcs;
+
+  for (auto named_func : mod->functions) {
+    auto gvar = named_func.first;
+    auto func = named_func.second;
+    auto cfunc = CompileFunc(func);
+    auto lfuncs = cfunc.first;
+    auto vm_func = cfunc.second;
+
+    lowered_funcs.insert(
+      lowered_funcs.end(),
+      lfuncs.begin(),
+      lfuncs.end());
+
+    vm.functions.push_back(vm_func);
+  }
+
+  PopulatePackedFuncMap(lowered_funcs, &vm.packed_funcs);
 
   return vm;
 }
@@ -335,6 +371,9 @@ void VirtualMachine::Run() {
     std::cout << std::endl;
     std::cout << "Stack Size: " << stack.size() << std::endl;
     switch (instr.op) {
+      case Opcode::Invoke: {
+        LOG(FATAL) << "false";
+      }
       case Opcode::InvokePacked: {
         auto start_stack = stack.size();
         const auto& func = packed_funcs[instr.packed_index];
@@ -409,10 +448,21 @@ void VirtualMachine::Run() {
 
 TVM_REGISTER_API("relay._runtime._testeval")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
-    Function to_compile = args[0];
+    NodeRef to_compile = args[0];
+
+    Module module;
+    if (to_compile.as<FunctionNode>()) {
+      Function to_compile = args[0];
+      module = ModuleNode::FromExpr(to_compile);
+    } else if (to_compile.as<ModuleNode>()) {
+      module = args[0];
+    } else {
+      LOG(FATAL) << "expected function or module";
+    }
+
     tvm::Array<Value> vargs = args[1];
 
-    VirtualMachine vm = CompileFunc(to_compile);
+    VirtualMachine vm = CompileModule(module);
     VMFunctionPrint(vm.functions[0]);
     std::cout << "Before convert" << std::endl;
 

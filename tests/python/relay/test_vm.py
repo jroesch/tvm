@@ -1,7 +1,7 @@
 import tvm
 import numpy as np
 from tvm import relay
-from tvm.relay.runtime import test_vm
+from tvm.relay.vm import test_vm
 from tvm.relay.scope_builder import ScopeBuilder
 
 def test_id():
@@ -69,7 +69,7 @@ def test_simple_loop():
     func = relay.Function([i], sb.get(), ret_type=relay.TensorType([], 'int32'))
     mod[sum_up] = func
     i_data = np.array(10, dtype='int32')
-    test_vm(sum_up, i_data)
+    test_vm(sum_up, i_data, mod=mod)
 
 
 # def test_loop():
@@ -91,9 +91,9 @@ def test_simple_loop():
 #     check_eval(sum_up, [i_data, accum_data], sum(range(1, 11)), mod=mod)
 
 if __name__ == "__main__":
-    test_id()
-    test_op()
-    test_cond()
-    test_simple_if()
+    # test_id()
+    # test_op()
+    # test_cond()
+    # test_simple_if()
     test_simple_loop()
 

@@ -26,7 +26,7 @@ Module ModuleNode::make(tvm::Map<GlobalVar, Function> global_funcs,
     n->global_var_map_.Set(kv.first->name_hint, kv.first);
   }
 
-  n->entry_func = GlobalVarNode::make("main");
+  auto main = GlobalVarNode::make("main");
 
   for (const auto& kv : n->type_definitions) {
     // set global typevar map
@@ -218,6 +218,10 @@ TVM_REGISTER_API("relay._module.Module_LookupDef_str")
     *ret = mod->LookupDef(var_name);
   });
 
+TVM_REGISTER_API("relay._module.Module_FromExpr")
+.set_body([](TVMArgs args, TVMRetValue *ret) {
+    *ret = ModuleNode::FromExpr(args[0]);
+  });
 TVM_REGISTER_API("relay._module.Module_Update")
 .set_body([](TVMArgs args, TVMRetValue *ret) {
     Module mod = args[0];

@@ -81,6 +81,9 @@ struct Instruction {
       size_t true_offset;
       size_t false_offset;
     };
+    struct {
+      size_t func_index;
+    };
   };
 
   Instruction();
@@ -142,7 +145,7 @@ struct VirtualMachine {
       func_index(0), code(nullptr), pc(0), bp(0) {}
 };
 
-VirtualMachine CompileFunc(const Function& func);
+VirtualMachine CompileModule(const Module& mod);
 
 }  // namespace vm
 }  // namespace relay
