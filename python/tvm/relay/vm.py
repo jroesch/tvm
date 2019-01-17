@@ -18,6 +18,8 @@ def optimize(expr, mod=None):
     return ck_fused
 
 def eval_vm(expr, *args, mod=None):
+    assert isinstance(expr, Function)
+
     cargs = []
     for arg in args:
         if isinstance(arg, np.ndarray):
@@ -25,10 +27,9 @@ def eval_vm(expr, *args, mod=None):
         else:
             assert False
 
+
     if mod is None:
         mod = Module.from_expr(expr)
-    else:
-        expr = Function([], expr)
 
     main = mod.get_global_var('main')
     expr = optimize(expr, mod)

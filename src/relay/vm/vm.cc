@@ -440,7 +440,11 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<VMOb
     stack.push_back(arg);
   }
   PushFrame(func.params, this->pc + 1, func);
-  CHECK(stack_start + func.params + 1 == stack.size());
+  CHECK(stack_start + func.params + 1 == stack.size())
+    << "stack_start= " << stack_start
+    << "func.params= " << func.params
+    << "stack.size()= " << stack.size();
+
   code = func.instructions.data();
   pc = 0;
   bp = stack.size() - func.params;
@@ -585,7 +589,9 @@ TVM_REGISTER_API("relay._runtime._testeval")
     tvm::Array<Value> vargs = args[1];
 
     VirtualMachine vm = CompileModule(module);
+    std::cout << "--------------------------" << std::endl;
     VMFunctionPrint(vm.functions[0]);
+    std::cout << "--------------------------" << std::endl;
     std::cout << "Before convert" << std::endl;
 
     std::vector<VMObject> vm_args;
