@@ -60,6 +60,7 @@ enum struct Opcode {
   InvokePacked,
   AllocTensor,
   If,
+  LoadConst,
 };
 
 struct Instruction {
@@ -83,6 +84,9 @@ struct Instruction {
     };
     struct {
       size_t func_index;
+    };
+    struct {
+      size_t const_index;
     };
   };
 

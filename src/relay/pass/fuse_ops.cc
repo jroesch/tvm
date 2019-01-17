@@ -743,6 +743,7 @@ class FuseMutator : private ExprMutator {
   std::unordered_map<const Node*, GraphPartitioner::Group*> gmap_;
   /* \brief Internal group information map. */
   std::unordered_map<GraphPartitioner::Group*, GroupInfo> ginfo_;
+
   // Skip primitive function.
   Expr VisitExpr_(const FunctionNode* fn_node) {
     if (fn_node->IsPrimitive()) {
@@ -751,6 +752,7 @@ class FuseMutator : private ExprMutator {
       return ExprMutator::VisitExpr_(fn_node);
     }
   }
+
   // Transform calls.
   Expr VisitExpr_(const CallNode* call) {
     static const Op& stop_fusion = Op::Get("annotation.stop_fusion");
@@ -847,13 +849,46 @@ class FuseMutator : private ExprMutator {
   }
 };
 
+// Temporary solution, should be handled by implementing a "FunctionPass"
+// which applies fusion to each function.
+struct GlobalVarLiveness : ExprVisitor {
+  Module module;
+  std::set<GlobalVar> visited;
+
+  GlobalVarLiveness(const Module& mod) : module(mod), visited() {}
+
+  void VisitExpr_(const GlobalVarNode* gvar_node) {
+    auto gvar = GetRef<GlobalVar>(gvar_node);
+    if (visited.find(gvar) == visited.end()) {
+      visited.insert(gvar);
+      this->VisitExpr(this->module->Lookup(gvar));
+    }
+  }
+};
+
+std::set<GlobalVar> LiveGlobals(const Module& mod, const Expr& expr) {
+  auto gvl = GlobalVarLiveness(mod);
+  // gvl.VisitExpr(mod->entry_func);
+  gvl.VisitExpr(expr);
+  return gvl.visited;
+}
 
 Expr FuseOps(const Expr& expr, int fuse_opt_level, const Module& module) {
   // First we convert all chains of fusable ops into
   // abstracted functions which we mark as primtive
   // then we convert these primtive functions into
   // new operators.
-  return FuseMutator().Transform(expr, fuse_opt_level);
+  if (!module.defined()) {
+    return FuseMutator().Transform(expr, fuse_opt_level);
+  } else {
+    auto lgvs = LiveGlobals(module, expr);
+    for (auto lv : lgvs) {
+      auto body = module->Lookup(lv);
+      auto e = FuseMutator().Transform(body, fuse_opt_level);
+      module->Add(lv, Downcast<Function>(e), true);
+    }
+    return FuseMutator().Transform(expr, fuse_opt_level);
+  }
 }
 
 TVM_REGISTER_API("relay._ir_pass.FuseOps")

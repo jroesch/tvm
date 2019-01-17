@@ -40,6 +40,9 @@ Instruction::Instruction(const Instruction& instr) {
     case Opcode::Invoke:
       this->func_index = instr.func_index;
       return;
+    case Opcode::LoadConst:
+      this->const_index = instr.const_index;
+      return;
   }
 }
 
@@ -96,6 +99,13 @@ Instruction Invoke(size_t func_index) {
   return instr;
 }
 
+Instruction LoadConst(size_t const_index) {
+  Instruction instr;
+  instr.op = Opcode::LoadConst;
+  instr.const_index = const_index;
+  return instr;
+}
+
 void InstructionPrint(std::ostream& os, const Instruction& instr) {
   switch (instr.op) {
     case Opcode::Push: {
@@ -127,10 +137,17 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
       os << "if "
          << instr.true_offset << " "
          << instr.false_offset;
+      break;
     }
     case Opcode::Invoke: {
       os << "invoke "
          << instr.false_offset;
+      break;
+    }
+    case Opcode::LoadConst: {
+      os << "load_const "
+         << instr.const_index;
+      break;
     }
   }
 }
@@ -142,7 +159,49 @@ void VMFunctionPrint(const VMFunction& vm_func) {
   }
 }
 
+
 using GlobalMap = std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual>;
+using ConstMap = std::unordered_map<Constant, size_t, NodeHash, NodeEqual>;
+
+struct VMCompilerContext {
+  GlobalMap global_map;
+  ConstMap const_map;
+};
+
+// Compute the constant pool, i.e a mapping from Constant node to constant index.
+struct ConstantPool : ExprVisitor {
+  std::set<GlobalVar> visited;
+  Module module;
+  ConstMap const_map;
+  size_t index;
+
+  ConstantPool(const Module& mod) :
+    module(mod), const_map(), index(0) {}
+
+  void VisitExpr_(const GlobalVarNode* var_node) {
+    auto gvar = GetRef<GlobalVar>(var_node);
+    if (visited.find(gvar) == visited.end()) {
+
+      visited.insert(gvar);
+      this->VisitExpr(this->module->Lookup(gvar));
+    }
+  }
+
+  void VisitExpr_(const ConstantNode* const_node) {
+    auto konst = GetRef<Constant>(const_node);
+    auto it = this->const_map.find(konst);
+    if (it == this->const_map.end()) {
+      this->const_map.insert({ konst, index++ });
+    }
+  }
+};
+
+ConstMap LayoutConstantPool(const Module& module) {
+  auto cp = ConstantPool(module);
+  cp.VisitExpr(module->entry_func);
+  return cp.const_map;
+}
+
 
 struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     std::vector<Instruction> instructions;
@@ -151,27 +210,34 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     bool seen_func;
     CompileEngine engine;
     std::vector<LoweredFunc> lowered_funcs;
-    GlobalMap* gmap;
+    VMCompilerContext* context;
 
-    VMCompiler(GlobalMap* gmap) :
+    VMCompiler(VMCompilerContext* context) :
       instructions(), var_map(), stack_index(0),
-      seen_func(false), engine(CompileEngine::Global()), gmap(gmap)  {}
+      seen_func(false), engine(CompileEngine::Global()), context(context)  {}
 
     inline void Emit(const Instruction& instr) {
       instructions.push_back(instr);
+    }
+
+    void VisitExpr_(const ConstantNode* const_node) {
+      auto rconst = GetRef<Constant>(const_node);
+      auto it = this->context->const_map.find(rconst);
+      CHECK(it != this->context->const_map.end());
+      Emit(LoadConst(it->second));
     }
 
     void VisitExpr_(const VarNode* var_node) {
       auto var = GetRef<Var>(var_node);
       auto it = this->var_map.find(var);
       CHECK(it != this->var_map.end());
-      this->instructions.push_back(Push(it->second));
+      Emit(Push(it->second));
     }
 
     void VisitExpr_(const GlobalVarNode* gvar) {
       auto global = GetRef<GlobalVar>(gvar);
-      auto it = this->gmap->find(global);
-      CHECK(it != this->gmap->end());
+      auto it = this->context->global_map.find(global);
+      CHECK(it != this->context->global_map.end());
       Emit(Invoke(it->second));
     }
 
@@ -237,7 +303,10 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           GetRef<Function>(func_node),
           call_node->checked_type());
       } else if (auto global_node = call_node->op.as<GlobalVarNode>()) {
-        LOG(FATAL) << "global";
+        auto global = GetRef<GlobalVar>(global_node);
+        auto it = this->context->global_map.find(global);
+        CHECK(it != this->context->global_map.end());
+        Emit(Invoke(it->second));
       } else {
         LOG(FATAL) << "unsupported case in vm compiler: " << call_node->op;
       }
@@ -276,9 +345,9 @@ void PopulatePackedFuncMap(
 }
 
 
-CompiledFunc CompileFunc(GlobalMap* gmap, const Function& func) {
+CompiledFunc CompileFunc(VMCompilerContext* context, const Function& func) {
   size_t params = func->params.size();
-  VMCompiler compiler(gmap);
+  VMCompiler compiler(context);
   std::cout << "Compiling: " << func << std::endl;
   compiler.VisitExpr(func);
   compiler.instructions.push_back(Ret());
@@ -290,25 +359,33 @@ VirtualMachine CompileModule(const Module& mod) {
   VirtualMachine vm;
   std::vector<LoweredFunc> lowered_funcs;
 
-  GlobalMap gmap;
+  VMCompilerContext context;
 
 
   // First we populate global map.
   size_t global_index = 0;
   for (auto named_func : mod->functions) {
     auto gvar = named_func.first;
-    gmap.insert({ gvar, global_index });
+    context.global_map.insert({ gvar, global_index });
     global_index += 1;
   }
 
+  // Next we populate constant map.
+  context.const_map = LayoutConstantPool(mod);
+
   // Next we get ready by allocating space for
-  // the VMFunctions.
+  // the global state.
   vm.functions.resize(mod->functions.size());
+  vm.constants.resize(context.const_map.size());
+
+  for (auto pair : context.const_map) {
+    vm.constants[pair.second] = VMTensor(pair.first->data);
+  }
 
   for (auto named_func : mod->functions) {
     auto gvar = named_func.first;
     auto func = named_func.second;
-    auto cfunc = CompileFunc(&gmap, func);
+    auto cfunc = CompileFunc(&context, func);
     auto lfuncs = cfunc.first;
     auto vm_func = cfunc.second;
 
@@ -317,7 +394,7 @@ VirtualMachine CompileModule(const Module& mod) {
       lfuncs.begin(),
       lfuncs.end());
 
-    vm.functions[gmap[gvar]] = vm_func;
+    vm.functions[context.global_map[gvar]] = vm_func;
   }
 
   PopulatePackedFuncMap(lowered_funcs, &vm.packed_funcs);
@@ -413,6 +490,9 @@ void VirtualMachine::Run() {
     std::cout << std::endl;
     std::cout << "Stack Size: " << stack.size() << std::endl;
     switch (instr.op) {
+      case Opcode::LoadConst: {
+        LOG(FATAL) << "load_const";
+      }
       case Opcode::Invoke: {
         LOG(FATAL) << "false";
       }

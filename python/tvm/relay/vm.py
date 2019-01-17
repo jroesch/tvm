@@ -13,7 +13,7 @@ _init_api("relay._runtime", __name__)
 def optimize(expr, mod=None):
    # TODO: We need to move this optimization code into the optimizer/pass manager
     ck_expr = ir_pass.infer_type(expr, mod=mod)
-    fused_expr = ir_pass.fuse_ops(ck_expr)
+    fused_expr = ir_pass.fuse_ops(ck_expr, mod=mod)
     ck_fused = ir_pass.infer_type(fused_expr, mod=mod)
     return ck_fused
 
