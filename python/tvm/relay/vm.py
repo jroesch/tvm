@@ -4,7 +4,8 @@ from tvm._ffi.function import _init_api
 from ..relay import ir_pass
 from ..relay.backend.interpreter import TensorValue
 from ..relay.module import Module
-from ..relay.expr import GlobalVar, Function
+from ..relay.expr import GlobalVar, Function, var
+from ..relay.ty import FuncType
 
 import numpy as np
 
@@ -17,7 +18,25 @@ def optimize(expr, mod=None):
     ck_fused = ir_pass.infer_type(fused_expr, mod=mod)
     return ck_fused
 
+def eta_expand(expr, mod):
+    if isinstance(expr, GlobalVar):
+        ck_type = mod[expr].checked_type
+    else:
+        expr = ir_pass.infer_type(expr, mod)
+        ck_type = expr.checked_type
+
+    assert isinstance(ck_type, FuncType)
+    eta_args = []
+    for arg_type in ck_type.arg_types:
+        eta_args.append(var('a', type_annotation=arg_type))
+
+    return Function(eta_args, expr)
+
+
 def eval_vm(expr, *args, mod=None):
+    if isinstance(expr, GlobalVar):
+        expr = eta_expand(expr, mod)
+
     assert isinstance(expr, Function)
 
     cargs = []
