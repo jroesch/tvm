@@ -188,7 +188,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto false_offset = after_true - after_cond;
       this->instructions[after_cond].true_offset = true_offset;
       this->instructions[after_cond].false_offset = false_offset;
-
     }
 
     void EmitInvokePrimitive(const Function& func, const Type& ret_type) {
@@ -245,7 +244,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     void VisitExpr_(const FunctionNode* func_node) {
-      CHECK(!seen_func);
+      CHECK(!seen_func) << GetRef<Function>(func_node);
       this->seen_func = true;
       for (auto param : func_node->params) {
         var_map.insert({ param, this->stack_index++ });
@@ -280,6 +279,7 @@ void PopulatePackedFuncMap(
 CompiledFunc CompileFunc(GlobalMap* gmap, const Function& func) {
   size_t params = func->params.size();
   VMCompiler compiler(gmap);
+  std::cout << "Compiling: " << func << std::endl;
   compiler.VisitExpr(func);
   compiler.instructions.push_back(Ret());
   VMFunction vm_func = VMFunction(params, compiler.instructions);

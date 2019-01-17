@@ -17,7 +17,7 @@ def optimize(expr, mod=None):
     ck_fused = ir_pass.infer_type(fused_expr, mod=mod)
     return ck_fused
 
-def test_vm(expr, *args, mod=None):
+def eval_vm(expr, *args, mod=None):
     cargs = []
     for arg in args:
         if isinstance(arg, np.ndarray):
@@ -27,10 +27,12 @@ def test_vm(expr, *args, mod=None):
 
     if mod is None:
         mod = Module.from_expr(expr)
+    else:
+        expr = Function([], expr)
 
-    expr = optimize(expr, mod)
     main = mod.get_global_var('main')
+    expr = optimize(expr, mod)
 
-    mod[main] = Function([], expr)
-    import pdb; pdb.set_trace()
+    mod[main] = expr
+
     return _testeval(mod, cargs)
