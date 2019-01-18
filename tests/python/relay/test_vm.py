@@ -1,7 +1,7 @@
 import tvm
 import numpy as np
 from tvm import relay
-from tvm.relay.vm import eval_vm
+from tvm.relay.vm import eval_vm, eta_expand
 from tvm.relay.scope_builder import ScopeBuilder
 
 def test_id():
@@ -64,7 +64,9 @@ def test_simple_call():
     func = relay.Function([i], sb.get(), ret_type=relay.TensorType([], 'int32'))
     mod[sum_up] = func
     i_data = np.array(0, dtype='int32')
-    result = eval_vm(sum_up, i_data, mod=mod)
+    # Refactor this bit
+    mod[mod.entry_func] = relay.Function([], sum_up)
+    result = eval_vm(mod, i_data)
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
 def test_count_loop():
@@ -81,7 +83,8 @@ def test_count_loop():
     func = relay.Function([i], sb.get(), ret_type=relay.TensorType([], 'int32'))
     mod[sum_up] = func
     i_data = np.array(0, dtype='int32')
-    result = eval_vm(sum_up, i_data, mod=mod)
+    mod[mod.entry_func] = relay.Function([], sum_up)
+    result = eval_vm(mod, i_data)
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
 def test_sum_loop():
@@ -100,22 +103,25 @@ def test_sum_loop():
     mod[sum_up] = func
     i_data = np.array(10, dtype='int32')
     accum_data = np.array(0, dtype='int32')
-    result = eval_vm(sum_up, i_data, accum_data, mod=mod)
+    mod[mod.entry_func] = relay.Function([], sum_up)
+    result = eval_vm(mod, i_data, accum_data)
     tvm.testing.assert_allclose(result.asnumpy(), sum(range(1, 11)))
 
 def test_tuple_fst():
-    ttype = relay.TupleType([relay.TensorType(1,), relay.TensorType(10,)])
+    ttype = relay.TupleType([relay.TensorType((1,)), relay.TensorType((10,))])
     tup = relay.var('tup', type_annotation=ttype)
     f = relay.Function([tup], relay.TupleGetItem(tup, 0))
-    i_data = np.array(0, dtype='int32')
-    result = eval_vm(sum_up, i_data, mod=mod)
+    i_data = np.random.rand(1).astype('float32')
+    j_data = np.random.rand(10).astype('float32')
+    result = eval_vm(f, (i_data, j_data))
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
 if __name__ == "__main__":
-    test_id()
-    test_op()
-    test_cond()
-    test_simple_if()
-    test_simple_call()
-    test_count_loop()
-    test_sum_loop()
+    # test_id()
+    # test_op()
+    # test_cond()
+    # test_simple_if()
+    # test_simple_call()
+    # test_count_loop()
+    # test_sum_loop()
+    test_tuple_fst()

@@ -2,9 +2,9 @@
 """The interface of expr function exposed from C++."""
 from tvm._ffi.function import _init_api
 from ..relay import ir_pass
-from ..relay.backend.interpreter import TensorValue
+from ..relay.backend.interpreter import TensorValue, TupleValue
 from ..relay.module import Module
-from ..relay.expr import GlobalVar, Function, var, Call
+from ..relay.expr import GlobalVar, Function, var, Call, Expr
 from ..relay.ty import FuncType
 
 import numpy as np
@@ -32,27 +32,38 @@ def eta_expand(expr, mod):
 
     return Function(eta_args, Call(expr, eta_args))
 
+def _convert(arg, cargs):
+    if isinstance(arg, np.ndarray):
+        cargs.append(TensorValue(arg))
+    elif isinstance(arg, tuple):
+        field_args = []
+        for field in arg:
+            _convert(field, field_args)
+        cargs.append(TupleValue(*field_args))
+    else:
+        raise "unsupported type"
 
-def eval_vm(expr, *args, mod=None):
-    if isinstance(expr, GlobalVar):
-        expr = eta_expand(expr, mod)
-
-    assert isinstance(expr, Function)
-
+def convert(args):
     cargs = []
     for arg in args:
-        if isinstance(arg, np.ndarray):
-            cargs.append(TensorValue(arg))
-        else:
-            assert False
+        _convert(arg, cargs)
+    return cargs
 
+def eval_vm(expr_or_mod, *args):
+    if isinstance(expr_or_mod, Expr):
+        mod = Module.from_expr(expr_or_mod)
+    else:
+        mod = expr_or_mod
 
-    if mod is None:
-        mod = Module.from_expr(expr)
+    main_func = mod[mod.entry_func]
 
-    main = mod.get_global_var('main')
-    expr = optimize(expr, mod)
+    if len(main_func.params) == 0 and isinstance(main_func.body, GlobalVar):
+        main_func = eta_expand(main_func.body, mod)
 
-    mod[main] = expr
+    assert isinstance(main_func, Function)
+    main_func = optimize(mod[mod.entry_func], mod)
+    mod[mod.entry_func] = main_func
 
+    cargs = convert(list(args))
+    import pdb; pdb.set_trace()
     return _evaluate_vm(mod, cargs)
