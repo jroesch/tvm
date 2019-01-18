@@ -103,6 +103,14 @@ def test_sum_loop():
     result = eval_vm(sum_up, i_data, accum_data, mod=mod)
     tvm.testing.assert_allclose(result.asnumpy(), sum(range(1, 11)))
 
+def test_tuple_fst():
+    ttype = relay.TupleType([relay.TensorType(1,), relay.TensorType(10,)])
+    tup = relay.var('tup', type_annotation=ttype)
+    f = relay.Function([tup], relay.TupleGetItem(tup, 0))
+    i_data = np.array(0, dtype='int32')
+    result = eval_vm(sum_up, i_data, mod=mod)
+    tvm.testing.assert_allclose(result.asnumpy(), i_data)
+
 if __name__ == "__main__":
     test_id()
     test_op()
@@ -111,4 +119,3 @@ if __name__ == "__main__":
     test_simple_call()
     test_count_loop()
     test_sum_loop()
-

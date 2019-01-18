@@ -30,19 +30,33 @@ enum struct VMObjectTag {
 struct VMObjectCell {
   VMObjectTag tag;
   VMObjectCell(VMObjectTag tag) : tag(tag) {}
+  VMObjectCell() {}
   virtual ~VMObjectCell() {}
 };
 
 struct VMTensorCell : public VMObjectCell {
   tvm::runtime::NDArray data;
-  VMTensorCell(const tvm::runtime::NDArray data)
+  VMTensorCell(const tvm::runtime::NDArray& data)
     : VMObjectCell(VMObjectTag::kTensor), data(data) {}
 };
 
 using VMObject = std::shared_ptr<VMObjectCell>;
 
+struct VMTupleCell : public VMObjectCell {
+  std::vector<VMObject> fields;
+
+  VMTupleCell(const std::vector<VMObject>& fields)
+    : VMObjectCell(VMObjectTag::kDatatype), fields(fields) {}
+};
+
+
 VMObject VMTensor(const tvm::runtime::NDArray& data) {
   auto ptr = std::make_shared<VMTensorCell>(data);
+  return std::dynamic_pointer_cast<VMObjectCell>(ptr);
+}
+
+VMObject VMTuple(const std::vector<VMObject>& fields) {
+  auto ptr = std::make_shared<VMTupleCell>(fields);
   return std::dynamic_pointer_cast<VMObjectCell>(ptr);
 }
 
@@ -142,10 +156,14 @@ struct VirtualMachine {
     std::vector<VMObject> stack;
     std::vector<VMObject> constants;
 
+    // Frame State
     size_t func_index;
     const Instruction* code;
     size_t pc;
     size_t bp;
+
+    // Interface debugging.
+    std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual> global_map;
 
     void PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func);
     size_t PopFrame();
@@ -153,10 +171,13 @@ struct VirtualMachine {
     void Run();
 
     VMObject Invoke(const VMFunction& func, const std::vector<VMObject>& args);
+    VMObject Invoke(const GlobalVar& global, const std::vector<VMObject>& args);
 
     VirtualMachine() :
       functions(), frames(), stack(),
       func_index(0), code(nullptr), pc(0), bp(0) {}
+
+    static VirtualMachine FromModule(const Module& module);
 };
 
 VirtualMachine CompileModule(const Module& mod);

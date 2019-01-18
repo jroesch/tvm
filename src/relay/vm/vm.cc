@@ -478,6 +478,11 @@ VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObje
   return stack.back();
 }
 
+VMObject VirtualMachine::Invoke(const GlobalVar& global, const std::vector<VMObject>& args) {
+  auto func_index = this->global_map[global];
+  return Invoke(this->functions[func_index], args);
+}
+
 void InvokePacked(const PackedFunc& func, size_t arg_count, std::vector<VMObject>& stack) {
   CHECK(arg_count <= stack.size());
 
@@ -602,7 +607,56 @@ void VirtualMachine::Run() {
   }
 }
 
-TVM_REGISTER_API("relay._runtime._testeval")
+VirtualMachine VirtualMachine::FromModule(const Module& module) {
+  return CompileModule(module);
+}
+
+/*! \brief Convert from an array of relay.Value into VM compatible objects.
+ */
+void ConvertArgsToVM(tvm::Array<Value> args, std::vector<VMObject>& out) {
+  for (auto arg : args) {
+    if (auto tensor = arg.as<TensorValueNode>()) {
+      out.push_back(VMTensor(tensor->data));
+    } else if (auto tuple = arg.as<TupleValueNode>()) {
+      std::vector<VMObject> fields;
+      for (auto field : tuple->fields) {
+        ConvertArgsToVM({field}, fields);
+      }
+      out.push_back(VMTuple(fields));
+    } else {
+      LOG(FATAL) << "unknown case: " << arg;
+    }
+  }
+}
+
+/*! \brief Convert from an array of relay.Value into VM compatible objects.
+ */
+std::vector<VMObject> ConvertArgsToVM(tvm::Array<Value> args) {
+  std::vector<VMObject> out;
+  ConvertArgsToVM(args, out);
+  return out;
+}
+
+Value ConvertVMToValue(VMObject obj) {
+  switch (obj->tag) {
+    case VMObjectTag::kTensor: {
+      return TensorValueNode::make(ToNDArray(obj));
+    }
+    default:
+      LOG(FATAL) << "unsupported return value";
+      return Value();
+  }
+}
+
+VMObject EvaluateModule(const Module& module, const std::vector<VMObject>& vm_args) {
+  VirtualMachine vm = VirtualMachine::FromModule(module);
+  std::cout << "--------------------------" << std::endl;
+  VMFunctionPrint(vm.functions[0]);
+  std::cout << "--------------------------" << std::endl;
+  return vm.Invoke(module->entry_func, vm_args);
+}
+
+TVM_REGISTER_API("relay._vm._evaluate_vm")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
     NodeRef to_compile = args[0];
 
@@ -616,24 +670,9 @@ TVM_REGISTER_API("relay._runtime._testeval")
       LOG(FATAL) << "expected function or module";
     }
 
-    tvm::Array<Value> vargs = args[1];
-
-    VirtualMachine vm = CompileModule(module);
-    std::cout << "--------------------------" << std::endl;
-    VMFunctionPrint(vm.functions[0]);
-    std::cout << "--------------------------" << std::endl;
-
-    std::vector<VMObject> vm_args;
-    for (auto arg : vargs) {
-      auto tvarg = Downcast<TensorValue>(arg);
-      vm_args.push_back(VMTensor(tvarg->data));
-    }
-
-    VMObject result = vm.Invoke(vm.functions[0], vm_args);
-
-    // Directly returning ndarray causes segfault.
-    NDArray nd = ToNDArray(result);
-    *ret = TensorValueNode::make(nd);
+    std::vector<VMObject> vm_args = ConvertArgsToVM(args[1]);
+    auto result = EvaluateModule(module, vm_args);
+    *ret = ConvertVMToValue(result);
 });
 
 

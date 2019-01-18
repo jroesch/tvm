@@ -9,7 +9,7 @@ from ..relay.ty import FuncType
 
 import numpy as np
 
-_init_api("relay._runtime", __name__)
+_init_api("relay._vm", __name__)
 
 def optimize(expr, mod=None):
    # TODO: We need to move this optimization code into the optimizer/pass manager
@@ -55,4 +55,4 @@ def eval_vm(expr, *args, mod=None):
 
     mod[main] = expr
 
-    return _testeval(mod, cargs)
+    return _evaluate_vm(mod, cargs)
