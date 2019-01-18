@@ -4,7 +4,7 @@ from tvm._ffi.function import _init_api
 from ..relay import ir_pass
 from ..relay.backend.interpreter import TensorValue
 from ..relay.module import Module
-from ..relay.expr import GlobalVar, Function, var
+from ..relay.expr import GlobalVar, Function, var, Call
 from ..relay.ty import FuncType
 
 import numpy as np
@@ -30,7 +30,7 @@ def eta_expand(expr, mod):
     for arg_type in ck_type.arg_types:
         eta_args.append(var('a', type_annotation=arg_type))
 
-    return Function(eta_args, expr)
+    return Function(eta_args, Call(expr, eta_args))
 
 
 def eval_vm(expr, *args, mod=None):

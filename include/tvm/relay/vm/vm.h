@@ -61,6 +61,7 @@ enum struct Opcode {
   AllocTensor,
   If,
   LoadConst,
+  Goto,
 };
 
 struct Instruction {
@@ -88,6 +89,9 @@ struct Instruction {
     struct {
       size_t const_index;
     };
+    struct {
+      size_t pc_offset;
+    };
   };
 
   Instruction();
@@ -102,10 +106,13 @@ Instruction AllocTensor(std::vector<int64_t> shape, std::string dtype);
 
 
 struct VMFunction {
+  std::string name;
   size_t params;
   std::vector<Instruction> instructions;
-  VMFunction(size_t params, std::vector<Instruction> instructions)
-    : params(params), instructions(instructions) {}
+
+  VMFunction(std::string name, size_t params, std::vector<Instruction> instructions)
+    : name(name), params(params), instructions(instructions) {}
+
   VMFunction() {}
 };
 

@@ -43,6 +43,9 @@ Instruction::Instruction(const Instruction& instr) {
     case Opcode::LoadConst:
       this->const_index = instr.const_index;
       return;
+    case Opcode::Goto:
+      this->pc_offset = instr.pc_offset;
+      return;
   }
 }
 
@@ -91,6 +94,12 @@ Instruction If(size_t true_branch, size_t false_branch) {
   return instr;
 }
 
+Instruction Goto(size_t pc_offset) {
+  Instruction instr;
+  instr.op = Opcode::Goto;
+  instr.pc_offset = pc_offset;
+  return instr;
+}
 
 Instruction Invoke(size_t func_index) {
   Instruction instr;
@@ -141,7 +150,7 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     }
     case Opcode::Invoke: {
       os << "invoke "
-         << instr.false_offset;
+         << instr.func_index;
       break;
     }
     case Opcode::LoadConst: {
@@ -149,10 +158,16 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
          << instr.const_index;
       break;
     }
+    case Opcode::Goto: {
+      os << "goto "
+         << instr.pc_offset;
+      break;
+    }
   }
 }
 
 void VMFunctionPrint(const VMFunction& vm_func) {
+  std::cout << vm_func.name << ": " << std::endl;
   for (auto instr : vm_func.instructions) {
     InstructionPrint(std::cout, instr);
     std::cout << ";" << std::endl;
@@ -238,6 +253,8 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto global = GetRef<GlobalVar>(gvar);
       auto it = this->context->global_map.find(global);
       CHECK(it != this->context->global_map.end());
+      CHECK(it->second < 5);
+      std::cout << "Invoke with: " << it->second;
       Emit(Invoke(it->second));
     }
 
@@ -246,25 +263,27 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto after_cond = this->instructions.size();
       this->Emit(If(0, 0));
       this->VisitExpr(if_node->true_branch);
+      Emit(Goto(0));
       auto after_true = this->instructions.size();
       this->VisitExpr(if_node->false_branch);
+      auto after_false = this->instructions.size();
+
       // After we emit the true body, and false body,
-      // we patch up the if instruction.
+      // we patch up the if instruction, and goto.
       auto true_offset = 1;
       auto false_offset = after_true - after_cond;
       this->instructions[after_cond].true_offset = true_offset;
       this->instructions[after_cond].false_offset = false_offset;
+      // Patch the Goto.
+      this->instructions[after_true - 1].pc_offset = after_false - after_true;
     }
 
     void EmitInvokePrimitive(const Function& func, const Type& ret_type) {
-      std::cout << "Allocating space for return value" << std::endl;
       // Allocate space for the return tensor.
-      std::cout << "Return type: " << ret_type << std::endl;
       const TensorTypeNode* ttype = ret_type.as<TensorTypeNode>();
       CHECK(ttype);
 
       std::vector<int64_t> shapes;
-      std::cout << "generating shape" << std::endl;
       for (auto sh : ttype->shape) {
         shapes.push_back(Downcast<tvm::Integer>(sh)->value);
       }
@@ -274,7 +293,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       Instruction alloc = AllocTensor(shapes, dltype);
       Emit(alloc);
 
-      std::cout << "Emit invoke" << std::endl;
       // Next generate the invoke instruction.
       CHECK(func->IsPrimitive());
       auto target = Target::create("llvm");
@@ -292,7 +310,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
     void VisitExpr_(const CallNode* call_node) {
       // First generate instructions to populate stack with arguments.
-      std::cout << call_node->args << std::endl;
       for (auto arg : call_node->args) {
         this->VisitExpr(arg);
       }
@@ -345,13 +362,13 @@ void PopulatePackedFuncMap(
 }
 
 
-CompiledFunc CompileFunc(VMCompilerContext* context, const Function& func) {
+CompiledFunc CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
   size_t params = func->params.size();
   VMCompiler compiler(context);
-  std::cout << "Compiling: " << func << std::endl;
+  // std::cout << "Compiling: " << func << std::endl;
   compiler.VisitExpr(func);
   compiler.instructions.push_back(Ret());
-  VMFunction vm_func = VMFunction(params, compiler.instructions);
+  VMFunction vm_func = VMFunction(var->name_hint, params, compiler.instructions);
   return { compiler.lowered_funcs, vm_func };
 }
 
@@ -366,8 +383,7 @@ VirtualMachine CompileModule(const Module& mod) {
   size_t global_index = 0;
   for (auto named_func : mod->functions) {
     auto gvar = named_func.first;
-    context.global_map.insert({ gvar, global_index });
-    global_index += 1;
+    context.global_map.insert({ gvar, global_index++ });
   }
 
   // Next we populate constant map.
@@ -385,7 +401,7 @@ VirtualMachine CompileModule(const Module& mod) {
   for (auto named_func : mod->functions) {
     auto gvar = named_func.first;
     auto func = named_func.second;
-    auto cfunc = CompileFunc(&context, func);
+    auto cfunc = CompileFunc(&context, gvar, func);
     auto lfuncs = cfunc.first;
     auto vm_func = cfunc.second;
 
@@ -394,7 +410,14 @@ VirtualMachine CompileModule(const Module& mod) {
       lfuncs.begin(),
       lfuncs.end());
 
-    vm.functions[context.global_map[gvar]] = vm_func;
+    size_t func_index = context.global_map.at(gvar);
+    CHECK(func_index < vm.functions.size());
+    vm.functions[func_index] = vm_func;
+  }
+
+  for (auto vm_func : vm.functions) {
+    std::cout << "Function: " << std::endl;
+    VMFunctionPrint(vm_func);
   }
 
   PopulatePackedFuncMap(lowered_funcs, &vm.packed_funcs);
@@ -405,7 +428,6 @@ VirtualMachine CompileModule(const Module& mod) {
 void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func) {
   auto frame = VMFrame(ret_pc, bp, func_index, arg_count, code);
   frames.push_back(frame);
-  std::cout << "initial stack size" << stack.size() << std::endl;
 }
 
 size_t VirtualMachine::PopFrame() {
@@ -434,27 +456,25 @@ size_t VirtualMachine::PopFrame() {
 }
 
 void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<VMObject>& args) {
-  auto stack_start = stack.size();
-  stack.push_back(VMObject());
   for (auto arg : args) {
     stack.push_back(arg);
   }
+
   PushFrame(func.params, this->pc + 1, func);
-  CHECK(stack_start + func.params + 1 == stack.size())
-    << "stack_start= " << stack_start
-    << "func.params= " << func.params
-    << "stack.size()= " << stack.size();
+  // CHECK(stack_start + func.params == stack.size())
+  //   << "stack_start= " << stack_start
+  //   << "func.params= " << func.params
+  //   << "stack.size()= " << stack.size();
 
   code = func.instructions.data();
   pc = 0;
   bp = stack.size() - func.params;
-  std::cout << "final stack size: " << stack.size() << "bp: " << bp << std::endl;
 }
 
 VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObject>& args) {
   InvokeGlobal(func, args);
   Run();
-  std::cout << "final stack size: " << stack.size() << "bp: " << bp << std::endl;
+  // std::cout << "final stack size: " << stack.size() << "bp: " << bp << std::endl;
   return stack.back();
 }
 
@@ -465,11 +485,8 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, std::vector<VMObject
   std::vector<int> codes(arg_count);
   runtime::TVMArgsSetter setter(values.data(), codes.data());
 
-  std::cout << "InvokePacked: " << stack.size() << std::endl;
-
   auto stack_start = stack.size() - arg_count;
   for (size_t i = 0; i < arg_count; i++) {
-    std::cout << "Getting: " << stack_start + i << std::endl;
     NDArray data = ToNDArray(stack[stack_start + i]);
     setter(i, data);
   }
@@ -482,6 +499,8 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, std::vector<VMObject
   stack.resize(stack.size() - arg_count + 1);
 }
 
+static int trip_counter = 0;
+
 void VirtualMachine::Run() {
   CHECK(this->code);
   this->pc = 0;
@@ -493,25 +512,36 @@ void VirtualMachine::Run() {
     InstructionPrint(std::cout, instr);
     std::cout << std::endl;
     std::cout << "Stack Size: " << stack.size() << std::endl;
+    std::cout << "Frame Size: " << frames.size() << std::endl;
+
     switch (instr.op) {
       case Opcode::LoadConst: {
         LOG(FATAL) << "load_const";
       }
       case Opcode::Invoke: {
-        LOG(FATAL) << "false";
+        CHECK(trip_counter++ < 30);
+        CHECK(this->func_index < this->functions.size());
+        std::cout << "About to invoke: " << std::endl;
+        VMFunctionPrint(this->functions[this->func_index + 1]);
+        InvokeGlobal(this->functions[this->func_index + 1], {});
+        goto main_loop;
       }
       case Opcode::InvokePacked: {
         auto start_stack = stack.size();
         const auto& func = packed_funcs[instr.packed_index];
         const auto& arity = instr.arity;
-        std::cout << "before call" << std::endl;
-        std::cout << this->stack.size() << std::endl;
+        // std::cout << "before call" << std::endl;
+        // std::cout << this->stack.size() << std::endl;
         InvokePacked(func, arity, stack);
         CHECK(start_stack - arity + 1 == stack.size())
           << "start_stack: " << start_stack
           << "end_stack: " << stack.size();
-        std::cout << "after call" << std::endl;
+        // std::cout << "after call" << std::endl;
         pc++;
+        goto main_loop;
+      }
+      case Opcode::Goto: {
+        pc += instr.pc_offset + 1;
         goto main_loop;
       }
       case Opcode::If: {
@@ -592,7 +622,6 @@ TVM_REGISTER_API("relay._runtime._testeval")
     std::cout << "--------------------------" << std::endl;
     VMFunctionPrint(vm.functions[0]);
     std::cout << "--------------------------" << std::endl;
-    std::cout << "Before convert" << std::endl;
 
     std::vector<VMObject> vm_args;
     for (auto arg : vargs) {
@@ -604,7 +633,6 @@ TVM_REGISTER_API("relay._runtime._testeval")
 
     // Directly returning ndarray causes segfault.
     NDArray nd = ToNDArray(result);
-    std::cout << "Getting ND finished";
     *ret = TensorValueNode::make(nd);
 });
 
