@@ -439,7 +439,7 @@ TVM_DLL Expr FoldConstant(const Expr& expr);
  * \param fuse_opt_level Optimization level.
  * \return The optimized expression.
  */
-TVM_DLL Expr FuseOps(const Expr& expr, int fuse_opt_level);
+TVM_DLL Expr FuseOps(const Expr& expr, int fuse_opt_level, const Module& mod);
 
 /*!
  * \brief Apply rewrite rules to rewrite the expr in post DFS order.
