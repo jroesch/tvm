@@ -26,6 +26,7 @@ def eta_expand(expr, mod):
         ck_type = expr.checked_type
 
     assert isinstance(ck_type, FuncType)
+
     eta_args = []
     for arg_type in ck_type.arg_types:
         eta_args.append(var('a', type_annotation=arg_type))

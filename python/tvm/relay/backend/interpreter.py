@@ -256,7 +256,7 @@ class Interpreter(Executor):
         ck_expr = ir_pass.infer_type(wrapped_expr, mod=self.mod)
         simp_expr = ir_pass.simplify_inference(ck_expr)
         ck_simp = ir_pass.infer_type(simp_expr, mod=self.mod)
-        fused_expr = ir_pass.fuse_ops(ck_simp)
+        fused_expr = ir_pass.fuse_ops(ck_simp, 0, mod=self.mod)
         ck_fused = ir_pass.infer_type(fused_expr, mod=self.mod)
         return ck_fused if isinstance(expr, Function) else Call(ck_fused, [])
 

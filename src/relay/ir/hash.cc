@@ -252,6 +252,7 @@ class RelayHashHandler:
     }
 
     for (auto t : call->type_args) {
+      CHECK(t.defined());
       hash = Combine(hash, TypeHash(t));
     }
 

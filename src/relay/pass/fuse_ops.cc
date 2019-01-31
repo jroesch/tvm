@@ -204,6 +204,18 @@ class IndexedForwardGraph::Creator : private ExprVisitor {
   }
 
   void VisitExpr_(const CallNode* call) final {
+    // // The global var case should cause a split in the graph.
+    // if (auto call_node = call->op.as<GlobalVarNode>()) {
+    //   // do not fuse through this call.
+    //   this->Update(call->op, nullptr, kOpaque);
+    //   for (auto arg : call->args) {
+    //     this->Update(arg, nullptr, kOpaque);
+    //   }
+    //   ExprVisitor::VisitExpr_(call);
+    //   this->AddNode(call);
+    //   return;
+    // }
+
     CHECK(graph_.node_map.count(call));
     Node* node = graph_.node_map.at(call);
     static auto fpattern =

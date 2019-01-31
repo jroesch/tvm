@@ -756,7 +756,16 @@ Expr InferType(const Expr& expr, const Module& mod_ref) {
       return func->body;
     }
   } else {
-    auto e = TypeInferencer(mod_ref, mod_ref->entry_func).Infer(expr);
+    auto tmp = mod_ref->GetGlobalVar("temp");
+    Function body;
+    if (auto func_node = expr.as<FunctionNode>()) {
+      body = GetRef<Function>(func_node);
+    } else {
+      body = FunctionNode::make({}, body, Type(), {}, {});
+    }
+    mod_ref->AddUnchecked(tmp, body);
+    auto e = TypeInferencer(mod_ref, tmp).Infer(expr);
+    mod_ref->Remove(tmp);
     CHECK(WellFormed(e));
     auto free_tvars = FreeTypeVars(e, mod_ref);
     CHECK(free_tvars.size() == 0)

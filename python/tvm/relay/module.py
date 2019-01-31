@@ -5,8 +5,26 @@ from .._ffi import base as _base
 from . import _make
 from . import _module
 from . import expr as _expr
-
 from . import ty as _ty
+from . import _ir_pass
+
+# Refactor w/ VM code.
+def eta_expand(expr, mod):
+    if isinstance(expr, _expr.GlobalVar):
+        ck_type = mod[expr].checked_type
+    else:
+        prev = mod[mod.entry_func]
+        mod[mod.entry_func]
+        expr = _ir_pass.infer_type(expr, mod)
+        ck_type = expr.checked_type
+
+    assert isinstance(ck_type, FuncType)
+
+    eta_args = []
+    for arg_type in ck_type.arg_types:
+        eta_args.append(var('a', type_annotation=arg_type))
+
+    return Function(eta_args, Call(expr, eta_args))
 
 @register_relay_node
 class Module(RelayNode):
@@ -61,9 +79,17 @@ class Module(RelayNode):
         return self._add(var, val)
 
     def _add(self, var, val, update=False):
-        if isinstance(val, _expr.Function):
+        if isinstance(val, _expr.Expr):
             if isinstance(var, _base.string_types):
                 var = _expr.GlobalVar(var)
+
+            if not isinstance(val, _expr.Function):
+                if (val, _expr.GlobalVar):
+                    eta_expand(val, self)
+                else:
+                    val = _expr.Function([], val)
+
+
             _make.Module_Add(self, var, val, update)
         else:
             assert isinstance(val, _ty.Type)
