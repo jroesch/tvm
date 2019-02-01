@@ -10,6 +10,7 @@
 #include <vector>
 #include <utility>
 #include "c_runtime_api.h"
+#include "memory_manager.h"
 #include "serializer.h"
 
 namespace tvm {
@@ -149,7 +150,8 @@ class NDArray {
    */
   TVM_DLL static NDArray Empty(std::vector<int64_t> shape,
                                DLDataType dtype,
-                               DLContext ctx);
+                               DLContext ctx,
+                               Allocator* allocator = nullptr);
   /*!
    * \brief Create a NDArray backed by a dlpack tensor.
    *
@@ -291,6 +293,19 @@ class NDArray::Container {
       }
     }
   }
+
+ private:
+  friend class NDArray;
+  friend class RPCWrappedFunc;
+  /*!
+   * \brief The shape container,
+   *  can be used used for shape data.
+   */
+  std::vector<int64_t> shape_;
+  /*! \brief The internal array object */
+  std::atomic<int> ref_counter_{0};
+  /*! \brief Buffer allocated by allocator */
+  Buffer* buffer_;
 };
 
 // implementations of inline functions

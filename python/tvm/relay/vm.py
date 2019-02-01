@@ -50,7 +50,7 @@ def convert(args):
         _convert(arg, cargs)
     return cargs
 
-def eval_vm(expr_or_mod, *args):
+def eval_vm(expr_or_mod, ctx, *args):
     if isinstance(expr_or_mod, Expr):
         mod = Module.from_expr(expr_or_mod)
     else:
@@ -67,4 +67,4 @@ def eval_vm(expr_or_mod, *args):
 
     cargs = convert(list(args))
     import pdb; pdb.set_trace()
-    return _evaluate_vm(mod, cargs)
+    return _evaluate_vm(mod, ctx.device_type, ctx.device_id, cargs)

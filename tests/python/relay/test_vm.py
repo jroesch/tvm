@@ -12,14 +12,14 @@ def test_id():
     x = relay.var('x', shape=(10, 10))
     f = relay.Function([x], x)
     x_data = np.random.rand(10, 10).astype('float64')
-    res = eval_vm(f, x_data)
+    res = eval_vm(f, tvm.cpu(), x_data)
     tvm.testing.assert_allclose(res.asnumpy(), x_data)
 
 def test_op():
     x = relay.var('x', shape=(10, 10))
     f = relay.Function([x], x + x)
     x_data = np.random.rand(10, 10).astype('float32')
-    res = eval_vm(f, x_data)
+    res = eval_vm(f, tvm.cpu(), x_data)
     tvm.testing.assert_allclose(res.asnumpy(), x_data + x_data)
 
 def any(x):
@@ -35,11 +35,11 @@ def test_cond():
     y_data = np.random.rand(10, 10).astype('float32')
 
     # same
-    res = eval_vm(f, x_data, x_data)
+    res = eval_vm(f, tvm.cpu(), x_data, x_data)
     tvm.testing.assert_allclose(res.asnumpy(), True)
 
     # diff
-    res = eval_vm(f, x_data, y_data)
+    res = eval_vm(f, tvm.cpu(), x_data, y_data)
     tvm.testing.assert_allclose(res.asnumpy(), False)
 
 
@@ -52,11 +52,11 @@ def test_simple_if():
     y_data = np.random.rand(10, 10).astype('float32')
 
     # same
-    res = eval_vm(f, x_data, x_data)
+    res = eval_vm(f, tvm.cpu(), x_data, x_data)
     tvm.testing.assert_allclose(res.asnumpy(), x_data)
 
     # diff
-    res = eval_vm(f, x_data, y_data)
+    res = eval_vm(f, tvm.cpu(), x_data, y_data)
     tvm.testing.assert_allclose(res.asnumpy(), y_data)
 
 def test_simple_call():
@@ -70,7 +70,7 @@ def test_simple_call():
     i_data = np.array(0, dtype='int32')
     # Refactor this bit
     mod[mod.entry_func] = relay.Function([], sum_up)
-    result = eval_vm(mod, i_data)
+    result = eval_vm(mod, tvm.cpu(), i_data)
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
 def test_count_loop():
@@ -88,7 +88,7 @@ def test_count_loop():
     mod[sum_up] = func
     i_data = np.array(0, dtype='int32')
     mod[mod.entry_func] = relay.Function([], sum_up)
-    result = eval_vm(mod, i_data)
+    result = eval_vm(mod, tvm.cpu(), i_data)
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
 def test_sum_loop():
@@ -108,7 +108,7 @@ def test_sum_loop():
     i_data = np.array(10, dtype='int32')
     accum_data = np.array(0, dtype='int32')
     mod[mod.entry_func] = relay.Function([], sum_up)
-    result = eval_vm(mod, i_data, accum_data)
+    result = eval_vm(mod, tvm.cpu(), i_data, accum_data)
     tvm.testing.assert_allclose(result.asnumpy(), sum(range(1, 11)))
 
 def test_tuple_fst():
@@ -117,7 +117,7 @@ def test_tuple_fst():
     f = relay.Function([tup], relay.TupleGetItem(tup, 0))
     i_data = np.random.rand(1).astype('float32')
     j_data = np.random.rand(10).astype('float32')
-    result = eval_vm(f, (i_data, j_data))
+    result = eval_vm(f, tvm.cpu(), (i_data, j_data))
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
 def import_mxnet_model(cell_type, input_size, hidden_size, fname, batch=1, seq_len=100):
@@ -149,12 +149,12 @@ def test_rnn():
 #    execute_mxnet_model('gru', 128, 128, "gru_i128_h128")
 
 if __name__ == "__main__":
-    # test_id()
-    # test_op()
-    # test_cond()
-    # test_simple_if()
-    # test_simple_call()
-    # test_count_loop()
-    # test_sum_loop()
+    test_id()
+    test_op()
+    test_cond()
+    test_simple_if()
+    test_simple_call()
+    test_count_loop()
+    test_sum_loop()
     test_rnn()
     test_tuple_fst()

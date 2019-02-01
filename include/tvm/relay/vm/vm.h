@@ -6,8 +6,10 @@
 #ifndef TVM_RELAY_RUNTIME_H_
 #define TVM_RELAY_RUNTIME_H_
 
+#include <vector>
+#include <memory>
 #include <tvm/relay/expr_functor.h>
-#include<vector>
+#include <tvm/runtime/memory_manager.h>
 
 namespace tvm {
 namespace relay {
@@ -161,6 +163,8 @@ struct VirtualMachine {
     const Instruction* code;
     size_t pc;
     size_t bp;
+  
+    std::vector<TVMContext> ctxs;
 
     // Interface debugging.
     std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual> global_map;
@@ -177,7 +181,10 @@ struct VirtualMachine {
       functions(), frames(), stack(),
       func_index(0), code(nullptr), pc(0), bp(0) {}
 
-    static VirtualMachine FromModule(const Module& module);
+    void Init(const std::vector<TVMContext>& ctxs);
+
+    static VirtualMachine FromModule(const Module& module,
+                                     const std::vector<TVMContext>& ctxs);
 };
 
 VirtualMachine CompileModule(const Module& mod);

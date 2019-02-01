@@ -4,13 +4,17 @@
  * \brief Abstract device memory management API
  */
 
+#include <tvm/runtime/memory_manager.h>
 #include <tvm/relay/expr_functor.h>
 #include <tvm/relay/vm/vm.h>
 #include <tvm/relay/interpreter.h>
 #include "../backend/compile_engine.h"
+#include "../../runtime/naive_allocator.h"
 
 #include <vector>
 #include <iostream>
+
+using namespace tvm::runtime;
 
 namespace tvm {
 namespace relay {
@@ -254,7 +258,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto it = this->context->global_map.find(global);
       CHECK(it != this->context->global_map.end());
       CHECK(it->second < 5);
-      std::cout << "Invoke with: " << it->second;
+      std::cout << "Invoke with: " << global->name_hint << "(func idx" << it->second << ")" << std::endl;
       Emit(Invoke(it->second));
     }
 
@@ -474,6 +478,8 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<VMOb
 VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObject>& args) {
   InvokeGlobal(func, args);
   Run();
+  auto alloc = MemoryManager::Global()->GetAllocator(ctxs[0]);
+  std::cout << "Memory used: " << alloc->UsedMemory() << " B\n";
   // std::cout << "final stack size: " << stack.size() << "bp: " << bp << std::endl;
   return stack.back();
 }
@@ -502,6 +508,10 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, std::vector<VMObject
   // and just shrinking the stack.
   stack[stack.size() - arg_count] = stack[stack.size() - 1];
   stack.resize(stack.size() - arg_count + 1);
+}
+
+void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
+  this->ctxs = ctxs;
 }
 
 static int trip_counter = 0;
@@ -573,12 +583,10 @@ void VirtualMachine::Run() {
       }
       case Opcode::AllocTensor: {
         const auto& ti = instr.tensor_info;
-        DLContext ctx;
-        ctx.device_type = DLDeviceType::kDLCPU;
-        ctx.device_id = 0;
         auto shape = std::vector<int64_t>(ti.ndim);
         shape.assign(ti.shape, ti.shape + ti.ndim);
-        auto data = NDArray::Empty(shape, ti.dtype, ctx);
+        auto allocator = MemoryManager::Global()->GetAllocator(ctxs[0]);
+        auto data = NDArray::Empty(shape, ti.dtype, ctxs[0], allocator);
         stack.push_back(VMTensor(data));
         pc++;
         goto main_loop;
@@ -607,8 +615,11 @@ void VirtualMachine::Run() {
   }
 }
 
-VirtualMachine VirtualMachine::FromModule(const Module& module) {
-  return CompileModule(module);
+VirtualMachine VirtualMachine::FromModule(const Module& module,
+                                          const std::vector<TVMContext>& ctxs) {
+  auto vm = CompileModule(module);
+  vm.Init(ctxs);
+  return vm;
 }
 
 /*! \brief Convert from an array of relay.Value into VM compatible objects.
@@ -648,8 +659,9 @@ Value ConvertVMToValue(VMObject obj) {
   }
 }
 
-VMObject EvaluateModule(const Module& module, const std::vector<VMObject>& vm_args) {
-  VirtualMachine vm = VirtualMachine::FromModule(module);
+VMObject EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
+                        const std::vector<VMObject>& vm_args) {
+  VirtualMachine vm = VirtualMachine::FromModule(module, ctxs);
   std::cout << "--------------------------" << std::endl;
   VMFunctionPrint(vm.functions[0]);
   std::cout << "--------------------------" << std::endl;
@@ -659,6 +671,10 @@ VMObject EvaluateModule(const Module& module, const std::vector<VMObject>& vm_ar
 TVM_REGISTER_API("relay._vm._evaluate_vm")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
     NodeRef to_compile = args[0];
+    TVMContext ctx;
+    int dev_type = args[1];
+    ctx.device_type = static_cast<DLDeviceType>(dev_type);
+    ctx.device_id = args[2];
 
     Module module;
     if (to_compile.as<FunctionNode>()) {
@@ -670,8 +686,8 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
       LOG(FATAL) << "expected function or module";
     }
 
-    std::vector<VMObject> vm_args = ConvertArgsToVM(args[1]);
-    auto result = EvaluateModule(module, vm_args);
+    std::vector<VMObject> vm_args = ConvertArgsToVM(args[3]);
+    auto result = EvaluateModule(module, {ctx}, vm_args);
     *ret = ConvertVMToValue(result);
 });
 
