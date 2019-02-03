@@ -270,17 +270,19 @@ class Interpreter :
     return TupleValueNode::make(values);
   }
 
-  // TODO(@jroesch): this doesn't support mutual letrec.
-  Value MakeClosure(const Function& func, const Var& letrec_name = Var()) {
+  // TODO(@jroesch): this doesn't support mututal letrec
+  inline Value MakeClosure(const Function& func, Var letrec_name = Var()) {
     tvm::Map<Var, Value> captured_mod;
     Array<Var> free_vars = FreeVars(func);
 
     for (const auto& var : free_vars) {
       // Evaluate the free var (which could be a function call) if it hasn't
       // shown up in a letting binding that has invoked the function.
-      if (!letrec_name.defined() || letrec_name != var) {
-        captured_mod.Set(var, Eval(var));
+      if (letrec_name.defined() && letrec_name == var) {
+        continue;
       }
+
+      captured_mod.Set(var, Eval(var));
     }
 
     // We must use mutation here to build a self referential closure.
