@@ -257,7 +257,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto global = GetRef<GlobalVar>(gvar);
       auto it = this->context->global_map.find(global);
       CHECK(it != this->context->global_map.end());
-      CHECK(it->second < 5);
       std::cout << "Invoke with: " << global->name_hint << "(func idx" << it->second << ")" << std::endl;
       Emit(Invoke(it->second));
     }
