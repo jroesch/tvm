@@ -761,7 +761,7 @@ Expr InferType(const Expr& expr, const Module& mod_ref) {
     if (auto func_node = expr.as<FunctionNode>()) {
       body = GetRef<Function>(func_node);
     } else {
-      body = FunctionNode::make({}, body, Type(), {}, {});
+      body = FunctionNode::make({}, expr, Type(), {}, {});
     }
     mod_ref->AddUnchecked(tmp, body);
     auto e = TypeInferencer(mod_ref, tmp).Infer(expr);
