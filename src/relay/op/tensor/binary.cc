@@ -26,6 +26,10 @@ RELAY_REGISTER_BINARY_OP("add")
 .describe("Elementwise add with with broadcasting")
 .set_support_level(1)
 .set_attr<FTVMCompute>("FTVMCompute", RELAY_BINARY_COMPUTE(topi::add));
+// .set_attr<FPrimalGradient>("FPrimalGradient",
+// [](const Expr& orig_call, const Expr& output_grad) {
+//   collapse
+// });
 
 // Subtraction
 RELAY_REGISTER_BINARY_OP("subtract")
