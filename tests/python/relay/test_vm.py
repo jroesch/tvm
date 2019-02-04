@@ -120,6 +120,29 @@ def test_tuple_fst():
     result = eval_vm(f, tvm.cpu(), (i_data, j_data))
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
+def test_let():
+    sb = relay.ScopeBuilder()
+    shape = (1,)
+    x = relay.var('x', shape=shape, dtype='float32')
+    x1 = relay.var('x1', shape=shape, dtype='float32')
+
+    """
+    TODO: This does not work since AllocTensor won't get shape right
+    x = relay.var('x', 'float32')
+    x1 = relay.var('x1', 'float32')
+    """
+
+    x1 = sb.let(x1, x)
+    xplusone = x1 + relay.const(42.0, 'float32')
+    sb.ret(xplusone)
+    body = sb.get()
+
+    f = relay.Function([x], body)
+
+    x_data = np.random.rand(1).astype('float32')
+    result = eval_vm(f, tvm.cpu(), x_data)
+    tvm.testing.assert_allclose(result.asnumpy(), x_data + 42.0)
+
 def import_mxnet_model(cell_type, input_size, hidden_size, fname, batch=1, seq_len=100):
     ctx = mx.context.cpu()
     dtype = 'float32'

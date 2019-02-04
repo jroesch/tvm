@@ -253,6 +253,12 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       Emit(Push(it->second));
     }
 
+    void VisitExpr_(const LetNode* let_node) {
+      this->VisitExpr(let_node->value);
+      var_map.insert({ let_node->var, this->stack_index++ });
+      this->VisitExpr(let_node->body);
+    }
+
     void VisitExpr_(const GlobalVarNode* gvar) {
       auto global = GetRef<GlobalVar>(gvar);
       auto it = this->context->global_map.find(global);
