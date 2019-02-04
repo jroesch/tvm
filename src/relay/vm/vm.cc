@@ -372,6 +372,7 @@ void PopulatePackedFuncMap(
 
 
 CompiledFunc CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
+  std::cout << func << std::endl;
   size_t params = func->params.size();
   VMCompiler compiler(context);
   // std::cout << "Compiling: " << func << std::endl;
@@ -519,8 +520,6 @@ void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
   this->ctxs = ctxs;
 }
 
-static int trip_counter = 0;
-
 void VirtualMachine::Run() {
   CHECK(this->code);
   this->pc = 0;
@@ -536,12 +535,11 @@ void VirtualMachine::Run() {
 
     switch (instr.op) {
       case Opcode::LoadConst: {
-        LOG(FATAL) << "load_const";
+        stack.push_back(this->constants[instr.const_index]);
+        pc++;
+        goto main_loop;
       }
       case Opcode::Invoke: {
-        CHECK(trip_counter++ < 30);
-        CHECK(this->func_index < this->functions.size());
-        std::cout << "About to invoke: " << std::endl;
         VMFunctionPrint(this->functions[this->func_index + 1]);
         InvokeGlobal(this->functions[this->func_index + 1], {});
         goto main_loop;

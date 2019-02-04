@@ -2,7 +2,7 @@
 """The interface of expr function exposed from C++."""
 from tvm._ffi.function import _init_api
 from ..relay import ir_pass
-from ..relay.backend.interpreter import TensorValue, TupleValue
+from ..relay.backend.interpreter import TensorValue, TupleValue, Executor
 from ..relay.module import Module
 from ..relay.expr import GlobalVar, Function, var, Call, Expr
 from ..relay.ty import FuncType
@@ -68,3 +68,37 @@ def eval_vm(expr_or_mod, ctx, *args):
     cargs = convert(list(args))
 #    import pdb; pdb.set_trace()
     return _evaluate_vm(mod, ctx.device_type, ctx.device_id, cargs)
+
+class VMExecutor(Executor):
+    """
+    An implementation of the executor interface for
+    the Relay VM.
+
+    Useful interface for experimentation and debugging
+    the VM can also be used directly from the API.
+    supported by `tvm.relay.vm`.
+    """
+
+    """
+    Parameters
+    ----------
+    mod : :py:class:`~tvm.relay.module.Module`
+        The module to support the execution.
+
+    ctx : :py:class:`TVMContext`
+        The runtime context to run the code on.
+
+    target : :py:class:`Target`
+        The target option to build the function.
+    """
+    def __init__(self, mod, ctx, target):
+        self.mod = mod
+        self.ctx = ctx
+        self.target = target
+
+    def _make_executor(self, func):
+        def _vm_wrapper(*args, **kwargs):
+            args = self._convert_args(func, args, kwargs)
+            return eval_vm(func, self.ctx, args)
+        return _vm_wrapper
+
