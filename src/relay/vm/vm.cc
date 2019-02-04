@@ -638,7 +638,7 @@ void ConvertArgsToVM(tvm::Array<Value> args, std::vector<VMObject>& out) {
       for (auto field : tuple->fields) {
         ConvertArgsToVM({field}, fields);
       }
-      out.push_back(VMTuple(fields));
+      out.push_back(VMDatatype(0, fields));
     } else {
       LOG(FATAL) << "unknown case: " << arg;
     }

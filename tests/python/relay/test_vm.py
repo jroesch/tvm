@@ -133,7 +133,7 @@ def test_let_tensor():
 
     f = relay.Function([x], body)
 
-    x_data = np.array(np.random.rand()).astype('float32')
+    x_data = np.random.rand(*shape).astype('float32')
     result = eval_vm(f, tvm.cpu(), x_data)
     tvm.testing.assert_allclose(result.asnumpy(), x_data + 42.0)
 

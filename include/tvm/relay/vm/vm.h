@@ -44,10 +44,11 @@ struct VMTensorCell : public VMObjectCell {
 
 using VMObject = std::shared_ptr<VMObjectCell>;
 
-struct VMTupleCell : public VMObjectCell {
+struct VMDatatypeCell : public VMObjectCell {
+  size_t tag;
   std::vector<VMObject> fields;
 
-  VMTupleCell(const std::vector<VMObject>& fields)
+  VMDatatypeCell(size_t tag, const std::vector<VMObject>& fields)
     : VMObjectCell(VMObjectTag::kDatatype), fields(fields) {}
 };
 
@@ -57,9 +58,13 @@ VMObject VMTensor(const tvm::runtime::NDArray& data) {
   return std::dynamic_pointer_cast<VMObjectCell>(ptr);
 }
 
-VMObject VMTuple(const std::vector<VMObject>& fields) {
-  auto ptr = std::make_shared<VMTupleCell>(fields);
+VMObject VMDatatype(size_t tag, const std::vector<VMObject>& fields) {
+  auto ptr = std::make_shared<VMDatatypeCell>(tag, fields);
   return std::dynamic_pointer_cast<VMObjectCell>(ptr);
+}
+
+VMObject VMTuple(const std::vector<VMObject>& fields) {
+  return VMDatatype(0, fields);
 }
 
 inline NDArray ToNDArray(const VMObject& obj) {
@@ -163,7 +168,7 @@ struct VirtualMachine {
     const Instruction* code;
     size_t pc;
     size_t bp;
-  
+
     std::vector<TVMContext> ctxs;
 
     // Interface debugging.
