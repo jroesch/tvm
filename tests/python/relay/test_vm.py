@@ -120,17 +120,11 @@ def test_tuple_fst():
     result = eval_vm(f, tvm.cpu(), (i_data, j_data))
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
-def test_let():
+def test_let_tensor():
     sb = relay.ScopeBuilder()
     shape = (1,)
     x = relay.var('x', shape=shape, dtype='float32')
     x1 = relay.var('x1', shape=shape, dtype='float32')
-
-    """
-    TODO: This does not work since AllocTensor won't get shape right
-    x = relay.var('x', 'float32')
-    x1 = relay.var('x1', 'float32')
-    """
 
     x1 = sb.let(x1, x)
     xplusone = x1 + relay.const(42.0, 'float32')
@@ -139,7 +133,24 @@ def test_let():
 
     f = relay.Function([x], body)
 
-    x_data = np.random.rand(1).astype('float32')
+    x_data = np.array(np.random.rand()).astype('float32')
+    result = eval_vm(f, tvm.cpu(), x_data)
+    tvm.testing.assert_allclose(result.asnumpy(), x_data + 42.0)
+
+def test_let_scalar():
+    sb = relay.ScopeBuilder()
+
+    x = relay.var('x', 'float32')
+    x1 = relay.var('x1', 'float32')
+
+    x1 = sb.let(x1, x)
+    xplusone = x1 + relay.const(42.0, 'float32')
+    sb.ret(xplusone)
+    body = sb.get()
+
+    f = relay.Function([x], body)
+
+    x_data = np.array(np.random.rand()).astype('float32')
     result = eval_vm(f, tvm.cpu(), x_data)
     tvm.testing.assert_allclose(result.asnumpy(), x_data + 42.0)
 
@@ -149,7 +160,7 @@ def import_mxnet_model(cell_type, input_size, hidden_size, fname, batch=1, seq_l
     if cell_type == 'gru' or cell_type == 'rnn':
         num_states = 1
     elif cell_type == 'lstm':
-        num_states = 2 
+        num_states = 2
     else:
         raise RuntimeError("Unsupported RNN cell type: %s" % cell_type)
     data_names = ['data0']
@@ -179,5 +190,7 @@ if __name__ == "__main__":
     test_simple_call()
     test_count_loop()
     test_sum_loop()
-    test_rnn()
     test_tuple_fst()
+    test_let_scalar()
+    test_let_tensor()
+    test_rnn()
