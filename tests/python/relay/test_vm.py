@@ -115,10 +115,19 @@ def test_tuple_fst():
     ttype = relay.TupleType([relay.TensorType((1,)), relay.TensorType((10,))])
     tup = relay.var('tup', type_annotation=ttype)
     f = relay.Function([tup], relay.TupleGetItem(tup, 0))
-    i_data = np.random.rand(1).astype('float32')
+    i_data = np.random.rand(41).astype('float32')
     j_data = np.random.rand(10).astype('float32')
     result = eval_vm(f, tvm.cpu(), (i_data, j_data))
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
+
+def test_tuple_second():
+    ttype = relay.TupleType([relay.TensorType((1,)), relay.TensorType((10,))])
+    tup = relay.var('tup', type_annotation=ttype)
+    f = relay.Function([tup], relay.TupleGetItem(tup, 1))
+    i_data = np.random.rand(41).astype('float32')
+    j_data = np.random.rand(10).astype('float32')
+    result = eval_vm(f, tvm.cpu(), (i_data, j_data))
+    tvm.testing.assert_allclose(result.asnumpy(), j_data)
 
 def test_let_tensor():
     sb = relay.ScopeBuilder()

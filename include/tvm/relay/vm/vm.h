@@ -80,6 +80,7 @@ enum struct Opcode {
   Invoke,
   InvokePacked,
   AllocTensor,
+  GetField,
   If,
   LoadConst,
   Goto,
@@ -113,6 +114,10 @@ struct Instruction {
     struct {
       size_t pc_offset;
     };
+    struct {
+      size_t object_offset;
+      size_t field_index;
+    };
   };
 
   Instruction();
@@ -124,6 +129,7 @@ Instruction Push(size_t stack_index);
 Instruction Ret();
 Instruction InvokePacked(size_t stack_index);
 Instruction AllocTensor(std::vector<int64_t> shape, std::string dtype);
+Instruction GetField(size_t object_offset, size_t field_index);
 
 
 struct VMFunction {

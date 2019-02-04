@@ -47,6 +47,10 @@ Instruction::Instruction(const Instruction& instr) {
     case Opcode::LoadConst:
       this->const_index = instr.const_index;
       return;
+    case Opcode::GetField:
+      this->object_offset = instr.object_offset;
+      this->field_index = instr.field_index;
+      return;
     case Opcode::Goto:
       this->pc_offset = instr.pc_offset;
       return;
@@ -87,6 +91,14 @@ Instruction AllocTensor(const std::vector<int64_t> shape, DLDataType dtype) {
       reinterpret_cast<const void*>(shape.data()),
       shape.size() * sizeof(int64_t));
   instr.tensor_info.dtype = dtype;
+  return instr;
+}
+
+Instruction GetField(size_t object_offset, size_t field_index) {
+  Instruction instr;
+  instr.op = Opcode::GetField;
+  instr.object_offset = object_offset;
+  instr.field_index = field_index;
   return instr;
 }
 
@@ -160,6 +172,12 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     case Opcode::LoadConst: {
       os << "load_const "
          << instr.const_index;
+      break;
+    }
+    case Opcode::GetField: {
+      os << "get_field "
+         << instr.object_offset << " "
+         << instr.field_index;
       break;
     }
     case Opcode::Goto: {
@@ -257,6 +275,12 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       this->VisitExpr(let_node->value);
       var_map.insert({ let_node->var, this->stack_index++ });
       this->VisitExpr(let_node->body);
+    }
+
+    void VisitExpr_(const TupleGetItemNode* get_node) {
+      auto get = GetRef<TupleGetItem>(get_node);
+      this->VisitExpr(get->tuple);
+      Emit(GetField(this->stack_index++, get->index));
     }
 
     void VisitExpr_(const GlobalVarNode* gvar) {
@@ -558,6 +582,15 @@ void VirtualMachine::Run() {
         pc++;
         goto main_loop;
       }
+      case Opcode::GetField: {
+        auto object = stack[bp + instr.object_offset];
+        CHECK(object->tag == VMObjectTag::kDatatype) << "Object is not data type object";
+        auto tuple = std::dynamic_pointer_cast<VMDatatypeCell>(object);
+        auto field = tuple->fields[instr.field_index];
+        stack.push_back(field);
+        pc++;
+        goto main_loop;
+      }
       case Opcode::Goto: {
         pc += instr.pc_offset + 1;
         goto main_loop;
@@ -655,6 +688,10 @@ Value ConvertVMToValue(VMObject obj) {
   switch (obj->tag) {
     case VMObjectTag::kTensor: {
       return TensorValueNode::make(ToNDArray(obj));
+    }
+    case VMObjectTag::kDatatype: {
+      LOG(FATAL) << "unsupported return value: data type";      
+      return Value();
     }
     default:
       LOG(FATAL) << "unsupported return value";
