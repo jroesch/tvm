@@ -22,7 +22,8 @@ try:
         from ._cy2.core import convert_to_tvm_func
 except IMPORT_EXCEPT:
     # pylint: disable=wrong-import-position
-    from ._ctypes.function import _set_class_function, _set_class_module
+    from ._ctypes.function import _set_class_function, _set_class_module, _set_vm_obj_function
+    from ._ctypes.function import VMObjectBase as _VMObjectBase
     from ._ctypes.function import FunctionBase as _FunctionBase
     from ._ctypes.function import convert_to_tvm_func
 

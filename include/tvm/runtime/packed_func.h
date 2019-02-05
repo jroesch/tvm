@@ -821,6 +821,9 @@ class TVMRetValue : public TVMPODValue_ {
             kNodeHandle, *other.template ptr<NodePtr<Node> >());
         break;
       }
+      case kVMObject: {
+        throw dmlc::Error("here");
+      }
       default: {
         if (other.type_code() < kExtBegin) {
           SwitchToPOD(other.type_code());
@@ -868,6 +871,7 @@ class TVMRetValue : public TVMPODValue_ {
         static_cast<NDArray::Container*>(value_.v_handle)->DecRef();
         break;
       }
+      // case kModuleHandle: delete ptr<relay::vm::VMObject>(); break;
     }
     if (type_code_ > kExtBegin) {
 #if TVM_RUNTIME_HEADER_ONLY
@@ -897,6 +901,7 @@ inline const char* TypeCode2Str(int type_code) {
     case kFuncHandle: return "FunctionHandle";
     case kModuleHandle: return "ModuleHandle";
     case kNDArrayContainer: return "NDArrayContainer";
+    case kVMObject: return "VMObject";
     default: LOG(FATAL) << "unknown type_code="
                         << static_cast<int>(type_code); return "";
   }

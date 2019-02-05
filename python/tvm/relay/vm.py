@@ -1,15 +1,21 @@
 # pylint: disable=no-else-return, unidiomatic-typecheck, undefined-variable
 """The interface of expr function exposed from C++."""
-from tvm._ffi.function import _init_api
+import tvm
+from tvm._ffi.function import _init_api, _VMObjectBase, _set_vm_obj_function
 from ..relay import ir_pass
 from ..relay.backend.interpreter import TensorValue, TupleValue, Executor
 from ..relay.module import Module
 from ..relay.expr import GlobalVar, Function, var, Call, Expr
 from ..relay.ty import FuncType
+from . import _vm
 
 import numpy as np
 
-_init_api("relay._vm", __name__)
+class VMObject(_VMObjectBase):
+    def to_value(self):
+        return _vm._VMToValue(self)
+
+_set_vm_obj_function(VMObject)
 
 def optimize(expr, mod=None):
    # TODO: We need to move this optimization code into the optimizer/pass manager
@@ -35,12 +41,12 @@ def eta_expand(expr, mod):
 
 def _convert(arg, cargs):
     if isinstance(arg, np.ndarray):
-        cargs.append(TensorValue(arg))
+        cargs.append(_vm._Tensor(tvm.nd.array(arg)))
     elif isinstance(arg, tuple):
         field_args = []
         for field in arg:
             _convert(field, field_args)
-        cargs.append(TupleValue(*field_args))
+        cargs.append(_vm.Tuple(*field_args))
     else:
         raise "unsupported type"
 
@@ -67,7 +73,7 @@ def eval_vm(expr_or_mod, ctx, *args):
 
     cargs = convert(list(args))
 #    import pdb; pdb.set_trace()
-    return _evaluate_vm(mod, ctx.device_type, ctx.device_id, cargs)
+    return _vm._evaluate_vm(mod, ctx.device_type, ctx.device_id, *cargs).to_value()
 
 class VMExecutor(Executor):
     """

@@ -10,6 +10,7 @@ from ... import register_func, nd
 from ..base import NodeBase, register_relay_node
 from ..expr import Call, Constant, GlobalVar, Function, const
 from ..scope_builder import ScopeBuilder
+from .. import _vm
 
 class Value(NodeBase):
     """Base class of all values.
@@ -19,6 +20,9 @@ class Value(NodeBase):
     def from_scalar(value, dtype=None):
         """Convert a Python scalar to a Relay scalar."""
         return TensorValue(const(value, dtype).data)
+
+    def to_vm(self):
+        return _vm._ValueToVM(self)
 
 
 @register_relay_node

@@ -748,13 +748,14 @@ void ConvertArgsToVM(tvm::Array<Value> args, std::vector<VMObject>& out) {
 
 /*! \brief Convert from an array of relay.Value into VM compatible objects.
  */
-std::vector<VMObject> ConvertArgsToVM(tvm::Array<Value> args) {
+VMObject ValueToVM(Value value) {
   std::vector<VMObject> out;
-  ConvertArgsToVM(args, out);
-  return out;
+  ConvertArgsToVM({value}, out);
+  CHECK_LT(out.size(), 2);
+  return out[0];
 }
 
-Value ConvertVMToValue(VMObject obj) {
+Value VMToValue(VMObject obj) {
   switch (obj->tag) {
     case VMObjectTag::kTensor: {
       return TensorValueNode::make(ToNDArray(obj));
@@ -778,10 +779,35 @@ VMObject EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs
   return vm.Invoke(module->entry_func, vm_args);
 }
 
+TVM_REGISTER_API("relay._vm._ValueToVM")
+.set_body([](TVMArgs args, TVMRetValue* ret) {
+    *ret = ValueToVM(args[0]);
+});
+
+TVM_REGISTER_API("relay._vm._VMToValue")
+.set_body([](TVMArgs args, TVMRetValue* ret) {
+    *ret = VMToValue(args[0]);
+});
+
 TVM_REGISTER_API("relay._vm._Tensor")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
     *ret = VMTensor(args[0]);
 });
+
+TVM_REGISTER_API("relay._vm._Tuple")
+.set_body([](TVMArgs args, TVMRetValue* ret) {
+  std::vector<VMObject> fields;
+  for (size_t i = 0; i < args.size(); i++) {
+    fields.push_back(args[i]);
+  }
+  *ret = VMTuple(fields);
+});
+
+TVM_REGISTER_API("relay._vm._Datatype")
+.set_body([](TVMArgs args, TVMRetValue* ret) {
+    *ret = VMTensor(args[0]);
+});
+
 
 TVM_REGISTER_API("relay._vm._evaluate_vm")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
@@ -801,9 +827,15 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
       LOG(FATAL) << "expected function or module";
     }
 
-    std::vector<VMObject> vm_args = ConvertArgsToVM(args[3]);
+    std::cout << "About to get args " << std::endl;
+    std::vector<VMObject> vm_args;
+    for (auto i = 3; i < args.size(); i++) {
+      std::cout << "Arg: " << i << std::endl;
+      VMObject obj = args[i];
+      vm_args.push_back(obj);
+    }
     auto result = EvaluateModule(module, {ctx}, vm_args);
-    *ret = ConvertVMToValue(result);
+    *ret = result;
 });
 
 
