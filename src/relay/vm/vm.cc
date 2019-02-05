@@ -47,6 +47,10 @@ Instruction::Instruction(const Instruction& instr) {
     case Opcode::AllocTensor:
       this->tensor_info = instr.tensor_info;
       return;
+    case Opcode::AllocBlock:
+      this->constructor_tag = instr.constructor_tag;
+      this->num_fields = instr.num_fields;
+      return;
     case Opcode::InvokePacked:
       this->packed_index = instr.packed_index;
       this->arity = instr.arity;
@@ -105,6 +109,14 @@ Instruction AllocTensor(const std::vector<int64_t> shape, DLDataType dtype) {
       reinterpret_cast<const void*>(shape.data()),
       shape.size() * sizeof(int64_t));
   instr.tensor_info.dtype = dtype;
+  return instr;
+}
+
+Instruction AllocBlock(size_t tag, size_t num_fields) {
+  Instruction instr;
+  instr.op = Opcode::AllocBlock;
+  instr.constructor_tag = tag;
+  instr.num_fields = num_fields;
   return instr;
 }
 
@@ -172,6 +184,13 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
       os << TVMType2Type(instr.tensor_info.dtype);
       break;
     }
+    case Opcode::AllocBlock: {
+      os << "alloc_block";
+      os << " ";
+      os << instr.constructor_tag << " ";
+      os << instr.num_fields;
+      break;
+    }
     case Opcode::If: {
       os << "if "
          << instr.true_offset << " "
@@ -210,11 +229,12 @@ void VMFunctionPrint(const VMFunction& vm_func) {
   }
 }
 
-
+using TagMap = std::unordered_map<tvm::relay::Constructor, size_t, NodeHash, NodeEqual>;
 using GlobalMap = std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual>;
 using ConstMap = std::unordered_map<Constant, size_t, NodeHash, NodeEqual>;
 
 struct VMCompilerContext {
+  TagMap tag_map;
   GlobalMap global_map;
   ConstMap const_map;
 };
@@ -285,6 +305,11 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       Emit(Push(it->second));
     }
 
+    void VisitExpr_(const MatchNode* match_node) {
+      auto match = GetRef<Match>(match_node);
+      std::cout << "Ignore compiling match node\n";
+    }
+  
     void VisitExpr_(const LetNode* let_node) {
       this->VisitExpr(let_node->value);
       var_map.insert({ let_node->var, this->stack_index++ });
@@ -371,8 +396,24 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         auto it = this->context->global_map.find(global);
         CHECK(it != this->context->global_map.end());
         Emit(Invoke(it->second));
+      } else if (auto constructor_node = call_node->op.as<ConstructorNode>()) {
+        auto constructor = GetRef<Constructor>(constructor_node);
+        auto tag = GetConstructorTag(constructor);
+        Emit(AllocBlock(tag, call_node->args.size()));
       } else {
         LOG(FATAL) << "unsupported case in vm compiler: " << call_node->op;
+      }
+    }
+
+    size_t GetConstructorTag(tvm::relay::Constructor constructor) {
+      auto it = this->context->tag_map.find(constructor);
+      if (it != this->context->tag_map.end()) {
+        return it->second;
+      } else {
+        auto tag = this->context->tag_map.size();
+        this->context->tag_map[constructor] = tag;
+        std::cout << "Tag " << constructor->name_hint << " " << tag << std::endl;
+        return tag;
       }
     }
 
@@ -410,7 +451,7 @@ void PopulatePackedFuncMap(
 
 
 CompiledFunc CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
-  std::cout << func << std::endl;
+//  std::cout << func << std::endl;
   size_t params = func->params.size();
   VMCompiler compiler(context);
   // std::cout << "Compiling: " << func << std::endl;
@@ -449,6 +490,7 @@ VirtualMachine CompileModule(const Module& mod) {
   for (auto named_func : mod->functions) {
     auto gvar = named_func.first;
     auto func = named_func.second;
+    std::cout << "Compiling func " << gvar->name_hint << std::endl;
     auto cfunc = CompileFunc(&context, gvar, func);
     auto lfuncs = cfunc.first;
     auto vm_func = cfunc.second;
@@ -464,11 +506,14 @@ VirtualMachine CompileModule(const Module& mod) {
   }
 
   for (auto vm_func : vm.functions) {
-    std::cout << "Function: " << std::endl;
+    std::cout << "Function: " << vm_func.name << std::endl;
     VMFunctionPrint(vm_func);
+    std::cout << "-------------" << std::endl;    
   }
 
   PopulatePackedFuncMap(lowered_funcs, &vm.packed_funcs);
+
+  vm.global_map = context.global_map;
 
   return vm;
 }
@@ -520,6 +565,7 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<VMOb
 }
 
 VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObject>& args) {
+  std::cout << "Executing function " << func.name << std::endl;
   InvokeGlobal(func, args);
   Run();
   auto alloc = MemoryManager::Global()->GetAllocator(ctxs[0]);
@@ -641,6 +687,16 @@ void VirtualMachine::Run() {
         pc++;
         goto main_loop;
       }
+      case Opcode::AllocBlock: {
+        std::vector<VMObject> fields;
+        for (size_t i = 0; i < instr.num_fields; ++i) {
+          // TODO: is it the correct order or reverse
+          fields.push_back(stack[bp + i]);
+        }
+        stack.push_back(VMDatatype(instr.constructor_tag, fields));
+        pc++;
+        goto main_loop;
+      }
       case Opcode::Push: {
         CHECK(bp + instr.stack_index < stack.size());
         stack.push_back(stack[bp + instr.stack_index]);
@@ -704,7 +760,9 @@ Value ConvertVMToValue(VMObject obj) {
       return TensorValueNode::make(ToNDArray(obj));
     }
     case VMObjectTag::kDatatype: {
-      LOG(FATAL) << "unsupported return value: data type";
+      auto data_type = std::dynamic_pointer_cast<VMDatatypeCell>(obj);
+      LOG(FATAL) << "DataType value (" << data_type->tag << ")";
+      // TODO: wrap the value correctly
       return Value();
     }
     default:
@@ -716,9 +774,7 @@ Value ConvertVMToValue(VMObject obj) {
 VMObject EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
                         const std::vector<VMObject>& vm_args) {
   VirtualMachine vm = VirtualMachine::FromModule(module, ctxs);
-  std::cout << "--------------------------" << std::endl;
-  VMFunctionPrint(vm.functions[0]);
-  std::cout << "--------------------------" << std::endl;
+  std::cout << "Entry function is " << module->entry_func << std::endl;
   return vm.Invoke(module->entry_func, vm_args);
 }
 

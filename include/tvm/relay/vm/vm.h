@@ -57,7 +57,7 @@ struct VMDatatypeCell : public VMObjectCell {
   std::vector<VMObject> fields;
 
   VMDatatypeCell(size_t tag, const std::vector<VMObject>& fields)
-    : VMObjectCell(VMObjectTag::kDatatype), fields(fields) {}
+    : VMObjectCell(VMObjectTag::kDatatype), tag(tag), fields(fields) {}
 };
 
 
@@ -88,6 +88,7 @@ enum struct Opcode {
   Invoke,
   InvokePacked,
   AllocTensor,
+  AllocBlock,
   GetField,
   If,
   LoadConst,
@@ -125,6 +126,10 @@ struct Instruction {
     struct {
       size_t object_offset;
       size_t field_index;
+    };
+    struct {
+      size_t constructor_tag;
+      size_t num_fields;
     };
   };
 

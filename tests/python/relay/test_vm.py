@@ -7,6 +7,7 @@ import numpy as np
 from tvm import relay
 from tvm.relay.vm import eval_vm, eta_expand
 from tvm.relay.scope_builder import ScopeBuilder
+from tvm.relay.prelude import Prelude
 
 def test_id():
     x = relay.var('x', shape=(10, 10))
@@ -128,6 +129,21 @@ def test_tuple_second():
     j_data = np.random.rand(10).astype('float32')
     result = eval_vm(f, tvm.cpu(), (i_data, j_data))
     tvm.testing.assert_allclose(result.asnumpy(), j_data)
+
+def test_list_constructor():
+    mod = relay.Module()
+    p = Prelude(mod)
+
+    nil = p.nil
+    cons = p.cons
+    l = p.l
+
+    f = relay.Function([], nil())
+
+    mod[mod.entry_func] = f
+
+    print("Entry func is {}".format(mod.entry_func))
+    result = eval_vm(mod, tvm.cpu())
 
 def test_let_tensor():
     sb = relay.ScopeBuilder()
