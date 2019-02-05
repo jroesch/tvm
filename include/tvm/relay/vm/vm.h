@@ -42,7 +42,15 @@ struct VMTensorCell : public VMObjectCell {
     : VMObjectCell(VMObjectTag::kTensor), data(data) {}
 };
 
-using VMObject = std::shared_ptr<VMObjectCell>;
+struct VMObject {
+  std::shared_ptr<VMObjectCell> ptr;
+  VMObject(std::shared_ptr<VMObjectCell> ptr) : ptr(ptr) {}
+  VMObject() : ptr() {}
+  VMObject(const VMObject& obj) : ptr(obj.ptr) {}
+  VMObjectCell* operator->() {
+    return this->ptr.operator->();
+  }
+};
 
 struct VMDatatypeCell : public VMObjectCell {
   size_t tag;
@@ -53,24 +61,24 @@ struct VMDatatypeCell : public VMObjectCell {
 };
 
 
-VMObject VMTensor(const tvm::runtime::NDArray& data) {
+inline VMObject VMTensor(const tvm::runtime::NDArray& data) {
   auto ptr = std::make_shared<VMTensorCell>(data);
   return std::dynamic_pointer_cast<VMObjectCell>(ptr);
 }
 
-VMObject VMDatatype(size_t tag, const std::vector<VMObject>& fields) {
+inline VMObject VMDatatype(size_t tag, const std::vector<VMObject>& fields) {
   auto ptr = std::make_shared<VMDatatypeCell>(tag, fields);
   return std::dynamic_pointer_cast<VMObjectCell>(ptr);
 }
 
-VMObject VMTuple(const std::vector<VMObject>& fields) {
+inline VMObject VMTuple(const std::vector<VMObject>& fields) {
   return VMDatatype(0, fields);
 }
 
 inline NDArray ToNDArray(const VMObject& obj) {
-  CHECK(obj.get());
-  CHECK(obj->tag == VMObjectTag::kTensor);
-  std::shared_ptr<VMTensorCell> o = std::dynamic_pointer_cast<VMTensorCell>(obj);
+  CHECK(obj.ptr.get());
+  CHECK(obj.ptr->tag == VMObjectTag::kTensor);
+  std::shared_ptr<VMTensorCell> o = std::dynamic_pointer_cast<VMTensorCell>(obj.ptr);
   return o->data;
 }
 

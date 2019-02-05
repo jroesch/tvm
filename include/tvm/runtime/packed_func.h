@@ -30,6 +30,7 @@ struct Type;
 struct Expr;
 }
 
+
 // Whether use TVM runtime in header only mode.
 #ifndef TVM_RUNTIME_HEADER_ONLY
 #define TVM_RUNTIME_HEADER_ONLY 0
@@ -38,6 +39,12 @@ struct Expr;
 namespace tvm {
 // forward declarations
 class Integer;
+
+namespace relay {
+namespace vm {
+  struct VMObject;
+}
+}
 
 namespace runtime {
 // forward declarations
@@ -582,6 +589,7 @@ class TVMArgValue : public TVMPODValue_ {
   inline operator tvm::Integer() const;
   // get internal node ptr, if it is node
   inline NodePtr<Node>& node_sptr();
+  operator relay::vm::VMObject() const;
 };
 
 /*!
@@ -715,6 +723,9 @@ class TVMRetValue : public TVMPODValue_ {
     other.data_ = nullptr;
     return *this;
   }
+
+  TVMRetValue& operator=(relay::vm::VMObject other);
+
   TVMRetValue& operator=(PackedFunc f) {
     this->SwitchToClass(kFuncHandle, f);
     return *this;

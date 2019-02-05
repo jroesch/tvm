@@ -17,8 +17,22 @@
 using namespace tvm::runtime;
 
 namespace tvm {
+
+// Packed Function extensions.
+TVMRetValue& runtime::TVMRetValue::operator=(relay::vm::VMObject other) {
+  this->SwitchToClass(kVMObject, other);
+  return *this;
+}
+
+runtime::TVMArgValue::operator relay::vm::VMObject() const {
+  if (type_code_ == kNull) return relay::vm::VMObject(nullptr);
+  TVM_CHECK_TYPE_CODE(type_code_, kVMObject);
+  return *ptr<relay::vm::VMObject>();
+}
+
 namespace relay {
 namespace vm {
+
 
 Instruction::Instruction() {}
 
@@ -585,7 +599,7 @@ void VirtualMachine::Run() {
       case Opcode::GetField: {
         auto object = stack[bp + instr.object_offset];
         CHECK(object->tag == VMObjectTag::kDatatype) << "Object is not data type object";
-        auto tuple = std::dynamic_pointer_cast<VMDatatypeCell>(object);
+        const std::shared_ptr<VMDatatypeCell>& tuple = std::dynamic_pointer_cast<VMDatatypeCell>(object.ptr);
         auto field = tuple->fields[instr.field_index];
         stack.push_back(field);
         pc++;
@@ -690,7 +704,7 @@ Value ConvertVMToValue(VMObject obj) {
       return TensorValueNode::make(ToNDArray(obj));
     }
     case VMObjectTag::kDatatype: {
-      LOG(FATAL) << "unsupported return value: data type";      
+      LOG(FATAL) << "unsupported return value: data type";
       return Value();
     }
     default:
@@ -707,6 +721,11 @@ VMObject EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs
   std::cout << "--------------------------" << std::endl;
   return vm.Invoke(module->entry_func, vm_args);
 }
+
+TVM_REGISTER_API("relay._vm._Tensor")
+.set_body([](TVMArgs args, TVMRetValue* ret) {
+    *ret = VMTensor(args[0]);
+});
 
 TVM_REGISTER_API("relay._vm._evaluate_vm")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
