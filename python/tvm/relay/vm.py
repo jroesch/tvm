@@ -46,7 +46,7 @@ def _convert(arg, cargs):
         field_args = []
         for field in arg:
             _convert(field, field_args)
-        cargs.append(_vm.Tuple(*field_args))
+        cargs.append(_vm._Tuple(*field_args))
     else:
         raise "unsupported type"
 
