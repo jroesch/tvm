@@ -47,7 +47,7 @@ Instruction::Instruction(const Instruction& instr) {
     case Opcode::AllocTensor:
       this->tensor_info = instr.tensor_info;
       return;
-    case Opcode::AllocBlock:
+    case Opcode::AllocDatatype:
       this->constructor_tag = instr.constructor_tag;
       this->num_fields = instr.num_fields;
       return;
@@ -112,9 +112,9 @@ Instruction AllocTensor(const std::vector<int64_t> shape, DLDataType dtype) {
   return instr;
 }
 
-Instruction AllocBlock(size_t tag, size_t num_fields) {
+Instruction AllocDatatype(size_t tag, size_t num_fields) {
   Instruction instr;
-  instr.op = Opcode::AllocBlock;
+  instr.op = Opcode::AllocDatatype;
   instr.constructor_tag = tag;
   instr.num_fields = num_fields;
   return instr;
@@ -184,7 +184,7 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
       os << TVMType2Type(instr.tensor_info.dtype);
       break;
     }
-    case Opcode::AllocBlock: {
+    case Opcode::AllocDatatype: {
       os << "alloc_block";
       os << " ";
       os << instr.constructor_tag << " ";
@@ -399,7 +399,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       } else if (auto constructor_node = call_node->op.as<ConstructorNode>()) {
         auto constructor = GetRef<Constructor>(constructor_node);
         auto tag = GetConstructorTag(constructor);
-        Emit(AllocBlock(tag, call_node->args.size()));
+        Emit(AllocDatatype(tag, call_node->args.size()));
       } else {
         LOG(FATAL) << "unsupported case in vm compiler: " << call_node->op;
       }
@@ -687,11 +687,11 @@ void VirtualMachine::Run() {
         pc++;
         goto main_loop;
       }
-      case Opcode::AllocBlock: {
+      case Opcode::AllocDatatype: {
         std::vector<VMObject> fields;
+        size_t stack_size = stack.size();
         for (size_t i = 0; i < instr.num_fields; ++i) {
-          // TODO: is it the correct order or reverse
-          fields.push_back(stack[bp + i]);
+          fields.push_back(stack[stack_size - instr.num_fields + i]);
         }
         stack.push_back(VMDatatype(instr.constructor_tag, fields));
         pc++;

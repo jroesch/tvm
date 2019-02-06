@@ -88,7 +88,7 @@ enum struct Opcode {
   Invoke,
   InvokePacked,
   AllocTensor,
-  AllocBlock,
+  AllocDatatype,
   GetField,
   If,
   LoadConst,
