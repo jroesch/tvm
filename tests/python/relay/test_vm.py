@@ -138,12 +138,13 @@ def test_list_constructor():
     cons = p.cons
     l = p.l
 
-    f = relay.Function([], nil())
+    f = relay.Function([], cons(nil(), nil()))
 
     mod[mod.entry_func] = f
 
     print("Entry func is {}".format(mod.entry_func))
     result = eval_vm(mod, tvm.cpu())
+    print("Result is {}".format(result))
 
 def test_let_tensor():
     sb = relay.ScopeBuilder()

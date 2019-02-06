@@ -192,6 +192,7 @@ struct VirtualMachine {
 
     // Interface debugging.
     std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual> global_map;
+    std::unordered_map<size_t, Constructor> tag_index_map;
 
     void PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func);
     size_t PopFrame();

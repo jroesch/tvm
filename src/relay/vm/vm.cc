@@ -230,10 +230,12 @@ void VMFunctionPrint(const VMFunction& vm_func) {
 }
 
 using TagMap = std::unordered_map<tvm::relay::Constructor, size_t, NodeHash, NodeEqual>;
+using TagNameMap = std::unordered_map<size_t, tvm::relay::Constructor>;
 using GlobalMap = std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual>;
 using ConstMap = std::unordered_map<Constant, size_t, NodeHash, NodeEqual>;
 
 struct VMCompilerContext {
+  TagNameMap tag_index_map;
   TagMap tag_map;
   GlobalMap global_map;
   ConstMap const_map;
@@ -412,7 +414,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       } else {
         auto tag = this->context->tag_map.size();
         this->context->tag_map[constructor] = tag;
-        std::cout << "Tag " << constructor->name_hint << " " << tag << std::endl;
+        this->context->tag_index_map[tag] = constructor;
         return tag;
       }
     }
@@ -514,6 +516,7 @@ VirtualMachine CompileModule(const Module& mod) {
   PopulatePackedFuncMap(lowered_funcs, &vm.packed_funcs);
 
   vm.global_map = context.global_map;
+  vm.tag_index_map = context.tag_index_map;
 
   return vm;
 }
@@ -755,16 +758,20 @@ VMObject ValueToVM(Value value) {
   return out[0];
 }
 
-Value VMToValue(VMObject obj) {
+Value ConvertVMToValue(TagNameMap& tag_index_map, VMObject obj) {
   switch (obj->tag) {
     case VMObjectTag::kTensor: {
       return TensorValueNode::make(ToNDArray(obj));
     }
     case VMObjectTag::kDatatype: {
       auto data_type = std::dynamic_pointer_cast<VMDatatypeCell>(obj);
-      LOG(FATAL) << "DataType value (" << data_type->tag << ")";
-      // TODO: wrap the value correctly
-      return Value();
+
+      tvm::Array<Value> fields;
+      for (size_t i = 0; i < data_type->fields.size(); ++i) {
+        fields.push_back(ConvertVMToValue(tag_index_map, data_type->fields[i]));
+      }
+
+      return ConValueNode::make(tag_index_map[data_type->tag], fields);
     }
     default:
       LOG(FATAL) << "unsupported return value";
@@ -772,11 +779,12 @@ Value VMToValue(VMObject obj) {
   }
 }
 
-VMObject EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
-                        const std::vector<VMObject>& vm_args) {
+std::tuple<VMObject, TagNameMap> 
+EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
+               const std::vector<VMObject>& vm_args) {
   VirtualMachine vm = VirtualMachine::FromModule(module, ctxs);
   std::cout << "Entry function is " << module->entry_func << std::endl;
-  return vm.Invoke(module->entry_func, vm_args);
+  return std::make_tuple(vm.Invoke(module->entry_func, vm_args), vm.tag_index_map);
 }
 
 TVM_REGISTER_API("relay._vm._ValueToVM")
@@ -835,7 +843,7 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
       vm_args.push_back(obj);
     }
     auto result = EvaluateModule(module, {ctx}, vm_args);
-    *ret = result;
+    *ret = ConvertVMToValue(std::get<1>(result), std::get<0>(result));
 });
 
 
