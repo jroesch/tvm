@@ -758,17 +758,17 @@ VMObject ValueToVM(Value value) {
   return out[0];
 }
 
-Value ConvertVMToValue(TagNameMap& tag_index_map, VMObject obj) {
+Value VMToValue(TagNameMap& tag_index_map, VMObject obj) {
   switch (obj->tag) {
     case VMObjectTag::kTensor: {
       return TensorValueNode::make(ToNDArray(obj));
     }
     case VMObjectTag::kDatatype: {
-      auto data_type = std::dynamic_pointer_cast<VMDatatypeCell>(obj);
+      auto data_type = std::dynamic_pointer_cast<VMDatatypeCell>(obj.ptr);
 
       tvm::Array<Value> fields;
       for (size_t i = 0; i < data_type->fields.size(); ++i) {
-        fields.push_back(ConvertVMToValue(tag_index_map, data_type->fields[i]));
+        fields.push_back(VMToValue(tag_index_map, data_type->fields[i]));
       }
 
       return ConValueNode::make(tag_index_map[data_type->tag], fields);
@@ -794,7 +794,8 @@ TVM_REGISTER_API("relay._vm._ValueToVM")
 
 TVM_REGISTER_API("relay._vm._VMToValue")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
-    *ret = VMToValue(args[0]);
+    TagNameMap tag_index_map{};
+    *ret = VMToValue(tag_index_map, args[0]);
 });
 
 TVM_REGISTER_API("relay._vm._Tensor")
@@ -843,7 +844,7 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
       vm_args.push_back(obj);
     }
     auto result = EvaluateModule(module, {ctx}, vm_args);
-    *ret = ConvertVMToValue(std::get<1>(result), std::get<0>(result));
+    *ret = VMToValue(std::get<1>(result), std::get<0>(result));
 });
 
 
