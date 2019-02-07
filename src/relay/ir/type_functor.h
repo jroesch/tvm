@@ -74,6 +74,7 @@ class TypeFunctor<R(const Type& n, Args...)> {
   virtual R VisitType_(const GlobalTypeVarNode* op, Args... args) TYPE_FUNCTOR_DEFAULT;
   virtual R VisitType_(const TypeCallNode* op, Args... args) TYPE_FUNCTOR_DEFAULT;
   virtual R VisitType_(const TypeDataNode* op, Args... args) TYPE_FUNCTOR_DEFAULT;
+  virtual R VisitType_(const TypeOfNode* op, Args... args) TYPE_FUNCTOR_DEFAULT;
 
   virtual R VisitTypeDefault_(const Node* op, Args...) {
     LOG(FATAL) << "Do not have a default for " << op->type_key();
@@ -96,6 +97,7 @@ class TypeFunctor<R(const Type& n, Args...)> {
     RELAY_TYPE_FUNCTOR_DISPATCH(GlobalTypeVarNode);
     RELAY_TYPE_FUNCTOR_DISPATCH(TypeCallNode);
     RELAY_TYPE_FUNCTOR_DISPATCH(TypeDataNode);
+    RELAY_TYPE_FUNCTOR_DISPATCH(TypeOfNode);
     return vtable;
   }
 };
@@ -115,6 +117,7 @@ class TypeVisitor : public TypeFunctor<void(const Type& n)> {
   void VisitType_(const GlobalTypeVarNode* op) override;
   void VisitType_(const TypeCallNode* op) override;
   void VisitType_(const TypeDataNode* op) override;
+  void VisitType_(const TypeOfNode* op) override;
 };
 
 // Mutator that transform a type to another one.
@@ -130,6 +133,7 @@ class TypeMutator : public TypeFunctor<Type(const Type& n)> {
   Type VisitType_(const GlobalTypeVarNode* op) override;
   Type VisitType_(const TypeCallNode* op) override;
   Type VisitType_(const TypeDataNode* op) override;
+  Type VisitType_(const TypeOfNode* op) override;
 
  private:
   Array<Type> MutateArray(Array<Type> arr);

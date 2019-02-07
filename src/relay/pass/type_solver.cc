@@ -203,7 +203,6 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
     }
     return TypeCallNode::make(func, args);
   }
-
  private:
   TypeSolver* solver_;
 };

@@ -73,6 +73,8 @@ void TypeVisitor::VisitType_(const TypeDataNode* op) {
   }
 }
 
+void TypeVisitor::VisitType_(const TypeOfNode* op) {}
+
 // Type Mutator.
 Array<Type> TypeMutator::MutateArray(Array<Type> arr) {
   // The array will do copy on write
@@ -178,6 +180,10 @@ Type TypeMutator::VisitType_(const TypeCallNode* op) {
 }
 
 Type TypeMutator::VisitType_(const TypeDataNode* op) {
+  return GetRef<Type>(op);
+}
+
+Type TypeMutator::VisitType_(const TypeOfNode* op) {
   return GetRef<Type>(op);
 }
 

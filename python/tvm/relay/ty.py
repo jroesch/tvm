@@ -271,6 +271,10 @@ class TypeRelation(TypeConstraint):
         self.__init_handle_by_constructor__(_make.TypeRelation,
                                             func, args, num_inputs, attrs)
 
+@register_relay_node
+class TypeOf(Type):
+    def __init__(self, expr):
+        self.__init_handle_by_constructor__(_make.TypeOf, expr)
 
 @register_relay_node
 class RefType(Type):

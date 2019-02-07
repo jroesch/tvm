@@ -321,6 +321,7 @@ TVM_REGISTER_API("relay._make.RefWrite")
 
 TVM_STATIC_IR_FUNCTOR_REGISTER(IRPrinter, vtable)
 .set_dispatch<RefWriteNode>([](const RefWriteNode* node, tvm::IRPrinter* p) {
+                                tvm::IRPrinter* p) {
   p->stream << "RefWriteNode(" << node->ref << ", " << node->value << ")";
 });
 
@@ -329,6 +330,26 @@ TVM_REGISTER_API("relay._expr.TempExprRealize")
   TempExpr temp = args[0];
   *ret = temp->Realize();
 });
+
+TypeOf TypeOfNode::make(relay::Expr expr) {
+  NodePtr<TypeOfNode> n = make_node<TypeOfNode>();
+  n->expr = std::move(expr);
+  return TypeOf(n);
+}
+
+TVM_REGISTER_NODE_TYPE(TypeOfNode);
+
+TVM_REGISTER_API("relay._make.TypeOf")
+.set_body([](TVMArgs args, TVMRetValue* ret) {
+    *ret = TypeOfNode::make(args[0]);
+});
+
+TVM_STATIC_IR_FUNCTOR_REGISTER(IRPrinter, vtable)
+.set_dispatch<TypeOfNode>([](const TypeOfNode* node,
+                                tvm::IRPrinter* p) {
+  p->stream << "TypeOf(" << node->expr << ")";
+});
+
 
 }  // namespace relay
 }  // namespace tvm

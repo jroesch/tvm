@@ -554,6 +554,37 @@ inline const TTypeNode* ExprNode::type_as() const {
 std::string RelayPrint(const NodeRef& node,
                        bool show_meta_data = true,
                        runtime::TypedPackedFunc<std::string(Expr)> annotate = nullptr);
+
+/*!
+ * \brief User defined type relation, is an input-output relation on types.
+ */
+class TypeOf;
+/*!
+ * \brief TypeRelation container.
+ * \note This node is not directly serializable.
+ * The type function need to be lookedup in the module.
+ */
+class TypeOfNode : public TypeNode {
+ public:
+  /*!
+   * \brief The function on input and output variables which
+   *  this is not directly serializable,
+   *  need to be looked-up in the module.
+   */
+  relay::Expr expr;
+
+  void VisitAttrs(tvm::AttrVisitor* v) final {
+    v->Visit("expr", &expr);
+  }
+
+  TVM_DLL static TypeOf make(relay::Expr expr);
+
+  static constexpr const char* _type_key = "relay.TypeOf";
+  TVM_DECLARE_NODE_TYPE_INFO(TypeOfNode, TypeNode);
+};
+
+RELAY_DEFINE_NODE_REF(TypeOf, TypeOfNode, Type);
+
 }  // namespace relay
 }  // namespace tvm
 #endif  // TVM_RELAY_EXPR_H_
