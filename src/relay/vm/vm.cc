@@ -54,6 +54,7 @@ Instruction::Instruction(const Instruction& instr) {
     case Opcode::InvokePacked:
       this->packed_index = instr.packed_index;
       this->arity = instr.arity;
+      this->output_size = instr.output_size;
       return;
     case Opcode::If:
       this->true_offset = instr.true_offset;
@@ -91,11 +92,12 @@ Instruction Ret() {
   return instr;
 }
 
-Instruction InvokePacked(size_t packed_index, size_t arity) {
+Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size) {
   Instruction instr;
   instr.op = Opcode::InvokePacked;
   instr.packed_index = packed_index;
   instr.arity = arity;
+  instr.output_size = output_size;
   return instr;
 }
 
@@ -171,6 +173,7 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
       os << "invoke_packed ";
       os << instr.packed_index;
       os << " " << instr.arity;
+      os << " " << instr.output_size;
       break;
     }
     case Opcode::AllocTensor: {
@@ -218,13 +221,18 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
          << instr.pc_offset;
       break;
     }
+    default:
+      os << "unknown instruction " << (int)instr.op;
+      break;
   }
 }
 
 void VMFunctionPrint(const VMFunction& vm_func) {
+  return;
   std::cout << vm_func.name << ": " << std::endl;
-  for (auto instr : vm_func.instructions) {
-    InstructionPrint(std::cout, instr);
+  for (size_t i = 0; i < vm_func.instructions.size(); ++i) {
+    std::cout << i << ": ";
+    InstructionPrint(std::cout, vm_func.instructions[i]);
     std::cout << ";" << std::endl;
   }
 }
@@ -239,6 +247,7 @@ struct VMCompilerContext {
   TagMap tag_map;
   GlobalMap global_map;
   ConstMap const_map;
+  std::vector<LoweredFunc> lowered_funcs;
 };
 
 // Compute the constant pool, i.e a mapping from Constant node to constant index.
@@ -282,7 +291,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     size_t stack_index;
     bool seen_func;
     CompileEngine engine;
-    std::vector<LoweredFunc> lowered_funcs;
     VMCompilerContext* context;
 
     VMCompiler(VMCompilerContext* context) :
@@ -290,6 +298,24 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       seen_func(false), engine(CompileEngine::Global()), context(context)  {}
 
     inline void Emit(const Instruction& instr) {
+      CHECK((int)instr.op < 100) << "Invalid opcode " << (int)instr.op;
+      switch (instr.op) {
+        case Opcode::AllocDatatype:
+        case Opcode::AllocTensor:
+        case Opcode::GetField:
+        case Opcode::Push:
+        case Opcode::LoadConst:
+          stack_index++;
+          break;
+        case Opcode::InvokePacked:
+          stack_index -= instr.arity;
+          break;
+        case Opcode::If:
+          stack_index--;
+          break;
+        default:
+          break;
+      }
       instructions.push_back(instr);
     }
 
@@ -307,6 +333,16 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       Emit(Push(it->second));
     }
 
+    void VisitExpr_(const TupleNode* tuple_node) {
+      auto tuple = GetRef<Tuple>(tuple_node);
+      for (auto& field : tuple->fields) {
+        this->VisitExpr(field);
+      }
+      // TODO: handle complex field expression
+      // TODO: use correct tag
+      Emit(AllocDatatype(0, tuple->fields.size()));
+    }
+
     void VisitExpr_(const MatchNode* match_node) {
       auto match = GetRef<Match>(match_node);
       std::cout << "Ignore compiling match node\n";
@@ -314,14 +350,14 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
   
     void VisitExpr_(const LetNode* let_node) {
       this->VisitExpr(let_node->value);
-      var_map.insert({ let_node->var, this->stack_index++ });
+      var_map.insert({ let_node->var, this->stack_index-1 });
       this->VisitExpr(let_node->body);
     }
 
     void VisitExpr_(const TupleGetItemNode* get_node) {
       auto get = GetRef<TupleGetItem>(get_node);
       this->VisitExpr(get->tuple);
-      Emit(GetField(this->stack_index++, get->index));
+      Emit(GetField(this->stack_index-1, get->index));
     }
 
     void VisitExpr_(const GlobalVarNode* gvar) {
@@ -335,11 +371,18 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     void VisitExpr_(const IfNode* if_node) {
       this->VisitExpr(if_node->cond);
       auto after_cond = this->instructions.size();
+      
       this->Emit(If(0, 0));
+
+      auto stack_index_before_branch = stack_index;
       this->VisitExpr(if_node->true_branch);
+
       Emit(Goto(0));
+
+      stack_index = stack_index_before_branch;
       auto after_true = this->instructions.size();
       this->VisitExpr(if_node->false_branch);
+
       auto after_false = this->instructions.size();
 
       // After we emit the true body, and false body,
@@ -352,20 +395,43 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       this->instructions[after_true - 1].pc_offset = after_false - after_true;
     }
 
-    void EmitInvokePrimitive(const Function& func, const Type& ret_type) {
-      // Allocate space for the return tensor.
-      const TensorTypeNode* ttype = ret_type.as<TensorTypeNode>();
-      CHECK(ttype);
 
+    Instruction AllocTensorFromType(const TensorTypeNode* ttype) {
       std::vector<int64_t> shapes;
       for (auto sh : ttype->shape) {
         shapes.push_back(Downcast<tvm::Integer>(sh)->value);
       }
-
       DataType dtype = ttype->dtype;
       TVMType dltype = Type2TVMType(dtype);
-      Instruction alloc = AllocTensor(shapes, dltype);
-      Emit(alloc);
+      return AllocTensor(shapes, dltype);
+    }
+
+    void EmitInvokePrimitive(const Function& func, const Type& ret_type) {
+      std::vector<Instruction> allocs;
+      size_t return_num = 0;
+      if (const TensorTypeNode* ttype = ret_type.as<TensorTypeNode>()) {
+        // Allocate space for the return tensor.
+        auto alloc = AllocTensorFromType(ttype);
+        // Alloc to use for input
+        allocs.push_back(alloc);
+        // Alloc to use for output, but not used for this case. we should optmize that
+        allocs.push_back(alloc);
+        return_num = 1;
+      } else if (const TupleTypeNode* ttype = ret_type.as<TupleTypeNode>()) {
+        for (size_t i = 0; i < ttype->fields.size(); ++i) {
+          auto f = ttype->fields[i];
+          auto f_type = f.as<TensorTypeNode>();
+          allocs.push_back(AllocTensorFromType(f_type));
+        }
+        return_num = ttype->fields.size();
+        allocs.push_back(AllocDatatype(0, return_num));
+      } else {
+        LOG(FATAL) << "Unsupported return value type";
+      }
+
+      for (auto& alloc : allocs) {
+        Emit(alloc);
+      }
 
       // Next generate the invoke instruction.
       CHECK(func->IsPrimitive());
@@ -374,18 +440,29 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto cfunc = engine->Lower(key);
       // TODO: support lowered funcs for multiple targets
       CHECK(cfunc->funcs.size() == 1);
-      auto op_index = this->lowered_funcs.size();
-      this->lowered_funcs.push_back(cfunc->funcs[0]);
-      // TODO(@jroesch): this doesn't support tuples right now.
-      size_t arity = func->params.size() + 1;
+      auto op_index = this->context->lowered_funcs.size();
+      this->context->lowered_funcs.push_back(cfunc->funcs[0]);
+
+      // If Tensor, 1
+      // If Tuple, size of tuple
+      size_t arity = func->params.size() + return_num;
       CHECK(arity < 10);
-      Emit(InvokePacked(op_index, arity));
+      Emit(InvokePacked(op_index, arity, return_num));
     }
 
     void VisitExpr_(const CallNode* call_node) {
       // First generate instructions to populate stack with arguments.
+      std::vector<size_t> args;
       for (auto arg : call_node->args) {
         this->VisitExpr(arg);
+        args.push_back(stack_index-1);
+      }
+
+      if ( !args.empty() && (args.back() - args.front()) != (args.size() - 1)) {
+        std::cout << "Found non-consec sequence\n";
+        for (auto& i : args) {
+          Emit(Push(i));
+        }
       }
 
       if (auto func_node = call_node->op.as<FunctionNode>()) {
@@ -423,14 +500,13 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       CHECK(!seen_func) << GetRef<Function>(func_node);
       this->seen_func = true;
       for (auto param : func_node->params) {
+        std::cout << "Func param " << param << " at " << this->stack_index << "\n";
         var_map.insert({ param, this->stack_index++ });
       }
 
       this->VisitExpr(func_node->body);
     }
 };
-
-using CompiledFunc = std::pair<std::vector<LoweredFunc>, VMFunction>;
 
 void PopulatePackedFuncMap(
   const std::vector<LoweredFunc>& lowered_funcs,
@@ -452,20 +528,20 @@ void PopulatePackedFuncMap(
 }
 
 
-CompiledFunc CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
+VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
 //  std::cout << func << std::endl;
   size_t params = func->params.size();
   VMCompiler compiler(context);
   // std::cout << "Compiling: " << func << std::endl;
+  std::cout << "Start: " << compiler.stack_index << "\n";
   compiler.VisitExpr(func);
   compiler.instructions.push_back(Ret());
   VMFunction vm_func = VMFunction(var->name_hint, params, compiler.instructions);
-  return { compiler.lowered_funcs, vm_func };
+  return vm_func;
 }
 
 VirtualMachine CompileModule(const Module& mod) {
   VirtualMachine vm;
-  std::vector<LoweredFunc> lowered_funcs;
 
   VMCompilerContext context;
 
@@ -475,6 +551,7 @@ VirtualMachine CompileModule(const Module& mod) {
   for (auto named_func : mod->functions) {
     auto gvar = named_func.first;
     context.global_map.insert({ gvar, global_index++ });
+    std::cout << "Global Map " << gvar << " " << global_index-1 << std::endl;
   }
 
   // Next we populate constant map.
@@ -493,14 +570,7 @@ VirtualMachine CompileModule(const Module& mod) {
     auto gvar = named_func.first;
     auto func = named_func.second;
     std::cout << "Compiling func " << gvar->name_hint << std::endl;
-    auto cfunc = CompileFunc(&context, gvar, func);
-    auto lfuncs = cfunc.first;
-    auto vm_func = cfunc.second;
-
-    lowered_funcs.insert(
-      lowered_funcs.end(),
-      lfuncs.begin(),
-      lfuncs.end());
+    auto vm_func = CompileFunc(&context, gvar, func);
 
     size_t func_index = context.global_map.at(gvar);
     CHECK(func_index < vm.functions.size());
@@ -513,7 +583,7 @@ VirtualMachine CompileModule(const Module& mod) {
     std::cout << "-------------" << std::endl;    
   }
 
-  PopulatePackedFuncMap(lowered_funcs, &vm.packed_funcs);
+  PopulatePackedFuncMap(context.lowered_funcs, &vm.packed_funcs);
 
   vm.global_map = context.global_map;
   vm.tag_index_map = context.tag_index_map;
@@ -521,8 +591,9 @@ VirtualMachine CompileModule(const Module& mod) {
   return vm;
 }
 
-void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func) {
-  auto frame = VMFrame(ret_pc, bp, func_index, arg_count, code);
+void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, size_t sp, const VMFunction& vm_func) {
+  DumpStack();
+  auto frame = VMFrame(ret_pc, bp, sp, func_index, arg_count, code);
   frames.push_back(frame);
 }
 
@@ -537,11 +608,13 @@ size_t VirtualMachine::PopFrame() {
     << " stack_size: "
     << stack_size;
 
-  CHECK(0 <= stack_size - fr.args - 1);
-  stack[stack_size - fr.args - 1] = stack[stack_size - 1];
+  CHECK(0 <= stack_size - fr.sp);
+  stack[fr.sp] = stack[stack_size - 1];
   // Resize value stack.
-  stack.resize(stack_size - fr.args);
+  stack.resize(fr.sp + 1);
   // Reset frame.
+  std::cout << "Reset frame " << bp << " -> " << fr.bp << "\n";
+  std::cout << "Reset stack " << stack_size << " -> " << stack.size() << "\n";
   bp = fr.bp;
   pc = fr.pc;
   func_index = fr.func_index;
@@ -552,15 +625,13 @@ size_t VirtualMachine::PopFrame() {
 }
 
 void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<VMObject>& args) {
+  std::cout << "===================\nInvoking global " << func.name << std::endl;
   for (auto arg : args) {
     stack.push_back(arg);
   }
 
-  PushFrame(func.params, this->pc + 1, func);
-  // CHECK(stack_start + func.params == stack.size())
-  //   << "stack_start= " << stack_start
-  //   << "func.params= " << func.params
-  //   << "stack.size()= " << stack.size();
+  PushFrame(func.params, this->pc + 1, stack.size(), func);
+  std::cout << "func.params= " << func.params << ", stack.size()= " << stack.size() << std::endl;
 
   code = func.instructions.data();
   pc = 0;
@@ -568,7 +639,7 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<VMOb
 }
 
 VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObject>& args) {
-  std::cout << "Executing function " << func.name << std::endl;
+  std::cout << "Executing function " << func.name << " bp " << bp << std::endl;
   InvokeGlobal(func, args);
   Run();
   auto alloc = MemoryManager::Global()->GetAllocator(ctxs[0]);
@@ -579,17 +650,18 @@ VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObje
 
 VMObject VirtualMachine::Invoke(const GlobalVar& global, const std::vector<VMObject>& args) {
   auto func_index = this->global_map[global];
+  std::cout << "Invoke Global " << global << " at index " << func_index << std::endl;
   return Invoke(this->functions[func_index], args);
 }
 
-void InvokePacked(const PackedFunc& func, size_t arg_count, std::vector<VMObject>& stack) {
+void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size, std::vector<VMObject>& stack) {
   CHECK(arg_count <= stack.size());
 
   std::vector<TVMValue> values(arg_count);
   std::vector<int> codes(arg_count);
   runtime::TVMArgsSetter setter(values.data(), codes.data());
 
-  auto stack_start = stack.size() - arg_count;
+  auto stack_start = stack.size() - arg_count - 1;
   for (size_t i = 0; i < arg_count; i++) {
     NDArray data = ToNDArray(stack[stack_start + i]);
     setter(i, data);
@@ -597,14 +669,57 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, std::vector<VMObject
 
   TVMRetValue rv;
   func.CallPacked(TVMArgs(values.data(), codes.data(), arg_count), &rv);
+
+  // Fix the object at return value position
+  if (output_size == 1) {
+    stack[stack.size() - 1] = stack[stack.size() - 2];
+  } else {
+    auto adt = std::dynamic_pointer_cast<VMDatatypeCell>(stack.back().ptr);
+    for (size_t i = 0; i < output_size; ++i) {
+      adt->fields[i] = stack[stack.size() - output_size - 1 + i];
+    }
+  }
+
   // We can do this more efficiently by reverse laying out the arguments
   // and just shrinking the stack.
-  stack[stack.size() - arg_count] = stack[stack.size() - 1];
-  stack.resize(stack.size() - arg_count + 1);
+  stack[stack.size() - arg_count - 1] = stack[stack.size() - 1];
+  stack.resize(stack.size() - arg_count);
 }
 
 void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
   this->ctxs = ctxs;
+}
+
+void VirtualMachine::DumpRegister() {
+  return;
+  std::cout << std::endl << "-- Registers: --\n";
+  std::cout << "Bp: " << bp << std::endl;
+  std::cout << "Stack Size: " << stack.size() << std::endl;
+  std::cout << "Frame Size: " << frames.size() << std::endl;
+  std::cout << "----\n" ;
+}
+
+void VirtualMachine::DumpStack() {
+  return;
+  std::cout << "DumpStack---\n";
+  for (size_t i = bp; i < stack.size(); ++i) {
+    std::cout << i << " " << (int)stack[i]->tag << " ";
+    switch (stack[i]->tag) {
+      case VMObjectTag::kTensor: {
+        VMTensorCell* tensor = (VMTensorCell*)stack[i].operator->();
+        std::cout << tensor->data->ndim;
+        if (tensor->data->ndim == 0) {
+          std::cout << " " << *((int*)(tensor->data->data));
+        }
+        std::cout << " \n";
+        break;
+      }
+      default: {
+        std::cout << "\n";
+      }
+    }
+  }
+  std::cout << "DumpStack end---\n";
 }
 
 void VirtualMachine::Run() {
@@ -614,11 +729,10 @@ void VirtualMachine::Run() {
   while (true) {
   main_loop:
     auto const& instr = this->code[this->pc];
-    std::cout << "Executing: ";
+    std::cout << "Executing(" << pc << "): " ;
     InstructionPrint(std::cout, instr);
-    std::cout << std::endl;
-    std::cout << "Stack Size: " << stack.size() << std::endl;
-    std::cout << "Frame Size: " << frames.size() << std::endl;
+    std::cout << "\n";
+    DumpRegister();
 
     switch (instr.op) {
       case Opcode::LoadConst: {
@@ -627,8 +741,8 @@ void VirtualMachine::Run() {
         goto main_loop;
       }
       case Opcode::Invoke: {
-        VMFunctionPrint(this->functions[this->func_index + 1]);
-        InvokeGlobal(this->functions[this->func_index + 1], {});
+        // VMFunctionPrint(this->functions[this->func_index]);
+        InvokeGlobal(this->functions[instr.func_index], {});
         goto main_loop;
       }
       case Opcode::InvokePacked: {
@@ -637,8 +751,10 @@ void VirtualMachine::Run() {
         const auto& arity = instr.arity;
         // std::cout << "before call" << std::endl;
         // std::cout << this->stack.size() << std::endl;
-        InvokePacked(func, arity, stack);
-        CHECK(start_stack - arity + 1 == stack.size())
+        DumpStack();
+        InvokePacked(func, arity, instr.output_size, stack);
+        DumpStack();        
+        CHECK(start_stack - arity == stack.size())
           << "start_stack: " << start_stack
           << "end_stack: " << stack.size();
         // std::cout << "after call" << std::endl;
@@ -647,7 +763,8 @@ void VirtualMachine::Run() {
       }
       case Opcode::GetField: {
         auto object = stack[bp + instr.object_offset];
-        CHECK(object->tag == VMObjectTag::kDatatype) << "Object is not data type object";
+        DumpStack();
+        CHECK(object->tag == VMObjectTag::kDatatype) << "Object is not data type object " << bp << " " << instr.object_offset << " " << (int)object->tag;
         const std::shared_ptr<VMDatatypeCell>& tuple = std::dynamic_pointer_cast<VMDatatypeCell>(object.ptr);
         auto field = tuple->fields[instr.field_index];
         stack.push_back(field);
@@ -659,6 +776,7 @@ void VirtualMachine::Run() {
         goto main_loop;
       }
       case Opcode::If: {
+        DumpStack();
         // How do we do this efficiently?
         DLContext cpu_ctx;
         cpu_ctx.device_type = kDLCPU;
@@ -701,8 +819,9 @@ void VirtualMachine::Run() {
         goto main_loop;
       }
       case Opcode::Push: {
-        CHECK(bp + instr.stack_index < stack.size());
+        CHECK(bp + instr.stack_index < stack.size()) << bp << " " << instr.stack_index << " " << stack.size();
         stack.push_back(stack[bp + instr.stack_index]);
+        DumpStack();        
         pc++;
         goto main_loop;
       }
@@ -836,14 +955,13 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
       LOG(FATAL) << "expected function or module";
     }
 
-    std::cout << "About to get args " << std::endl;
     std::vector<VMObject> vm_args;
     for (auto i = 3; i < args.size(); i++) {
-      std::cout << "Arg: " << i << std::endl;
       VMObject obj = args[i];
       vm_args.push_back(obj);
     }
     auto result = EvaluateModule(module, {ctx}, vm_args);
+    std::cout << "Returning results\n";
     *ret = VMToValue(std::get<1>(result), std::get<0>(result));
 });
 

@@ -72,8 +72,8 @@ def eval_vm(expr_or_mod, ctx, *args):
     mod[mod.entry_func] = main_func
 
     cargs = convert(list(args))
-#    import pdb; pdb.set_trace()
-    return _vm._evaluate_vm(mod, ctx.device_type, ctx.device_id, *cargs).to_value()
+    result = _vm._evaluate_vm(mod, ctx.device_type, ctx.device_id, *cargs)
+    return result
 
 class VMExecutor(Executor):
     """

@@ -77,7 +77,7 @@ inline VMObject VMTuple(const std::vector<VMObject>& fields) {
 
 inline NDArray ToNDArray(const VMObject& obj) {
   CHECK(obj.ptr.get());
-  CHECK(obj.ptr->tag == VMObjectTag::kTensor);
+  CHECK(obj.ptr->tag == VMObjectTag::kTensor) << "Expect Tensor, Got " << (int)obj.ptr->tag;
   std::shared_ptr<VMTensorCell> o = std::dynamic_pointer_cast<VMTensorCell>(obj.ptr);
   return o->data;
 }
@@ -109,6 +109,7 @@ struct Instruction {
     struct {
       size_t packed_index;
       size_t arity;
+      size_t output_size;
     };
     struct {
       size_t true_offset;
@@ -166,12 +167,13 @@ void VMFunctionPrint(const VMFunction& vm_func);
 struct VMFrame {
     size_t pc;
     size_t bp;
+    size_t sp;
     size_t func_index;
     size_t args;
     const Instruction* code;
 
-    VMFrame(size_t pc, size_t bp, size_t func_index, size_t args, const Instruction* code)
-      : pc(pc), bp(bp), func_index(func_index), args(args), code(code) {}
+    VMFrame(size_t pc, size_t bp, size_t sp, size_t func_index, size_t args, const Instruction* code)
+      : pc(pc), bp(bp), sp(sp), func_index(func_index), args(args), code(code) {}
 };
 
 struct VirtualMachine {
@@ -194,13 +196,16 @@ struct VirtualMachine {
     std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual> global_map;
     std::unordered_map<size_t, Constructor> tag_index_map;
 
-    void PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func);
+    void PushFrame(size_t arg_count, size_t ret_pc, size_t sp, const VMFunction& vm_func);
     size_t PopFrame();
     void InvokeGlobal(const VMFunction& func, const std::vector<VMObject>& args);
     void Run();
 
     VMObject Invoke(const VMFunction& func, const std::vector<VMObject>& args);
     VMObject Invoke(const GlobalVar& global, const std::vector<VMObject>& args);
+
+    void DumpRegister();
+    void DumpStack();
 
     VirtualMachine() :
       functions(), frames(), stack(),

@@ -9,6 +9,16 @@ from tvm.relay.vm import eval_vm, eta_expand
 from tvm.relay.scope_builder import ScopeBuilder
 from tvm.relay.prelude import Prelude
 
+def test_split():
+    x = relay.var('x', shape=(12,))
+    y = relay.split(x, 3, axis=0).astuple()
+    z = relay.concatenate([relay.TupleGetItem(y, 0)], axis=0)
+    f = relay.Function([x], z)
+
+    x_data = np.random.rand(12,).astype('float32')
+    res = eval_vm(f, tvm.cpu(), x_data)
+    tvm.testing.assert_allclose(res.asnumpy(), np.split(x_data, 3, axis=0)[0])
+
 def test_id():
     x = relay.var('x', shape=(10, 10))
     f = relay.Function([x], x)
@@ -131,6 +141,15 @@ def test_tuple_second():
     tvm.testing.assert_allclose(result.asnumpy(), j_data)
 
 def test_list_constructor():
+    def to_list(o):
+        if isinstance(o, tvm.relay.backend.interpreter.TensorValue):
+            return [o.data.asnumpy().tolist()]
+        if isinstance(o, tvm.relay.backend.interpreter.ConValue):
+            result = []
+            for f in o.fields:
+                result.extend(to_list(f))
+            return result
+
     mod = relay.Module()
     p = Prelude(mod)
 
@@ -138,13 +157,17 @@ def test_list_constructor():
     cons = p.cons
     l = p.l
 
-    f = relay.Function([], cons(nil(), nil()))
+    one = relay.const(1)
+    one2 = cons(one, nil())
+    one3 = cons(one, one2)
+    one4 = cons(one, one3)
+    f = relay.Function([], one4)
 
     mod[mod.entry_func] = f
 
-    print("Entry func is {}".format(mod.entry_func))
     result = eval_vm(mod, tvm.cpu())
-    print("Result is {}".format(result))
+    obj = to_list(result)
+    tvm.testing.assert_allclose(obj, np.array([1,1,1]))
 
 def test_let_tensor():
     sb = relay.ScopeBuilder()
