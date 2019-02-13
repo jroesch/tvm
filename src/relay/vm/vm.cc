@@ -288,11 +288,11 @@ ConstMap LayoutConstantPool(const Module& module) {
 struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     std::vector<Instruction> instructions;
 
-    /*! @brief local variable's relative position(to bp) in stack */
+    /*! \brief local variable's relative position(to bp) in stack */
     std::unordered_map<Var, size_t, NodeHash, NodeEqual> var_map;
 
     /*!
-     * @brief the next place available in stack to store value, start from 0
+     * \brief the next place available in stack to store value, start from 0
      * for each function
      */
     size_t stack_index;
@@ -300,7 +300,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     bool seen_func;
     CompileEngine engine;
 
-    /*! @brief global shared meta data */
+    /*! \brief global shared meta data */
     VMCompilerContext* context;
 
     VMCompiler(VMCompilerContext* context) :
@@ -308,9 +308,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       seen_func(false), engine(CompileEngine::Global()), context(context)  {}
 
     /*!
-     * @brief Emit Opcode and adjust stack_index accordingly
+     * \brief Emit Opcode and adjust stack_index accordingly
      * 
-     * @param instr Instruction to emit
+     * \param instr Instruction to emit
      */
     inline void Emit(const Instruction& instr) {
       CHECK((int)instr.op < 100) << "Invalid opcode " << (int)instr.op;
