@@ -24,6 +24,18 @@ enum struct VMObjectTag {
   kExternalFunc,
 };
 
+inline std::string VMObjectTagString(VMObjectTag tag) {
+  switch (tag) {
+    case VMObjectTag::kClosure:
+      return "Closure";
+    case VMObjectTag::kDatatype:
+      return "Datatype";
+    case VMObjectTag::kTensor:
+      return "Tensor";
+    case VMObjectTag::kExternalFunc:
+      return "ExternalFunction";
+  }
+}
 
 // TODO(@jroesch): Eventually inline cell.
 // We can also use pointer tagging scheme ala
@@ -77,7 +89,7 @@ inline VMObject VMTuple(const std::vector<VMObject>& fields) {
 
 inline NDArray ToNDArray(const VMObject& obj) {
   CHECK(obj.ptr.get());
-  CHECK(obj.ptr->tag == VMObjectTag::kTensor) << "Expect Tensor, Got " << (int)obj.ptr->tag;
+  CHECK(obj.ptr->tag == VMObjectTag::kTensor) << "Expect Tensor, Got " << VMObjectTagString(obj.ptr->tag);
   std::shared_ptr<VMTensorCell> o = std::dynamic_pointer_cast<VMTensorCell>(obj.ptr);
   return o->data;
 }
@@ -191,6 +203,8 @@ struct VirtualMachine {
     size_t bp;
 
     std::vector<TVMContext> ctxs;
+
+    bool debug{false};
 
     // Interface debugging.
     std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual> global_map;

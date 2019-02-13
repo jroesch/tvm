@@ -691,7 +691,9 @@ void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
 }
 
 void VirtualMachine::DumpRegister() {
-  return;
+  if (!this->debug) {
+    return;
+  }
   std::cout << std::endl << "-- Registers: --\n";
   std::cout << "Bp: " << bp << std::endl;
   std::cout << "Stack Size: " << stack.size() << std::endl;
@@ -700,7 +702,9 @@ void VirtualMachine::DumpRegister() {
 }
 
 void VirtualMachine::DumpStack() {
-  return;
+  if (!this->debug) {
+    return;
+  }
   std::cout << "DumpStack---\n";
   for (size_t i = bp; i < stack.size(); ++i) {
     std::cout << i << " " << (int)stack[i]->tag << " ";
