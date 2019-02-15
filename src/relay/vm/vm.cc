@@ -288,11 +288,11 @@ ConstMap LayoutConstantPool(const Module& module) {
 struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     std::vector<Instruction> instructions;
 
-    /*! \brief local variable's relative position(to bp) in stack */
+    /*! \brief Local variable's relative position(to bp) in stack */
     std::unordered_map<Var, size_t, NodeHash, NodeEqual> var_map;
 
     /*!
-     * \brief the next place available in stack to store value, start from 0
+     * \brief The next place available in stack to store value, start from 0
      * for each function
      */
     size_t stack_index;
@@ -300,7 +300,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     bool seen_func;
     CompileEngine engine;
 
-    /*! \brief global shared meta data */
+    /*! \brief Global shared meta data */
     VMCompilerContext* context;
 
     VMCompiler(VMCompilerContext* context) :
@@ -320,15 +320,15 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         case Opcode::GetField:
         case Opcode::Push:
         case Opcode::LoadConst:
-          // these intructions will push one value to stack
+          // These intructions will push one value to stack
           stack_index++;
           break;
         case Opcode::InvokePacked:
-          // this instruction will pop instr.arity value from stack
+          // This instruction will pop instr.arity value from stack
           stack_index -= instr.arity;
           break;
         case Opcode::If:
-          // this instruction will pop one value from stack
+          // This instruction will pop one value from stack
           stack_index--;
           break;
         default:
@@ -356,8 +356,8 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       for (auto& field : tuple->fields) {
         this->VisitExpr(field);
       }
-      // TODO: handle complex field expression
-      // TODO: use correct tag
+      // TODO: Handle complex field expression
+      // TODO: Use correct tag
       Emit(AllocDatatype(0, tuple->fields.size()));
     }
 
@@ -368,7 +368,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
   
     void VisitExpr_(const LetNode* let_node) {
       this->VisitExpr(let_node->value);
-      // let binding value will be at stack_index-1
+      // Let binding value will be at stack_index-1
       var_map.insert({ let_node->var, this->stack_index-1 });
       this->VisitExpr(let_node->body);
     }
@@ -376,7 +376,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     void VisitExpr_(const TupleGetItemNode* get_node) {
       auto get = GetRef<TupleGetItem>(get_node);
       this->VisitExpr(get->tuple);
-      // tuple value will be at stack_index-1
+      // Tuple value will be at stack_index-1
       Emit(GetField(this->stack_index-1, get->index));
     }
 
@@ -394,13 +394,13 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       
       this->Emit(If(0, 0));
 
-      // save the stack_index before entering true branch
+      // Save the stack_index before entering true branch
       auto stack_index_before_branch = stack_index;
       this->VisitExpr(if_node->true_branch);
 
       Emit(Goto(0));
 
-      // restore stack_index to the value before the branch
+      // Restore stack_index to the value before the branch
       stack_index = stack_index_before_branch;
       auto after_true = this->instructions.size();
       this->VisitExpr(if_node->false_branch);
@@ -480,7 +480,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         args.push_back(stack_index-1);
       }
 
-      // some arguments might be composite expressions, not atomic variable, we
+      // Some arguments might be composite expressions, not atomic variable, we
       // need to push the arguments again to keep the invariant that the arguments
       // of function are consecutive to each other
       if (!args.empty() && (args.back() - args.front()) != (args.size() - 1)) {
@@ -634,7 +634,7 @@ size_t VirtualMachine::PopFrame() {
     << stack_size;
 
   CHECK(0 <= stack_size - fr.sp);
-  // cope return value to the position past last function's frame
+  // Copy return value to the position past last function's frame
   stack[fr.sp] = stack[stack_size - 1];
   // Resize value stack.
   stack.resize(fr.sp + 1);
