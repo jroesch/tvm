@@ -51,10 +51,16 @@ Instruction::Instruction(const Instruction& instr) {
       this->constructor_tag = instr.constructor_tag;
       this->num_fields = instr.num_fields;
       return;
+    case Opcode::AllocClosure:
+      this->clo_index = instr.clo_index;
+      this->num_freevar = instr.num_freevar;
+      return;
     case Opcode::InvokePacked:
       this->packed_index = instr.packed_index;
       this->arity = instr.arity;
       this->output_size = instr.output_size;
+      return;
+    case Opcode::InvokeClosure:
       return;
     case Opcode::If:
       this->true_offset = instr.true_offset;
@@ -101,7 +107,7 @@ Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size) 
   return instr;
 }
 
-Instruction AllocTensor(const std::vector<int64_t> shape, DLDataType dtype) {
+Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype) {
   Instruction instr;
   instr.op = Opcode::AllocTensor;
   instr.tensor_info.shape = new int64_t[shape.size()];
@@ -119,6 +125,14 @@ Instruction AllocDatatype(size_t tag, size_t num_fields) {
   instr.op = Opcode::AllocDatatype;
   instr.constructor_tag = tag;
   instr.num_fields = num_fields;
+  return instr;
+}
+
+Instruction AllocClosure(size_t func_index, size_t free_vars) {
+  Instruction instr;
+  instr.op = Opcode::AllocClosure;
+  instr.clo_index = func_index;
+  instr.num_freevar = free_vars;
   return instr;
 }
 
@@ -149,6 +163,12 @@ Instruction Invoke(size_t func_index) {
   Instruction instr;
   instr.op = Opcode::Invoke;
   instr.func_index = func_index;
+  return instr;
+}
+
+Instruction InvokeClosure() {
+  Instruction instr;
+  instr.op = Opcode::InvokeClosure;
   return instr;
 }
 
@@ -188,10 +208,17 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
       break;
     }
     case Opcode::AllocDatatype: {
-      os << "alloc_block";
+      os << "alloc_data";
       os << " ";
       os << instr.constructor_tag << " ";
       os << instr.num_fields;
+      break;
+    }
+    case Opcode::AllocClosure: {
+      os << "alloc_closure";
+      os << " ";
+      os << instr.clo_index << " ";
+      os << instr.num_freevar;
       break;
     }
     case Opcode::If: {
@@ -203,6 +230,10 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     case Opcode::Invoke: {
       os << "invoke "
          << instr.func_index;
+      break;
+    }
+    case Opcode::InvokeClosure: {
+      os << "invoke_closure";
       break;
     }
     case Opcode::LoadConst: {
@@ -227,410 +258,18 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
   }
 }
 
-void VMFunctionPrint(const VMFunction& vm_func) {
-  return;
-  std::cout << vm_func.name << ": " << std::endl;
+void VMFunctionPrint(std::ostream& os, const VMFunction& vm_func) {
+  os << vm_func.name << ": " << std::endl;
   for (size_t i = 0; i < vm_func.instructions.size(); ++i) {
-    std::cout << i << ": ";
-    InstructionPrint(std::cout, vm_func.instructions[i]);
-    std::cout << ";" << std::endl;
+    os << i << ": ";
+    InstructionPrint(os, vm_func.instructions[i]);
+    os << ";" << std::endl;
   }
 }
 
-using TagMap = std::unordered_map<tvm::relay::Constructor, size_t, NodeHash, NodeEqual>;
-using TagNameMap = std::unordered_map<size_t, tvm::relay::Constructor>;
-using GlobalMap = std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual>;
-using ConstMap = std::unordered_map<Constant, size_t, NodeHash, NodeEqual>;
-
-struct VMCompilerContext {
-  TagNameMap tag_index_map;
-  TagMap tag_map;
-  GlobalMap global_map;
-  ConstMap const_map;
-  std::vector<LoweredFunc> lowered_funcs;
-};
-
-// Compute the constant pool, i.e a mapping from Constant node to constant index.
-struct ConstantPool : ExprVisitor {
-  std::set<GlobalVar> visited;
-  Module module;
-  ConstMap const_map;
-  size_t index;
-
-  ConstantPool(const Module& mod) :
-    module(mod), const_map(), index(0) {}
-
-  void VisitExpr_(const GlobalVarNode* var_node) {
-    auto gvar = GetRef<GlobalVar>(var_node);
-    if (visited.find(gvar) == visited.end()) {
-
-      visited.insert(gvar);
-      this->VisitExpr(this->module->Lookup(gvar));
-    }
-  }
-
-  void VisitExpr_(const ConstantNode* const_node) {
-    auto konst = GetRef<Constant>(const_node);
-    auto it = this->const_map.find(konst);
-    if (it == this->const_map.end()) {
-      this->const_map.insert({ konst, index++ });
-    }
-  }
-};
-
-ConstMap LayoutConstantPool(const Module& module) {
-  auto cp = ConstantPool(module);
-  cp.VisitExpr(module->entry_func);
-  return cp.const_map;
-}
-
-
-struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
-    std::vector<Instruction> instructions;
-
-    /*! \brief Local variable's relative position(to bp) in stack */
-    std::unordered_map<Var, size_t, NodeHash, NodeEqual> var_map;
-
-    /*!
-     * \brief The next place available in stack to store value, start from 0
-     * for each function
-     */
-    size_t stack_index;
-
-    bool seen_func;
-    CompileEngine engine;
-
-    /*! \brief Global shared meta data */
-    VMCompilerContext* context;
-
-    VMCompiler(VMCompilerContext* context) :
-      instructions(), var_map(), stack_index(0),
-      seen_func(false), engine(CompileEngine::Global()), context(context)  {}
-
-    /*!
-     * \brief Emit Opcode and adjust stack_index accordingly
-     *
-     * \param instr Instruction to emit
-     */
-    inline void Emit(const Instruction& instr) {
-      CHECK((int)instr.op < 100) << "Invalid opcode " << (int)instr.op;
-      switch (instr.op) {
-        case Opcode::AllocDatatype:
-        case Opcode::AllocTensor:
-        case Opcode::GetField:
-        case Opcode::Push:
-        case Opcode::LoadConst:
-          // These intructions will push one value to stack
-          stack_index++;
-          break;
-        case Opcode::InvokePacked:
-          // This instruction will pop instr.arity value from stack
-          stack_index -= instr.arity;
-          break;
-        case Opcode::If:
-          // This instruction will pop one value from stack
-          stack_index--;
-          break;
-        case Opcode::Invoke:
-          // this instruction will push one return value into stack
-          stack_index++;
-          break;
-        case Opcode::Ret:
-        case Opcode::Goto:
-          break;
-      }
-      instructions.push_back(instr);
-    }
-
-    void VisitExpr_(const ConstantNode* const_node) {
-      auto rconst = GetRef<Constant>(const_node);
-      auto it = this->context->const_map.find(rconst);
-      CHECK(it != this->context->const_map.end());
-      Emit(LoadConst(it->second));
-    }
-
-    void VisitExpr_(const VarNode* var_node) {
-      auto var = GetRef<Var>(var_node);
-      auto it = this->var_map.find(var);
-      CHECK(it != this->var_map.end());
-      Emit(Push(it->second));
-    }
-
-    void VisitExpr_(const TupleNode* tuple_node) {
-      auto tuple = GetRef<Tuple>(tuple_node);
-      for (auto& field : tuple->fields) {
-        this->VisitExpr(field);
-      }
-      // TODO: Handle complex field expression
-      // TODO: Use correct tag
-      Emit(AllocDatatype(0, tuple->fields.size()));
-    }
-
-    void VisitExpr_(const MatchNode* match_node) {
-      auto match = GetRef<Match>(match_node);
-      std::cout << "Ignore compiling match node\n";
-    }
-
-    void VisitExpr_(const LetNode* let_node) {
-      this->VisitExpr(let_node->value);
-      // Let binding value will be at stack_index-1
-      var_map.insert({ let_node->var, this->stack_index-1 });
-      this->VisitExpr(let_node->body);
-    }
-
-    void VisitExpr_(const TupleGetItemNode* get_node) {
-      auto get = GetRef<TupleGetItem>(get_node);
-      this->VisitExpr(get->tuple);
-      // Tuple value will be at stack_index-1
-      Emit(GetField(this->stack_index-1, get->index));
-    }
-
-    void VisitExpr_(const GlobalVarNode* gvar) {
-      auto global = GetRef<GlobalVar>(gvar);
-      auto it = this->context->global_map.find(global);
-      CHECK(it != this->context->global_map.end());
-      std::cout << "Invoke with: " << global->name_hint << "(func idx" << it->second << ")" << std::endl;
-      Emit(Invoke(it->second));
-    }
-
-    void VisitExpr_(const IfNode* if_node) {
-      this->VisitExpr(if_node->cond);
-      auto after_cond = this->instructions.size();
-
-      this->Emit(If(0, 0));
-
-      // Save the stack_index before entering true branch
-      auto stack_index_before_branch = stack_index;
-      this->VisitExpr(if_node->true_branch);
-
-      Emit(Goto(0));
-
-      // Restore stack_index to the value before the branch
-      stack_index = stack_index_before_branch;
-      auto after_true = this->instructions.size();
-      this->VisitExpr(if_node->false_branch);
-
-      auto after_false = this->instructions.size();
-
-      // After we emit the true body, and false body,
-      // we patch up the if instruction, and goto.
-      auto true_offset = 1;
-      auto false_offset = after_true - after_cond;
-      this->instructions[after_cond].true_offset = true_offset;
-      this->instructions[after_cond].false_offset = false_offset;
-      // Patch the Goto.
-      this->instructions[after_true - 1].pc_offset = after_false - after_true;
-    }
-
-
-    Instruction AllocTensorFromType(const TensorTypeNode* ttype) {
-      std::vector<int64_t> shapes;
-      for (auto sh : ttype->shape) {
-        shapes.push_back(Downcast<tvm::Integer>(sh)->value);
-      }
-      DataType dtype = ttype->dtype;
-      TVMType dltype = Type2TVMType(dtype);
-      return AllocTensor(shapes, dltype);
-    }
-
-    void EmitInvokePrimitive(const Function& func, const Type& ret_type) {
-      std::vector<Instruction> allocs;
-      size_t return_num = 0;
-      if (const TensorTypeNode* ttype = ret_type.as<TensorTypeNode>()) {
-        // Allocate space for the return tensor.
-        auto alloc = AllocTensorFromType(ttype);
-        // Alloc to use for input
-        allocs.push_back(alloc);
-        // Alloc to use for output, but not used for this case. we should optmize that
-        allocs.push_back(alloc);
-        return_num = 1;
-      } else if (const TupleTypeNode* ttype = ret_type.as<TupleTypeNode>()) {
-        for (size_t i = 0; i < ttype->fields.size(); ++i) {
-          auto f = ttype->fields[i];
-          auto f_type = f.as<TensorTypeNode>();
-          allocs.push_back(AllocTensorFromType(f_type));
-        }
-        return_num = ttype->fields.size();
-        allocs.push_back(AllocDatatype(0, return_num));
-      } else {
-        LOG(FATAL) << "Unsupported return value type";
-      }
-
-      for (auto& alloc : allocs) {
-        Emit(alloc);
-      }
-
-      // Next generate the invoke instruction.
-      CHECK(func->IsPrimitive());
-      auto target = Target::create("llvm");
-      auto key = CCacheKeyNode::make(func, target);
-      auto cfunc = engine->Lower(key);
-      // TODO: support lowered funcs for multiple targets
-      CHECK(cfunc->funcs.size() == 1);
-      auto op_index = this->context->lowered_funcs.size();
-      this->context->lowered_funcs.push_back(cfunc->funcs[0]);
-
-      // If Tensor, 1
-      // If Tuple, size of tuple
-      size_t arity = func->params.size() + return_num;
-      CHECK(arity < 10);
-      Emit(InvokePacked(op_index, arity, return_num));
-    }
-
-    void VisitExpr_(const CallNode* call_node) {
-      // First generate instructions to populate stack with arguments.
-      std::vector<size_t> args;
-      for (auto arg : call_node->args) {
-        this->VisitExpr(arg);
-        args.push_back(stack_index-1);
-      }
-
-      // Some arguments might be composite expressions, not atomic variable, we
-      // need to push the arguments again to keep the invariant that the arguments
-      // of function are consecutive to each other
-      if (!args.empty() && (args.back() - args.front()) != (args.size() - 1)) {
-        std::cout << "Found non-consec sequence\n";
-        for (auto& i : args) {
-          Emit(Push(i));
-        }
-      }
-
-      if (auto func_node = call_node->op.as<FunctionNode>()) {
-        CHECK(func_node->IsPrimitive());
-        EmitInvokePrimitive(
-          GetRef<Function>(func_node),
-          call_node->checked_type());
-      } else if (auto global_node = call_node->op.as<GlobalVarNode>()) {
-        auto global = GetRef<GlobalVar>(global_node);
-        auto it = this->context->global_map.find(global);
-        CHECK(it != this->context->global_map.end());
-        Emit(Invoke(it->second));
-      } else if (auto constructor_node = call_node->op.as<ConstructorNode>()) {
-        auto constructor = GetRef<Constructor>(constructor_node);
-        auto tag = GetConstructorTag(constructor);
-        Emit(AllocDatatype(tag, call_node->args.size()));
-      } else {
-        LOG(FATAL) << "unsupported case in vm compiler: " << call_node->op;
-      }
-    }
-
-    size_t GetConstructorTag(tvm::relay::Constructor constructor) {
-      auto it = this->context->tag_map.find(constructor);
-      if (it != this->context->tag_map.end()) {
-        return it->second;
-      } else {
-        auto tag = this->context->tag_map.size();
-        this->context->tag_map[constructor] = tag;
-        this->context->tag_index_map[tag] = constructor;
-        return tag;
-      }
-    }
-
-    bool IsClosure(const Function& func) const {
-      NodeRef res = FunctionGetAttr(func, "closure");
-      const ir::IntImm* pval = res.as<ir::IntImm>();
-      return pval && pval->value != 0;
-    }
-
-
-    void VisitExpr_(const FunctionNode* func_node) {
-      auto func = GetRef<Function>(func_node);
-      CHECK(IsClosure(func));
-      LOG(FATAL) << "TODO: implement closure allocation";
-    }
-
-    void Compile(const Function& func) {
-      for (auto param : func->params) {
-        std::cout << "Func param " << param << " at " << this->stack_index << "\n";
-        var_map.insert({ param, this->stack_index++ });
-      }
-
-      this->VisitExpr(func->body);
-    }
-};
-
-void PopulatePackedFuncMap(
-  const std::vector<LoweredFunc>& lowered_funcs,
-  std::vector<PackedFunc>* packed_funcs) {
-  runtime::Module mod;
-  if (lowered_funcs.size() > 0) {
-    // TODO(@jroesch): we need to read target from build config
-    Target target = Target::create("llvm");
-    if (const auto* f = runtime::Registry::Get("relay.backend.build")) {
-      mod = (*f)(tvm::Array<LoweredFunc>(lowered_funcs.begin(), lowered_funcs.end()), target);
-    } else {
-      LOG(FATAL) << "relay.backend.build is not registered";
-    }
-    CHECK(mod.operator->());
-    for (auto lfunc : lowered_funcs) {
-      packed_funcs->push_back(mod.GetFunction(lfunc->name));
-    }
-  }
-}
-
-VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
-  size_t params = func->params.size();
-  VMCompiler compiler(context);
-  compiler.Compile(func);
-  compiler.instructions.push_back(Ret());
-  VMFunction vm_func = VMFunction(var->name_hint, params, compiler.instructions);
-  return vm_func;
-}
-
-VirtualMachine CompileModule(const Module& mod_ref) {
-  Module mod = mod_ref;
-  // Run some optimizations first, this code should
-  // be moved to pass manager.
-
-  mod = LambdaLift(mod);
-
-  VirtualMachine vm;
-
-  VMCompilerContext context;
-
-
-  // First we populate global map.
-  size_t global_index = 0;
-  for (auto named_func : mod->functions) {
-    auto gvar = named_func.first;
-    context.global_map.insert({ gvar, global_index++ });
-    std::cout << "Global Map " << gvar << " " << global_index-1 << std::endl;
-  }
-
-  // Next we populate constant map.
-  context.const_map = LayoutConstantPool(mod);
-
-  // Next we get ready by allocating space for
-  // the global state.
-  vm.functions.resize(mod->functions.size());
-  vm.constants.resize(context.const_map.size());
-
-  for (auto pair : context.const_map) {
-    vm.constants[pair.second] = VMTensor(pair.first->data);
-  }
-
-  for (auto named_func : mod->functions) {
-    auto gvar = named_func.first;
-    auto func = named_func.second;
-    auto vm_func = CompileFunc(&context, gvar, func);
-
-    size_t func_index = context.global_map.at(gvar);
-    CHECK(func_index < vm.functions.size());
-    vm.functions[func_index] = vm_func;
-  }
-
-  for (auto vm_func : vm.functions) {
-    std::cout << "Function: " << vm_func.name << std::endl;
-    VMFunctionPrint(vm_func);
-    std::cout << "-------------" << std::endl;
-  }
-
-  PopulatePackedFuncMap(context.lowered_funcs, &vm.packed_funcs);
-
-  vm.global_map = context.global_map;
-  vm.tag_index_map = context.tag_index_map;
-
-  return vm;
+std::ostream& operator<<(std::ostream& os, const VMFunction& vm_func) {
+  VMFunctionPrint(os, vm_func);
+  return os;
 }
 
 void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, size_t sp, const VMFunction& vm_func) {
@@ -808,6 +447,10 @@ void VirtualMachine::Run() {
         pc++;
         goto main_loop;
       }
+      case Opcode::InvokeClosure: {
+        LOG(FATAL) << "InvokeClousre";
+        goto main_loop;
+      }
       case Opcode::GetField: {
         auto object = stack[bp + instr.object_offset];
         DumpStack();
@@ -862,6 +505,11 @@ void VirtualMachine::Run() {
           fields.push_back(stack[stack_size - instr.num_fields + i]);
         }
         stack.push_back(VMDatatype(instr.constructor_tag, fields));
+      case Opcode::AllocClosure: {
+        pc++;
+        goto main_loop;
+      }
+        LOG(FATAL) << "AllocClosure" << std::endl;
         pc++;
         goto main_loop;
       }
@@ -923,6 +571,8 @@ VMObject ValueToVM(Value value) {
   CHECK_LT(out.size(), 2);
   return out[0];
 }
+
+using TagNameMap = std::unordered_map<size_t, tvm::relay::Constructor>;
 
 Value VMToValue(TagNameMap& tag_index_map, VMObject obj) {
   switch (obj->tag) {

@@ -98,9 +98,11 @@ enum struct Opcode {
   Push,
   Ret,
   Invoke,
+  InvokeClosure,
   InvokePacked,
   AllocTensor,
   AllocDatatype,
+  AllocClosure,
   GetField,
   If,
   LoadConst,
@@ -144,6 +146,10 @@ struct Instruction {
       size_t constructor_tag;
       size_t num_fields;
     };
+    struct {
+      size_t clo_index;
+      size_t num_freevar;
+    };
   };
 
   Instruction();
@@ -151,12 +157,19 @@ struct Instruction {
   ~Instruction();
 };
 
+// Helpers to build instructions.
 Instruction Push(size_t stack_index);
 Instruction Ret();
-Instruction InvokePacked(size_t stack_index);
-Instruction AllocTensor(std::vector<int64_t> shape, std::string dtype);
+Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size);
+Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype);
+Instruction AllocDatatype(size_t tag, size_t num_fields);
+Instruction AllocClosure(size_t func_index, size_t num_freevar);
 Instruction GetField(size_t object_offset, size_t field_index);
-
+Instruction If(size_t true_branch, size_t false_branch);
+Instruction Goto(size_t pc_offset);
+Instruction Invoke(size_t func_index);
+Instruction InvokeClosure();
+Instruction LoadConst(size_t const_index);
 
 struct VMFunction {
   std::string name;
@@ -167,6 +180,8 @@ struct VMFunction {
     : name(name), params(params), instructions(instructions) {}
 
   VMFunction() {}
+
+  friend std::ostream& operator<<(std::ostream& os, const VMFunction&);
 };
 
 void VMFunctionPrint(const VMFunction& vm_func);
@@ -231,6 +246,7 @@ struct VirtualMachine {
                                      const std::vector<TVMContext>& ctxs);
 };
 
+bool IsClosure(const Function& func);
 Module LambdaLift(const Module& module);
 
 VirtualMachine CompileModule(const Module& mod);

@@ -20,9 +20,21 @@ namespace tvm {
 namespace relay {
 namespace vm {
 
+static const char* kIsClosure = "IsClosure";
+
 inline std::string GenerateName(const Function& func) {
-    size_t hash = StructuralHash()(func);
-    return std::string("lifted_name") + std::to_string(hash);
+  size_t hash = StructuralHash()(func);
+  return std::string("lifted_name") + std::to_string(hash);
+}
+
+bool IsClosure(const Function& func) {
+  NodeRef res = FunctionGetAttr(func, kIsClosure);
+  const ir::IntImm* pval = res.as<ir::IntImm>();
+  return pval && pval->value != 0;
+}
+
+Function MarkClosure(const Function& func) {
+  return FunctionSetAttr(func, kIsClosure, tvm::Integer(1));
 }
 
 struct LambdaLifter : ExprMutator {
@@ -32,7 +44,25 @@ struct LambdaLifter : ExprMutator {
 
     Expr VisitExpr_(const FunctionNode* func_node) final {
         auto func = GetRef<Function>(func_node);
+
+        // We should not transform primitive functions.
+        if (func->IsPrimitive()) {
+          return func;
+        }
+
         auto free_vars = FreeVars(func);
+
+        // If there are no free variables this transform is easy.
+        //
+        // We maybe should eta-global an lift?
+        if (free_vars.size() == 0) {
+          auto name = GenerateName(func);
+          auto global = this->module_->GetGlobalVar(name);
+          auto vfunc = Downcast<Function>(ExprMutator::VisitExpr_(func_node));
+          lifted_.insert({global, vfunc });
+          return global;
+        }
+
         auto free_type_vars = FreeTypeVars(func, module_);
 
         tvm::Map<Var, Expr> subst_map;
@@ -47,9 +77,6 @@ struct LambdaLifter : ExprMutator {
 
         auto body = Downcast<Function>(Bind(func, subst_map));
 
-        body =
-          FunctionSetAttr(body, "IsClosure", tvm::Integer(1));
-
         auto lifted_func =
             FunctionNode::make(
                 args,
@@ -57,8 +84,7 @@ struct LambdaLifter : ExprMutator {
                 func->func_type_annotation(),
                 free_type_vars); // TODO(@jroesch), handle that
 
-        lifted_func =
-            FunctionSetAttr(lifted_func, "lifted", tvm::Integer(1));
+        lifted_func = MarkClosure(lifted_func);
 
         auto name = GenerateName(lifted_func);
         auto global = this->module_->GetGlobalVar(name);
@@ -103,7 +129,9 @@ Module LambdaLift(const Module& module)  {
       updates.Set(pair.first, pair.second);
     }
 
-    module->functions = updates;
+    for (auto pair : updates) {
+      module->Add(pair.first, pair.second, true);
+    }
 
     return module;
 }
