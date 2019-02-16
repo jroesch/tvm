@@ -119,6 +119,7 @@ Module LambdaLift(const Module& module)  {
 
     tvm::Map<GlobalVar, Function> updates;
 
+    // There is an ordering bug here.
     for (auto pair : module->functions) {
       auto global = pair.first;
       auto func = pair.second;
@@ -126,7 +127,7 @@ Module LambdaLift(const Module& module)  {
     }
 
     for (auto pair : lifter.lifted_) {
-      updates.Set(pair.first, pair.second);
+      module->Add(pair.first, pair.second);
     }
 
     for (auto pair : updates) {
