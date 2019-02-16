@@ -167,6 +167,6 @@ class Module(RelayNode):
         """
         return _module.Module_GetGlobalTypeVar(self, name)
 
- @staticmethod
+    @staticmethod
     def from_expr(expr):
         return _module.Module_FromExpr(expr)

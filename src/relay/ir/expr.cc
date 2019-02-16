@@ -321,7 +321,6 @@ TVM_REGISTER_API("relay._make.RefWrite")
 
 TVM_STATIC_IR_FUNCTOR_REGISTER(IRPrinter, vtable)
 .set_dispatch<RefWriteNode>([](const RefWriteNode* node, tvm::IRPrinter* p) {
-                                tvm::IRPrinter* p) {
   p->stream << "RefWriteNode(" << node->ref << ", " << node->value << ")";
 });
 

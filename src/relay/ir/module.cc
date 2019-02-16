@@ -40,9 +40,13 @@ Module ModuleNode::make(tvm::Map<GlobalVar, Function> global_funcs,
 
 GlobalVar ModuleNode::GetGlobalVar(const std::string& name) {
   auto it = global_var_map_.find(name);
-  CHECK(it != global_var_map_.end())
-      << "Cannot find global var " << name << " in the Module";
-  return (*it).second;
+  if (it == global_var_map_.end()) {
+    auto gvar = GlobalVarNode::make(name);
+    global_var_map_.Set(name, gvar);
+    return gvar;
+  } else {
+    return (*it).second;
+  }
 }
 
 void ModuleNode::AddUnchecked(const GlobalVar& var,

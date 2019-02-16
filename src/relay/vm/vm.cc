@@ -309,7 +309,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
     /*!
      * \brief Emit Opcode and adjust stack_index accordingly
-     * 
+     *
      * \param instr Instruction to emit
      */
     inline void Emit(const Instruction& instr) {
@@ -365,7 +365,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto match = GetRef<Match>(match_node);
       std::cout << "Ignore compiling match node\n";
     }
-  
+
     void VisitExpr_(const LetNode* let_node) {
       this->VisitExpr(let_node->value);
       // Let binding value will be at stack_index-1
@@ -391,7 +391,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     void VisitExpr_(const IfNode* if_node) {
       this->VisitExpr(if_node->cond);
       auto after_cond = this->instructions.size();
-      
+
       this->Emit(If(0, 0));
 
       // Save the stack_index before entering true branch
@@ -617,7 +617,7 @@ VirtualMachine CompileModule(const Module& mod_ref) {
   for (auto vm_func : vm.functions) {
     std::cout << "Function: " << vm_func.name << std::endl;
     VMFunctionPrint(vm_func);
-    std::cout << "-------------" << std::endl;    
+    std::cout << "-------------" << std::endl;
   }
 
   PopulatePackedFuncMap(context.lowered_funcs, &vm.packed_funcs);
@@ -795,7 +795,7 @@ void VirtualMachine::Run() {
         // std::cout << this->stack.size() << std::endl;
         DumpStack();
         InvokePacked(func, arity, instr.output_size, stack);
-        DumpStack();        
+        DumpStack();
         CHECK(start_stack - arity == stack.size())
           << "start_stack: " << start_stack
           << "end_stack: " << stack.size();
@@ -863,7 +863,7 @@ void VirtualMachine::Run() {
       case Opcode::Push: {
         CHECK(bp + instr.stack_index < stack.size()) << bp << " " << instr.stack_index << " " << stack.size();
         stack.push_back(stack[bp + instr.stack_index]);
-        DumpStack();        
+        DumpStack();
         pc++;
         goto main_loop;
       }
@@ -932,7 +932,7 @@ Value VMToValue(TagNameMap& tag_index_map, VMObject obj) {
         fields.push_back(VMToValue(tag_index_map, data_type->fields[i]));
       }
 
-      return ConValueNode::make(tag_index_map[data_type->tag], fields);
+      return ConstructorValueNode::make(tag_index_map[data_type->tag], fields);
     }
     default:
       LOG(FATAL) << "unsupported return value";
@@ -940,7 +940,7 @@ Value VMToValue(TagNameMap& tag_index_map, VMObject obj) {
   }
 }
 
-std::tuple<VMObject, TagNameMap> 
+std::tuple<VMObject, TagNameMap>
 EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
                const std::vector<VMObject>& vm_args) {
   VirtualMachine vm = VirtualMachine::FromModule(module, ctxs);

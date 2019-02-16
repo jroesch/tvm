@@ -265,6 +265,10 @@ class NDArray::Container {
   int32_t array_type_code_{0};
   /*! \brief The internal reference counter */
   std::atomic<int> ref_counter_{0};
+
+  /*! \brief Buffer allocated by allocator */
+  Buffer* buffer_;
+
   /*!
    * \brief The shape container,
    *  can be used used for shape data.
@@ -293,19 +297,6 @@ class NDArray::Container {
       }
     }
   }
-
- private:
-  friend class NDArray;
-  friend class RPCWrappedFunc;
-  /*!
-   * \brief The shape container,
-   *  can be used used for shape data.
-   */
-  std::vector<int64_t> shape_;
-  /*! \brief The internal array object */
-  std::atomic<int> ref_counter_{0};
-  /*! \brief Buffer allocated by allocator */
-  Buffer* buffer_;
 };
 
 // implementations of inline functions
