@@ -521,15 +521,26 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       }
     }
 
+    bool IsClosure(const Function& func) const {
+      NodeRef res = FunctionGetAttr(func, "closure");
+      const ir::IntImm* pval = res.as<ir::IntImm>();
+      return pval && pval->value != 0;
+    }
+
+
     void VisitExpr_(const FunctionNode* func_node) {
-      CHECK(!seen_func) << GetRef<Function>(func_node);
-      this->seen_func = true;
-      for (auto param : func_node->params) {
+      auto func = GetRef<Function>(func_node);
+      CHECK(IsClosure(func));
+      LOG(FATAL) << "TODO: implement closure allocation";
+    }
+
+    void Compile(const Function& func) {
+      for (auto param : func->params) {
         std::cout << "Func param " << param << " at " << this->stack_index << "\n";
         var_map.insert({ param, this->stack_index++ });
       }
 
-      this->VisitExpr(func_node->body);
+      this->VisitExpr(func->body);
     }
 };
 
@@ -552,20 +563,22 @@ void PopulatePackedFuncMap(
   }
 }
 
-
 VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
-//  std::cout << func << std::endl;
   size_t params = func->params.size();
   VMCompiler compiler(context);
-  // std::cout << "Compiling: " << func << std::endl;
-  std::cout << "Start: " << compiler.stack_index << "\n";
-  compiler.VisitExpr(func);
+  compiler.Compile(func);
   compiler.instructions.push_back(Ret());
   VMFunction vm_func = VMFunction(var->name_hint, params, compiler.instructions);
   return vm_func;
 }
 
-VirtualMachine CompileModule(const Module& mod) {
+VirtualMachine CompileModule(const Module& mod_ref) {
+  Module mod = mod_ref;
+  // Run some optimizations first, this code should
+  // be moved to pass manager.
+
+  mod = LambdaLift(mod);
+
   VirtualMachine vm;
 
   VMCompilerContext context;
@@ -594,7 +607,6 @@ VirtualMachine CompileModule(const Module& mod) {
   for (auto named_func : mod->functions) {
     auto gvar = named_func.first;
     auto func = named_func.second;
-    std::cout << "Compiling func " << gvar->name_hint << std::endl;
     auto vm_func = CompileFunc(&context, gvar, func);
 
     size_t func_index = context.global_map.at(gvar);

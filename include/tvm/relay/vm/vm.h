@@ -231,6 +231,8 @@ struct VirtualMachine {
                                      const std::vector<TVMContext>& ctxs);
 };
 
+Module LambdaLift(const Module& module);
+
 VirtualMachine CompileModule(const Module& mod);
 
 }  // namespace vm

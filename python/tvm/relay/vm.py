@@ -56,12 +56,19 @@ def convert(args):
         _convert(arg, cargs)
     return cargs
 
-def eval_vm(expr_or_mod, ctx, *args):
-    if isinstance(expr_or_mod, Expr):
-        mod = Module.from_expr(expr_or_mod)
-    else:
-        mod = expr_or_mod
+def eval_vm(mod, ctx, *args):
+    """
+    Evaluate a module on a given context with the provided arguments.
 
+    Parameters
+    ----------
+    mod: relay.Module
+        The module to optimize, will execute its entry_func.
+    ctx: tvm.Context
+        The TVM context to execute on.
+    args: ...
+        The arguments to evaluate.
+    """
     main_func = mod[mod.entry_func]
 
     if len(main_func.params) == 0 and isinstance(main_func.body, GlobalVar):
@@ -72,6 +79,7 @@ def eval_vm(expr_or_mod, ctx, *args):
     mod[mod.entry_func] = main_func
 
     cargs = convert(list(args))
+
     result = _vm._evaluate_vm(mod, ctx.device_type, ctx.device_id, *cargs)
     return result
 
@@ -102,9 +110,15 @@ class VMExecutor(Executor):
         self.ctx = ctx
         self.target = target
 
-    def _make_executor(self, func):
+    def _make_executor(self, expr):
+        assert isinstance(expr, Expr)
+
+        self.mod[self.mod.entry_func] = expr
+        main = self.mod[self.mod.entry_func]
+
         def _vm_wrapper(*args, **kwargs):
-            args = self._convert_args(func, args, kwargs)
-            return eval_vm(func, self.ctx, args)
+            args = self._convert_args(main, args, kwargs)
+            return eval_vm(self.mod, self.ctx, args)
+
         return _vm_wrapper
 

@@ -377,6 +377,12 @@ class RelayHashHandler:
     return hash;
   }
 
+  size_t VisitType_(const TypeOfNode* tyof_node) final {
+    size_t hash = std::hash<std::string>()(PatternWildcardNode::_type_key);
+    hash = Combine(hash, StructuralHash()(tyof_node->expr));
+    return hash;
+  }
+
  private:
   // renaming of NodeRef to indicate two nodes equals to each other
   std::unordered_map<NodeRef, size_t, NodeHash, NodeEqual> hash_map_;

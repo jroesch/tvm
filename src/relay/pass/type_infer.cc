@@ -529,7 +529,13 @@ class TypeInferencer : private ExprFunctor<Type(const Expr&)>,
     CHECK(mod_.defined())
       << "Cannot do type inference without a environment:"
       << c->name_hint;
-    TypeData td = mod_->LookupDef(c->belong_to);
+    auto it = mod_->type_definitions.find(c->belong_to);
+    if (it == mod_->type_definitions.end()) {
+      // TODO(@jroesch): we need more context to report error
+      LOG(FATAL) << "can not find type definition for constructor"
+        << GetRef<Constructor>(c) << std::endl;
+    }
+    TypeData td = (*it).second;
     std::vector<Type> types;
     for (const auto & t : td->type_vars) {
       types.push_back(t);
