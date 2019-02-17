@@ -331,7 +331,12 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           // This instruction will pop one value from stack
           stack_index--;
           break;
-        default:
+        case Opcode::Invoke:
+          // this instruction will push one return value into stack
+          stack_index++;
+          break;
+        case Opcode::Ret:
+        case Opcode::Goto:
           break;
       }
       instructions.push_back(instr);

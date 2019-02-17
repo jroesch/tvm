@@ -144,7 +144,7 @@ def test_list_constructor():
     def to_list(o):
         if isinstance(o, tvm.relay.backend.interpreter.TensorValue):
             return [o.data.asnumpy().tolist()]
-        if isinstance(o, tvm.relay.backend.interpreter.ConValue):
+        if isinstance(o, tvm.relay.backend.interpreter.ConstructorValue):
             result = []
             for f in o.fields:
                 result.extend(to_list(f))
@@ -157,17 +157,16 @@ def test_list_constructor():
     cons = p.cons
     l = p.l
 
-    one = relay.const(1)
-    one2 = cons(one, nil())
-    one3 = cons(one, one2)
-    one4 = cons(one, one3)
+    one2 = cons(relay.const(1), nil())
+    one3 = cons(relay.const(2), one2)
+    one4 = cons(relay.const(3), one3)
     f = relay.Function([], one4)
 
     mod[mod.entry_func] = f
 
     result = eval_vm(mod, tvm.cpu())
     obj = to_list(result)
-    tvm.testing.assert_allclose(obj, np.array([1,1,1]))
+    tvm.testing.assert_allclose(obj, np.array([3,2,1]))
 
 def test_let_tensor():
     sb = relay.ScopeBuilder()

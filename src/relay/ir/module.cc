@@ -26,7 +26,7 @@ Module ModuleNode::make(tvm::Map<GlobalVar, Function> global_funcs,
     n->global_var_map_.Set(kv.first->name_hint, kv.first);
   }
 
-  auto main = GlobalVarNode::make("main");
+  n->entry_func = GlobalVarNode::make("main");
 
   for (const auto& kv : n->type_definitions) {
     // set global typevar map
