@@ -505,10 +505,10 @@ void VirtualMachine::Run() {
           fields.push_back(stack[stack_size - instr.num_fields + i]);
         }
         stack.push_back(VMDatatype(instr.constructor_tag, fields));
-      case Opcode::AllocClosure: {
         pc++;
         goto main_loop;
       }
+      case Opcode::AllocClosure: {
         LOG(FATAL) << "AllocClosure" << std::endl;
         pc++;
         goto main_loop;

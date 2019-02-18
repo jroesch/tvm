@@ -86,6 +86,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       switch (instr.op) {
         case Opcode::AllocDatatype:
         case Opcode::AllocTensor:
+        case Opcode::AllocClosure:
         case Opcode::GetField:
         case Opcode::Push:
         case Opcode::LoadConst:
@@ -98,6 +99,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           stack_index--;
           break;
         case Opcode::Invoke:
+        case Opcode::InvokeClosure:
           // this instruction will push one return value into stack
           stack_index++;
           break;
