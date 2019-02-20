@@ -657,6 +657,7 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
       VMObject obj = args[i];
       vm_args.push_back(obj);
     }
+
     auto result = EvaluateModule(module, {ctx}, vm_args);
     std::cout << "Returning results\n";
     *ret = VMToValue(std::get<1>(result), std::get<0>(result));

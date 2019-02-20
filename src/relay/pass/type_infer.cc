@@ -755,6 +755,7 @@ void EnsureCheckedType(const Expr& e) {
 }
 
 Expr InferType(const Expr& expr, const Module& mod_ref) {
+  std::cout << "Expr: " << expr << std::endl;
   if (!mod_ref.defined()) {
     Module mod = ModuleNode::FromExpr(expr);
     // NB(@jroesch): By adding the expression to the module we will

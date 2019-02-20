@@ -230,6 +230,9 @@ def test_rnn():
     net = import_mxnet_model('rnn', 128, 128, "rnn_i128_h128")
 #    execute_mxnet_model('gru', 128, 128, "gru_i128_h128")
 
+# def test_closure():
+#     relay.Function
+
 if __name__ == "__main__":
     test_id()
     test_op()
