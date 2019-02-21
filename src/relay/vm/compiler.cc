@@ -9,6 +9,7 @@
 #include <tvm/relay/vm/vm.h>
 #include <tvm/relay/error.h>
 #include <tvm/relay/interpreter.h>
+#include <tvm/relay/logging.h>
 #include "../backend/compile_engine.h"
 #include "../../runtime/naive_allocator.h"
 
@@ -89,9 +90,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       seen_func(false), engine(CompileEngine::Global()), context(context)  {}
 
     inline void Emit(const Instruction& instr) {
-      std::cout << "Emitting: ";
-      InstructionPrint(std::cout, instr);
-      std::cout << std::endl;
+      RELAY_LOG(INFO) << "VMCompiler::Emit: instr=" << instr;
       CHECK((int)instr.op < 100) << "Invalid opcode " << (int)instr.op;
       switch (instr.op) {
         case Opcode::AllocDatatype:
@@ -180,7 +179,11 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto global = GetRef<GlobalVar>(gvar);
       auto it = this->context->global_map.find(global);
       CHECK(it != this->context->global_map.end());
-      std::cout << "Invoke with: " << global->name_hint << "(func idx" << it->second << ")" << std::endl;
+      RELAY_LOG(INFO)
+        << "VisitExpr_: generating invoke for "
+        << global->name_hint
+        << " with func_index="
+        << it->second;
       Emit(Invoke(it->second));
     }
 
@@ -195,8 +198,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       this->VisitExpr(if_node->true_branch);
 
 
-      std::cout << "stack_index= " << stack_index << std::endl;
-      std::cout << "stack_index_before_branch= " << stack_index_before_branch << std::endl;
+      RELAY_LOG(INFO) << "stack_index= " << stack_index;
+      RELAY_LOG(INFO) << "stack_index_before_branch= " << stack_index_before_branch;
+
       // We need to now clean up the stack to only leave one value on it.
       auto num_of_push_in_true = stack_index - stack_index_before_branch;
       CHECK(num_of_push_in_true > 0);
@@ -245,7 +249,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto false_offset = after_true - after_cond;
       this->instructions[after_cond].true_offset = true_offset;
       this->instructions[after_cond].false_offset = false_offset;
+
       // Patch the Goto.
+      // CHECK(this->instructions[after_true - 1].op == Opcode::Goto);
       this->instructions[after_true - 1].pc_offset = after_false - after_true;
     }
 
@@ -309,7 +315,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
       for (auto arg : call_node->args) {
         CHECK(arg.as<VarNode>())
-          << "found: " << arg;
+          << "found: " << RelayPrint(arg, false);
         this->VisitExpr(arg);
         args.push_back(stack_index-1);
       }

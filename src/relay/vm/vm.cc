@@ -36,12 +36,8 @@ namespace vm {
 
 Instruction::Instruction() {}
 
-void InstructionPrint(std::ostream& os, const Instruction& instr);
-
 Instruction::Instruction(const Instruction& instr) {
   this->op = instr.op;
-  InstructionPrint(std::cout, instr);
-  std::cout << std::endl;
   switch (instr.op) {
     case Opcode::Push:
       this->stack_index = instr.stack_index;
@@ -95,6 +91,7 @@ Instruction::Instruction(const Instruction& instr) {
 
 // TODO(@jroesch): this leaks memory fix me
 Instruction::~Instruction() {}
+
 
 Instruction Push(size_t stack_index) {
   Instruction instr;
@@ -290,9 +287,14 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
       break;
     }
     default:
-      LOG(FATAL) << "should never hit this case";
+      LOG(FATAL) << "should never hit this case" << static_cast<int>(instr.op);
       break;
   }
+}
+
+std::ostream& operator<<(std::ostream& os, const Instruction& instr) {
+  InstructionPrint(os, instr);
+  return os;
 }
 
 void VMFunctionPrint(std::ostream& os, const VMFunction& vm_func) {

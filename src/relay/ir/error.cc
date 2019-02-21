@@ -99,7 +99,6 @@ void ErrorReporter::RenderErrors(const Module& module, bool use_color) {
       auto it = err_map.find(expr);
       if (it != err_map.end()) {
         CHECK(it->second.size() != 0);
-        // std::cout << "MESSAGE: " << it->second;
         return it->second;
       } else {
         return std::string("");

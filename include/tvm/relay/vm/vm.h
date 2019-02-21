@@ -37,10 +37,7 @@ inline std::string VMObjectTagString(VMObjectTag tag) {
   }
 }
 
-// TODO(@jroesch): Eventually inline cell.
-// We can also use pointer tagging scheme ala
-// https://github.com/leanprover/lean/blob/master/src/library/vm/vm.h#L51
-// https://www.microsoft.com/en-us/research/wp-content/uploads/2007/10/ptr-tagging.pdf?from=http%3A%2F%2Fresearch.microsoft.com%2Fen-us%2Fum%2Fpeople%2Fsimonpj%2Fpapers%2Fptr-tag%2Fptr-tagging.pdf
+// TODO(@jroesch): Use intrusive pointer.
 struct VMObjectCell {
   VMObjectTag tag;
   VMObjectCell(VMObjectTag tag) : tag(tag) {}
@@ -164,6 +161,8 @@ struct Instruction {
   Instruction();
   Instruction(const Instruction& instr);
   ~Instruction();
+
+  friend std::ostream& operator<<(std::ostream& os, const Instruction&);
 };
 
 // Helpers to build instructions.
