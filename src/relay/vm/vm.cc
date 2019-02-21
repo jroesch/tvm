@@ -660,14 +660,11 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
     std::vector<VMObject> vm_args;
     for (auto i = 3; i < args.size(); i++) {
       VMObject obj = args[i];
-      CHECK(obj->tag == VMObjectTag::kTensor);
       vm_args.push_back(obj);
     }
 
     auto result = EvaluateModule(module, {ctx}, vm_args);
     std::cout << "Returning results\n";
-    auto out = std::get<0>(result);
-    CHECK(out->tag == VMObjectTag::kTensor);
     *ret = VMToValue(std::get<1>(result), std::get<0>(result));
 });
 

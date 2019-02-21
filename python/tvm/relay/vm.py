@@ -44,7 +44,8 @@ def eta_expand(expr, mod):
 
 def _convert(arg, cargs):
     if isinstance(arg, np.ndarray):
-        cargs.append(_vm._Tensor(tvm.nd.array(arg)))
+        vm = _vm._Tensor(tvm.nd.array(arg))
+        cargs.append(vm)
     elif isinstance(arg, tuple):
         field_args = []
         for field in arg:
@@ -57,6 +58,7 @@ def convert(args):
     cargs = []
     for arg in args:
         _convert(arg, cargs)
+
     return cargs
 
 def eval_vm(mod, ctx, *args):
@@ -81,8 +83,9 @@ def eval_vm(mod, ctx, *args):
     main_func = optimize(mod[mod.entry_func], mod)
     mod[mod.entry_func] = main_func
 
-    cargs = convert(list(args))
-    import pdb; pdb.set_trace()
+    args = list(args)
+    assert isinstance(args, list)
+    cargs = convert(args)
 
     result = _vm._evaluate_vm(mod, ctx.device_type, ctx.device_id, *cargs)
     return result
@@ -121,7 +124,7 @@ class VMExecutor(Executor):
 
         def _vm_wrapper(*args, **kwargs):
             args = self._convert_args(main, args, kwargs)
-            return eval_vm(self.mod, self.ctx, args)
+            return eval_vm(self.mod, self.ctx, *args)
 
         return _vm_wrapper
 

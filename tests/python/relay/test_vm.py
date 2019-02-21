@@ -12,7 +12,6 @@ from tvm.relay.prelude import Prelude
 def veval(f, *args, ctx=tvm.cpu()):
     if isinstance(f, relay.Expr):
         ex = relay.create_executor('vm', mod=relay.Module(), ctx=ctx)
-        import pdb; pdb.set_trace()
         return ex.evaluate(f)(*args)
     else:
         assert isinstance(f, relay.Module), "expected expression or module"
@@ -35,7 +34,6 @@ def test_id():
     f = relay.Function([x], x)
     x_data = np.random.rand(10, 10).astype('float64')
     res = veval(f, x_data)
-    import pdb; pdb.set_trace()
     tvm.testing.assert_allclose(res.asnumpy(), x_data)
 
 def test_op():
@@ -93,7 +91,7 @@ def test_simple_call():
     i_data = np.array(0, dtype='int32')
     # Refactor this bit
     mod[mod.entry_func] = relay.Function([], sum_up)
-    result = eval_vm(mod, tvm.cpu(), i_data)
+    result = veval(mod, i_data)
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
 def test_count_loop():
@@ -111,7 +109,7 @@ def test_count_loop():
     mod[sum_up] = func
     i_data = np.array(0, dtype='int32')
     mod[mod.entry_func] = relay.Function([], sum_up)
-    result = eval_vm(mod, tvm.cpu(), i_data)
+    result = veval(mod, i_data)
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
 def test_sum_loop():
@@ -131,7 +129,7 @@ def test_sum_loop():
     i_data = np.array(10, dtype='int32')
     accum_data = np.array(0, dtype='int32')
     mod[mod.entry_func] = relay.Function([], sum_up)
-    result = eval_vm(mod, tvm.cpu(), i_data, accum_data)
+    result = veval(mod, i_data, accum_data)
     tvm.testing.assert_allclose(result.asnumpy(), sum(range(1, 11)))
 
 def test_tuple_fst():
@@ -140,7 +138,7 @@ def test_tuple_fst():
     f = relay.Function([tup], relay.TupleGetItem(tup, 0))
     i_data = np.random.rand(41).astype('float32')
     j_data = np.random.rand(10).astype('float32')
-    result = eval_vm(f, tvm.cpu(), (i_data, j_data))
+    result = veval(f, (i_data, j_data))
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
 def test_tuple_second():
@@ -149,7 +147,7 @@ def test_tuple_second():
     f = relay.Function([tup], relay.TupleGetItem(tup, 1))
     i_data = np.random.rand(41).astype('float32')
     j_data = np.random.rand(10).astype('float32')
-    result = eval_vm(f, tvm.cpu(), (i_data, j_data))
+    result = veval(f, (i_data, j_data))
     tvm.testing.assert_allclose(result.asnumpy(), j_data)
 
 def test_list_constructor():
@@ -176,7 +174,7 @@ def test_list_constructor():
 
     mod[mod.entry_func] = f
 
-    result = eval_vm(mod, tvm.cpu())
+    result = veval(mod)
     obj = to_list(result)
     tvm.testing.assert_allclose(obj, np.array([3,2,1]))
 
@@ -194,7 +192,7 @@ def test_let_tensor():
     f = relay.Function([x], body)
 
     x_data = np.random.rand(*shape).astype('float32')
-    result = eval_vm(f, tvm.cpu(), x_data)
+    result = veval(f, x_data)
     tvm.testing.assert_allclose(result.asnumpy(), x_data + 42.0)
 
 def test_let_scalar():
@@ -211,7 +209,7 @@ def test_let_scalar():
     f = relay.Function([x], body)
 
     x_data = np.array(np.random.rand()).astype('float32')
-    result = eval_vm(f, tvm.cpu(), x_data)
+    result = veval(f, x_data)
     tvm.testing.assert_allclose(result.asnumpy(), x_data + 42.0)
 
 def import_mxnet_model(cell_type, input_size, hidden_size, fname, batch=1, seq_len=100):
