@@ -7,6 +7,7 @@
 #include <tvm/runtime/memory_manager.h>
 #include <tvm/relay/expr_functor.h>
 #include <tvm/relay/vm/vm.h>
+#include <tvm/relay/error.h>
 #include <tvm/relay/interpreter.h>
 #include "../backend/compile_engine.h"
 #include "../../runtime/naive_allocator.h"
@@ -27,6 +28,7 @@ using ConstMap = std::unordered_map<Constant, size_t, NodeHash, NodeEqual>;
 
 struct VMCompilerContext {
   Module module;
+  ErrorReporter err_reporter;
   TagNameMap tag_index_map;
   TagMap tag_map;
   GlobalMap global_map;
@@ -70,6 +72,9 @@ ConstMap LayoutConstantPool(const Module& module) {
 
 
 struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
+    /*! \brief Store the expression a variable points to. */
+    std::unordered_map<Var, Expr, NodeHash, NodeEqual> expr_map;
+
     std::vector<Instruction> instructions;
     std::unordered_map<Var, size_t, NodeHash, NodeEqual> var_map;
     size_t stack_index;
@@ -142,6 +147,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     void VisitExpr_(const LetNode* let_node) {
+      this->expr_map.insert({let_node->var, let_node->value});
       this->VisitExpr(let_node->value);
       var_map.insert({ let_node->var, this->stack_index-1 });
       this->VisitExpr(let_node->body);
@@ -258,12 +264,20 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         }
       }
 
-      if (auto func_node = call_node->op.as<FunctionNode>()) {
+      // Resolve the local variable to one of the cases.
+      Expr op;
+      if (auto var_node = call_node->op.as<VarNode>()) {
+        op = this->expr_map[GetRef<Var>(var_node)];
+      } else {
+        op = call_node->op;
+      }
+
+      if (auto func_node = op.as<FunctionNode>()) {
         CHECK(func_node->IsPrimitive());
         EmitInvokePrimitive(
           GetRef<Function>(func_node),
           call_node->checked_type());
-      } else if (auto global_node = call_node->op.as<GlobalVarNode>()) {
+      } else if (auto global_node = op.as<GlobalVarNode>()) {
         auto global = GetRef<GlobalVar>(global_node);
         auto func = context->module->Lookup(global);
         auto it = this->context->global_map.find(global);
@@ -275,12 +289,12 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         } else {
           Emit(Invoke(it->second));
         }
-      } else if (auto constructor_node = call_node->op.as<ConstructorNode>()) {
+      } else if (auto constructor_node = op.as<ConstructorNode>()) {
         auto constructor = GetRef<Constructor>(constructor_node);
         auto tag = GetConstructorTag(constructor);
         Emit(AllocDatatype(tag, call_node->args.size()));
       } else {
-        LOG(FATAL) << "unsupported case in vm compiler: " << call_node->op;
+        LOG(FATAL) << "unsupported case in vm compiler: " << op;
       }
     }
 
@@ -297,7 +311,10 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     void VisitExpr_(const FunctionNode* func_node) {
-      LOG(FATAL) << "local functions should have been removed by lambda lifting";
+      if (!func_node->IsPrimitive()) {
+        LOG(FATAL) << "local functions should have been removed by lambda lifting"
+                  << RelayPrint(GetRef<Function>(func_node), false);
+      }
     }
 
     void CompileClosure(const Function& func) {
@@ -373,6 +390,7 @@ VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const F
 }
 
 Module OptimizeModule(const Module& mod) {
+  ToANF(mod->Lookup(mod->entry_func), mod);
   return LambdaLift(mod);
 }
 
