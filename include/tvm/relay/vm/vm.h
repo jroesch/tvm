@@ -96,6 +96,7 @@ inline NDArray ToNDArray(const VMObject& obj) {
 
 enum struct Opcode {
   Push,
+  Pop,
   Ret,
   Invoke,
   InvokeClosure,
@@ -107,6 +108,7 @@ enum struct Opcode {
   If,
   LoadConst,
   Goto,
+  Move,
 };
 
 struct Instruction {
@@ -150,6 +152,13 @@ struct Instruction {
       size_t clo_index;
       size_t num_freevar;
     };
+    struct {
+      size_t pop_count;
+    };
+    struct {
+      size_t source;
+      size_t dest;
+    };
   };
 
   Instruction();
@@ -159,6 +168,7 @@ struct Instruction {
 
 // Helpers to build instructions.
 Instruction Push(size_t stack_index);
+Instruction Pop(size_t pop_count);
 Instruction Ret();
 Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size);
 Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype);
@@ -170,6 +180,7 @@ Instruction Goto(size_t pc_offset);
 Instruction Invoke(size_t func_index);
 Instruction InvokeClosure();
 Instruction LoadConst(size_t const_index);
+Instruction Move(size_t source, size_t dest);
 
 struct VMFunction {
   std::string name;
@@ -248,6 +259,7 @@ struct VirtualMachine {
 
 bool IsClosure(const Function& func);
 Module LambdaLift(const Module& module);
+Module InlinePrimitives(const Module& module);
 
 VirtualMachine CompileModule(const Module& mod);
 

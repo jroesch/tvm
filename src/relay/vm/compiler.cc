@@ -71,6 +71,8 @@ ConstMap LayoutConstantPool(const Module& module) {
 }
 
 
+void InstructionPrint(std::ostream& os, const Instruction& instr);
+
 struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     /*! \brief Store the expression a variable points to. */
     std::unordered_map<Var, Expr, NodeHash, NodeEqual> expr_map;
@@ -87,6 +89,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       seen_func(false), engine(CompileEngine::Global()), context(context)  {}
 
     inline void Emit(const Instruction& instr) {
+      std::cout << "Emitting: ";
+      InstructionPrint(std::cout, instr);
+      std::cout << std::endl;
       CHECK((int)instr.op < 100) << "Invalid opcode " << (int)instr.op;
       switch (instr.op) {
         case Opcode::AllocDatatype:
@@ -110,6 +115,11 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           break;
         case Opcode::Ret:
         case Opcode::Goto:
+        case Opcode::Move:
+          break;
+        case Opcode::Pop:
+          CHECK(instr.pop_count < 5);
+          stack_index -= instr.pop_count;
           break;
       }
       instructions.push_back(instr);
@@ -126,7 +136,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto var = GetRef<Var>(var_node);
       auto it = this->var_map.find(var);
       CHECK(it != this->var_map.end());
-      Emit(Push(it->second));
+      auto instr = Push(it->second);
+      CHECK(instr.op == Opcode::Push);
+      Emit(instr);
     }
 
     void VisitExpr_(const TupleNode* tuple_node) {
@@ -147,7 +159,12 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     void VisitExpr_(const LetNode* let_node) {
-      this->expr_map.insert({let_node->var, let_node->value});
+      // Let binding value will be the last value pushed,
+      // when we visit the value it will generate a sequence
+      // of instructions that will leave the final value
+      // on the stack.
+      //
+      // add notes about primitive functions.
       this->VisitExpr(let_node->value);
       var_map.insert({ let_node->var, this->stack_index-1 });
       this->VisitExpr(let_node->body);
@@ -173,16 +190,54 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
       this->Emit(If(0, 0));
 
-      auto stack_index_before_branch = stack_index;
+      // Save the stack_index before entering true branch
+      size_t stack_index_before_branch = stack_index;
       this->VisitExpr(if_node->true_branch);
+
+
+      std::cout << "stack_index= " << stack_index << std::endl;
+      std::cout << "stack_index_before_branch= " << stack_index_before_branch << std::endl;
+      // We need to now clean up the stack to only leave one value on it.
+      auto num_of_push_in_true = stack_index - stack_index_before_branch;
+      CHECK(num_of_push_in_true > 0);
+
+      // We will emit a move of the last value into the initial_stack index
+      // plus one.
+      Emit(Move(stack_index - 1u, stack_index_before_branch));
+      // Then we will emit the appropriate pops.
+
+      CHECK(num_of_push_in_true - 1 < 3);
+
+      Emit(Pop(num_of_push_in_true - 1u));
 
       Emit(Goto(0));
 
+      // Now we will generate code for the false branch, first
+      // we will restore the stack_index to the value before
+      // the branch.
       stack_index = stack_index_before_branch;
+      auto stack_index_before_false = stack_index;
       auto after_true = this->instructions.size();
-      this->VisitExpr(if_node->false_branch);
 
+      this->VisitExpr(if_node->false_branch);
+      auto num_of_push_in_false = stack_index - stack_index_before_false;
+
+      CHECK(num_of_push_in_false >= 0);
+
+      // We will emit a move of the last value into the initial_stack index
+      // plus one.
+      Emit(Move(stack_index - 1, stack_index_before_branch));
+
+      // Then we will emit the appropriate pops.
+      Emit(Pop(num_of_push_in_false - 1));
+
+      // Compute the total number of instructions
+      // after generating false.
       auto after_false = this->instructions.size();
+
+      // Now we will compute the jump targets in order
+      // to properly patch the instruction with the
+      // the requiste targets.
 
       // After we emit the true body, and false body,
       // we patch up the if instruction, and goto.
@@ -193,7 +248,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // Patch the Goto.
       this->instructions[after_true - 1].pc_offset = after_false - after_true;
     }
-
 
     Instruction AllocTensorFromType(const TensorTypeNode* ttype) {
       std::vector<int64_t> shapes;
@@ -252,25 +306,14 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     void VisitExpr_(const CallNode* call_node) {
       // First generate instructions to populate stack with arguments.
       std::vector<size_t> args;
+
       for (auto arg : call_node->args) {
+        CHECK(arg.as<VarNode>());
         this->VisitExpr(arg);
         args.push_back(stack_index-1);
       }
 
-      if ( !args.empty() && (args.back() - args.front()) != (args.size() - 1)) {
-        std::cout << "Found non-consec sequence\n";
-        for (auto& i : args) {
-          Emit(Push(i));
-        }
-      }
-
-      // Resolve the local variable to one of the cases.
-      Expr op;
-      if (auto var_node = call_node->op.as<VarNode>()) {
-        op = this->expr_map[GetRef<Var>(var_node)];
-      } else {
-        op = call_node->op;
-      }
+      Expr op = call_node->op;
 
       if (auto func_node = op.as<FunctionNode>()) {
         CHECK(func_node->IsPrimitive());
@@ -376,6 +419,7 @@ void PopulatePackedFuncMap(
 }
 
 VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
+  std::cout << RelayPrint(func, false) << std::endl;
   size_t params = func->params.size();
   VMCompiler compiler(context);
   compiler.Compile(func);
@@ -391,6 +435,7 @@ VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const F
 
 Module OptimizeModule(const Module& mod) {
   ToANF(mod->Lookup(mod->entry_func), mod);
+  InlinePrimitives(mod);
   return LambdaLift(mod);
 }
 
@@ -402,6 +447,8 @@ void PopulateGlobalMap(GlobalMap* global_map, const Module& mod) {
     global_map->insert({ gvar, global_index++ });
   }
 }
+
+// Verify
 
 VirtualMachine CompileModule(const Module& mod_ref) {
   Module mod = mod_ref;

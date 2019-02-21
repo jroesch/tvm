@@ -36,8 +36,12 @@ namespace vm {
 
 Instruction::Instruction() {}
 
+void InstructionPrint(std::ostream& os, const Instruction& instr);
+
 Instruction::Instruction(const Instruction& instr) {
   this->op = instr.op;
+  InstructionPrint(std::cout, instr);
+  std::cout << std::endl;
   switch (instr.op) {
     case Opcode::Push:
       this->stack_index = instr.stack_index;
@@ -79,6 +83,13 @@ Instruction::Instruction(const Instruction& instr) {
     case Opcode::Goto:
       this->pc_offset = instr.pc_offset;
       return;
+    case Opcode::Move:
+      this->source = instr.source;
+      this->dest = instr.dest;
+      return;
+    case Opcode::Pop:
+      this->pop_count = instr.pop_count;
+      return;
   }
 }
 
@@ -89,6 +100,13 @@ Instruction Push(size_t stack_index) {
   Instruction instr;
   instr.op = Opcode::Push;
   instr.stack_index = stack_index;
+  return instr;
+}
+
+Instruction Pop(size_t pop_count) {
+  Instruction instr;
+  instr.op = Opcode::Pop;
+  instr.pop_count = pop_count;
   return instr;
 }
 
@@ -179,6 +197,14 @@ Instruction LoadConst(size_t const_index) {
   return instr;
 }
 
+Instruction Move(size_t source, size_t dest) {
+  Instruction instr;
+  instr.op = Opcode::Move;
+  instr.source = source;
+  instr.dest = dest;
+  return instr;
+}
+
 void InstructionPrint(std::ostream& os, const Instruction& instr) {
   switch (instr.op) {
     case Opcode::Push: {
@@ -252,8 +278,19 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
          << instr.pc_offset;
       break;
     }
+    case Opcode::Move: {
+      os << "move "
+         << instr.source << " "
+         << instr.dest;
+      break;
+    }
+    case Opcode::Pop: {
+      os << "pop "
+         << instr.pop_count;
+      break;
+    }
     default:
-      os << "unknown instruction " << (int)instr.op;
+      LOG(FATAL) << "should never hit this case";
       break;
   }
 }
@@ -516,6 +553,28 @@ void VirtualMachine::Run() {
       case Opcode::Push: {
         CHECK(bp + instr.stack_index < stack.size()) << bp << " " << instr.stack_index << " " << stack.size();
         stack.push_back(stack[bp + instr.stack_index]);
+        DumpStack();
+        pc++;
+        goto main_loop;
+      }
+      case Opcode::Pop: {
+        CHECK(bp + instr.pop_count < stack.size())
+          << "bp=" << bp
+          << " pop_count=" << instr.pop_count;
+        auto new_size = stack.size() - instr.pop_count;
+        stack.resize(new_size);
+        DumpStack();
+        pc++;
+        goto main_loop;
+      }
+      case Opcode::Move: {
+        CHECK(instr.source < stack.size())
+          << "source=" << instr.source
+          << " stack_size=" << stack.size();
+        CHECK(instr.dest < stack.size())
+          << "dest=" << instr.dest
+          << " stack_size=" << stack.size();
+        stack[instr.dest] = stack[instr.source];
         DumpStack();
         pc++;
         goto main_loop;

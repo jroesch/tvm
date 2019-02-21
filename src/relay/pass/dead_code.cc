@@ -79,7 +79,8 @@ class CalcDep : private ExprMutator {
     return FunctionNode::make(f->params,
                               Eliminate(f->body),
                               f->ret_type,
-                              f->type_params);
+                              f->type_params,
+                              f->attrs);
   }
 
   // generate the let list from dependency graph

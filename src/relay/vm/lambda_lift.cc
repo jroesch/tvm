@@ -44,6 +44,9 @@ struct LambdaLifter : ExprMutator {
 
     Expr VisitExpr_(const FunctionNode* func_node) final {
         auto func = GetRef<Function>(func_node);
+        std::cout << "Function: " << RelayPrint(func, false) << std::endl;
+        std::cout << "Function IsPrim: " << func->IsPrimitive() << std::endl;
+        std::cout << "Function RAW: " << func << std::endl;
 
         // We should not transform primitive functions.
         if (func->IsPrimitive()) {
@@ -99,6 +102,7 @@ struct LambdaLifter : ExprMutator {
     }
 
     Function Lift(const Function& func) {
+        std::cout << "Lifting: " << RelayPrint(func, false) << std::endl;
         return FunctionNode::make(
             func->params,
             VisitExpr(func->body),
