@@ -72,18 +72,18 @@ struct PrimitiveInliner : ExprMutator {
     }
 
     Function Inline(const Function& func) {
-        std::cout << RelayPrint(func, false) << std::endl;
+        // std::cout << RelayPrint(func, false) << std::endl;
         auto inlined = FunctionNode::make(
             func->params,
             DeadCodeElimination(VisitExpr(func->body)),
             func->ret_type,
             func->type_params,
             func->attrs);
-        std::cout << "After inlining: "
-                  << RelayPrint(inlined, false)
-                  << std::endl
-                  << inlined
-                  << std::endl;
+        // std::cout << "After inlining: "
+        //           << RelayPrint(inlined, false)
+        //           << std::endl
+        //           << inlined
+        //           << std::endl;
         return inlined;
     }
 };

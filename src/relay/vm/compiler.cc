@@ -398,7 +398,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       }
 
       for (auto param : func->params) {
-        std::cout << "Func param " << param << " at " << this->stack_index << "\n";
         var_map.insert({ param, this->stack_index++ });
       }
 
@@ -426,7 +425,8 @@ void PopulatePackedFuncMap(
 }
 
 VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
-  std::cout << RelayPrint(func, false) << std::endl;
+  RELAY_LOG(INFO) << "Compiling: " << std::endl
+    << RelayPrint(func, false) << std::endl;
   size_t params = func->params.size();
   VMCompiler compiler(context);
   compiler.Compile(func);
