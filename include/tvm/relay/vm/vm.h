@@ -18,9 +18,9 @@ namespace vm {
 using runtime::NDArray;
 
 enum struct VMObjectTag {
+  kTensor,
   kClosure,
   kDatatype,
-  kTensor,
   kExternalFunc,
 };
 

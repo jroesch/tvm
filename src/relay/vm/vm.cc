@@ -628,11 +628,16 @@ TVM_REGISTER_API("relay._vm._Tuple")
   *ret = VMTuple(fields);
 });
 
-TVM_REGISTER_API("relay._vm._Datatype")
+TVM_REGISTER_API("relay._vm._VMObjectTag")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
-    *ret = VMTensor(args[0]);
+  VMObject obj = args[0];
+  *ret = VMObjectTagString(obj->tag);
 });
 
+// TVM_REGISTER_API("relay._vm._Datatype")
+// .set_body([](TVMArgs args, TVMRetValue* ret) {
+//     *ret = VMDatatype(args[0]);
+// });
 
 TVM_REGISTER_API("relay._vm._evaluate_vm")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
@@ -655,11 +660,14 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
     std::vector<VMObject> vm_args;
     for (auto i = 3; i < args.size(); i++) {
       VMObject obj = args[i];
+      CHECK(obj->tag == VMObjectTag::kTensor);
       vm_args.push_back(obj);
     }
 
     auto result = EvaluateModule(module, {ctx}, vm_args);
     std::cout << "Returning results\n";
+    auto out = std::get<0>(result);
+    CHECK(out->tag == VMObjectTag::kTensor);
     *ret = VMToValue(std::get<1>(result), std::get<0>(result));
 });
 

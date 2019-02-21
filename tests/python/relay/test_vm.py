@@ -9,6 +9,17 @@ from tvm.relay.vm import eval_vm, eta_expand
 from tvm.relay.scope_builder import ScopeBuilder
 from tvm.relay.prelude import Prelude
 
+def veval(f, *args, ctx=tvm.cpu()):
+    if isinstance(f, relay.Expr):
+        ex = relay.create_executor('vm', mod=relay.Module(), ctx=ctx)
+        import pdb; pdb.set_trace()
+        return ex.evaluate(f)(*args)
+    else:
+        assert isinstance(f, relay.Module), "expected expression or module"
+        mod = f
+        ex = relay.create_executor('vm', mod=mod, ctx=ctx)
+        return ex.evaluate(mod[mod.entry_func])(*args)
+
 def test_split():
     x = relay.var('x', shape=(12,))
     y = relay.split(x, 3, axis=0).astuple()
@@ -16,21 +27,22 @@ def test_split():
     f = relay.Function([x], z)
 
     x_data = np.random.rand(12,).astype('float32')
-    res = eval_vm(f, tvm.cpu(), x_data)
+    res = veval(f, x_data)
     tvm.testing.assert_allclose(res.asnumpy(), np.split(x_data, 3, axis=0)[0])
 
 def test_id():
     x = relay.var('x', shape=(10, 10))
     f = relay.Function([x], x)
     x_data = np.random.rand(10, 10).astype('float64')
-    res = eval_vm(f, tvm.cpu(), x_data)
+    res = veval(f, x_data)
+    import pdb; pdb.set_trace()
     tvm.testing.assert_allclose(res.asnumpy(), x_data)
 
 def test_op():
     x = relay.var('x', shape=(10, 10))
     f = relay.Function([x], x + x)
     x_data = np.random.rand(10, 10).astype('float32')
-    res = eval_vm(f, tvm.cpu(), x_data)
+    res = veval(f, x_data)
     tvm.testing.assert_allclose(res.asnumpy(), x_data + x_data)
 
 def any(x):
@@ -46,11 +58,11 @@ def test_cond():
     y_data = np.random.rand(10, 10).astype('float32')
 
     # same
-    res = eval_vm(f, tvm.cpu(), x_data, x_data)
+    res = veval(f, x_data, x_data)
     tvm.testing.assert_allclose(res.asnumpy(), True)
 
     # diff
-    res = eval_vm(f, tvm.cpu(), x_data, y_data)
+    res = veval(f, x_data, y_data)
     tvm.testing.assert_allclose(res.asnumpy(), False)
 
 
@@ -63,11 +75,11 @@ def test_simple_if():
     y_data = np.random.rand(10, 10).astype('float32')
 
     # same
-    res = eval_vm(f, tvm.cpu(), x_data, x_data)
+    res = veval(f, x_data, x_data)
     tvm.testing.assert_allclose(res.asnumpy(), x_data)
 
     # diff
-    res = eval_vm(f, tvm.cpu(), x_data, y_data)
+    res = veval(f, x_data, y_data)
     tvm.testing.assert_allclose(res.asnumpy(), y_data)
 
 def test_simple_call():

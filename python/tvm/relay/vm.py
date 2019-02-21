@@ -15,6 +15,9 @@ class VMObject(_VMObjectBase):
     def to_value(self):
         return _vm._VMToValue(self)
 
+    def tag(self):
+        return _vm._VMObjectTag(self)
+
 _set_vm_obj_function(VMObject)
 
 def optimize(expr, mod=None):
@@ -79,6 +82,7 @@ def eval_vm(mod, ctx, *args):
     mod[mod.entry_func] = main_func
 
     cargs = convert(list(args))
+    import pdb; pdb.set_trace()
 
     result = _vm._evaluate_vm(mod, ctx.device_type, ctx.device_id, *cargs)
     return result
@@ -112,7 +116,6 @@ class VMExecutor(Executor):
 
     def _make_executor(self, expr):
         assert isinstance(expr, Expr)
-
         self.mod[self.mod.entry_func] = expr
         main = self.mod[self.mod.entry_func]
 

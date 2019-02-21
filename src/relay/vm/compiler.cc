@@ -365,10 +365,10 @@ VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const F
   compiler.instructions.push_back(Ret());
   // Would like to refactor this so we only check if closure once.
   if (IsClosure(func)) {
-    return VMFunction(var->name_hint, params, compiler.instructions);
-  } else {
     auto inner_params = Downcast<Function>(func->body)->params.size();
     return VMFunction(var->name_hint, params + inner_params, compiler.instructions);
+  } else {
+    return VMFunction(var->name_hint, params, compiler.instructions);
   }
 }
 
