@@ -240,8 +240,15 @@ def test_rnn():
     net = import_mxnet_model('rnn', 128, 128, "rnn_i128_h128")
 #    execute_mxnet_model('gru', 128, 128, "gru_i128_h128")
 
-# def test_closure():
-#     relay.Function
+def test_closure():
+    x = relay.var('x', shape=())
+    y = relay.var('y', shape=())
+    f = relay.Function([x], x + y)
+    ff = relay.Function([y], f)
+    clo = ff(relay.const(1.0))
+    main = clo(relay.const(2.0))
+    res = veval(main)
+    import pdb; pdb.set_trace()
 
 if __name__ == "__main__":
     test_id()
@@ -255,4 +262,5 @@ if __name__ == "__main__":
     test_tuple_second()
     test_let_scalar()
     test_let_tensor()
-    test_rnn()
+    # test_rnn()
+    test_closure()
