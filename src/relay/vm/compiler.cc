@@ -308,7 +308,8 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       std::vector<size_t> args;
 
       for (auto arg : call_node->args) {
-        CHECK(arg.as<VarNode>());
+        CHECK(arg.as<VarNode>())
+          << "found: " << arg;
         this->VisitExpr(arg);
         args.push_back(stack_index-1);
       }
