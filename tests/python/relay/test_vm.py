@@ -12,12 +12,18 @@ from tvm.relay.prelude import Prelude
 def veval(f, *args, ctx=tvm.cpu()):
     if isinstance(f, relay.Expr):
         ex = relay.create_executor('vm', mod=relay.Module(), ctx=ctx)
-        return ex.evaluate(f)(*args)
+        if len(args) == 0:
+            return ex.evaluate(f)
+        else:
+            return ex.evaluate(f)(*args)
     else:
         assert isinstance(f, relay.Module), "expected expression or module"
         mod = f
         ex = relay.create_executor('vm', mod=mod, ctx=ctx)
-        return ex.evaluate(mod[mod.entry_func])(*args)
+        if len(args) == 0:
+            return ex.evaluate(mod[mod.entry_func])
+        else:
+            return ex.evaluate(mod[mod.entry_func])(*args)
 
 def test_split():
     x = relay.var('x', shape=(12,))
@@ -250,19 +256,19 @@ def test_closure():
     clo = ff(relay.const(1.0))
     main = clo(relay.const(2.0))
     res = veval(main)
-    import pdb; pdb.set_trace()
+    tvm.testing.assert_allclose(res.asnumpy(), 3.0)
 
 if __name__ == "__main__":
-    # test_id()
-    # test_op()
-    # test_cond()
-    # test_simple_if()
-    # test_simple_call()
-    # test_count_loop()
-    # test_sum_loop()
-    # test_tuple_fst()
-    # test_tuple_second()
-    test_let_scalar()
+    test_id()
+    test_op()
+    test_cond()
+    test_simple_if()
+    test_simple_call()
+    test_count_loop()
+    test_sum_loop()
+    test_tuple_fst()
+    test_tuple_second()
+    # test_let_scalar()
     # test_let_tensor()
     # # test_rnn()
-    # # test_closure()
+    test_closure()

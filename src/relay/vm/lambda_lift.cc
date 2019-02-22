@@ -39,7 +39,7 @@ Function MarkClosure(const Function& func) {
 
 struct LambdaLifter : ExprMutator {
     Module module_;
-    std::unordered_map<GlobalVar, Function, NodeHash, NodeEqual> lifted_;
+    std::vector<std::pair<GlobalVar, Function>> lifted_;
     LambdaLifter(const Module& module) : module_(module) {}
 
     Expr VisitExpr_(const FunctionNode* func_node) final {
@@ -62,7 +62,7 @@ struct LambdaLifter : ExprMutator {
           auto name = GenerateName(func);
           auto global = this->module_->GetGlobalVar(name);
           auto vfunc = Downcast<Function>(ExprMutator::VisitExpr_(func_node));
-          lifted_.insert({global, vfunc });
+          lifted_.push_back({global, vfunc });
           return global;
         }
 
@@ -91,7 +91,7 @@ struct LambdaLifter : ExprMutator {
 
         auto name = GenerateName(lifted_func);
         auto global = this->module_->GetGlobalVar(name);
-        lifted_.insert({global, lifted_func});
+        lifted_.push_back({global, lifted_func});
 
         // Finally we bind the variables here to
         // explicitly capture the closure.
@@ -130,8 +130,8 @@ Module LambdaLift(const Module& module)  {
       updates.Set(global, lifter.Lift(func));
     }
 
-    for (auto pair : lifter.lifted_) {
-      module->Add(pair.first, pair.second);
+    for (auto i = lifter.lifted_.begin(); i != lifter.lifted_.end(); i++) {
+      module->Add(i->first, i->second);
     }
 
     for (auto pair : updates) {

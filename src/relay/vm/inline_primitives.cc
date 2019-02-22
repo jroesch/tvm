@@ -28,7 +28,7 @@ struct PrimitiveInliner : ExprMutator {
     PrimitiveInliner(const Module& module) : module_(module) {}
 
     Expr VisitExpr_(const LetNode* let_node) {
-        var_map.insert({let_node->var, let_node->value});
+        var_map.insert({let_node->var, VisitExpr(let_node->value) });
         return ExprMutator::VisitExpr_(let_node);
     }
 
@@ -37,6 +37,7 @@ struct PrimitiveInliner : ExprMutator {
         // For now just collapse the chain of variables to see if
         // they point to a primitive function.
         const VarNode* var_node;
+
         while ((var_node = op.as<VarNode>())) {
             auto var = GetRef<Var>(var_node);
             std::cout << "Var: " << var << std::endl;
@@ -55,13 +56,18 @@ struct PrimitiveInliner : ExprMutator {
                     call->args,
                     call->attrs,
                     call->type_args);
-
-            } else {
-                return ExprMutator::VisitExpr_(call);
             }
-        } else {
-            return ExprMutator::VisitExpr_(call);
         }
+
+        if (auto global = op.as<GlobalVarNode>()) {
+            return CallNode::make(
+                GetRef<GlobalVar>(global),
+                call->args,
+                call->attrs,
+                call->type_args);
+        }
+
+        return ExprMutator::VisitExpr_(call);
     }
 
     Expr VisitExpr_(const FunctionNode* func) {

@@ -357,10 +357,8 @@ size_t VirtualMachine::PopFrame() {
   return call_stack_size;
 }
 
-void VirtualMachine::InvokeGlobal(const VMFunction& func, size_t arity) {
+void VirtualMachine::InvokeGlobal(const VMFunction& func) {
   std::cout << "===================\nInvoking global " << func.name << std::endl;
-  std::cout << "ARITY=" << func.params << std::endl;
-  std::cout << "ARITY=" << stack.size() - arity << std::endl;
   PushFrame(func.params, this->pc + 1, stack.size(), func);
   std::cout << "func.params= " << func.params << ", stack.size()= " << stack.size() << std::endl;
 
@@ -375,7 +373,7 @@ VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObje
     stack.push_back(arg);
   }
 
-  InvokeGlobal(func, args.size());
+  InvokeGlobal(func);
   Run();
   auto alloc = MemoryManager::Global()->GetAllocator(ctxs[0]);
   std::cout << "Memory used: " << alloc->UsedMemory() << " B\n";
@@ -444,7 +442,7 @@ void VirtualMachine::DumpStack() {
   if (!this->debug) {
     return;
   }
-  CHECK(this->stack.size() > 0);
+
   std::cout << "DumpStack---\n";
   for (size_t i = bp; i < stack.size(); ++i) {
     std::cout << i << " " << VMObjectTagString(stack[i]->tag) << " ";
@@ -486,7 +484,7 @@ void VirtualMachine::Run() {
         goto main_loop;
       }
       case Opcode::Invoke: {
-        InvokeGlobal(this->functions[instr.func_index], {});
+        InvokeGlobal(this->functions[instr.func_index]);
         goto main_loop;
       }
       case Opcode::InvokePacked: {
@@ -506,7 +504,14 @@ void VirtualMachine::Run() {
         goto main_loop;
       }
       case Opcode::InvokeClosure: {
-        LOG(FATAL) << "InvokeClousre";
+        auto object = stack.back();
+        stack.pop_back();
+        CHECK(object->tag == VMObjectTag::kClosure);
+        const std::shared_ptr<VMClosureCell>& closure = std::dynamic_pointer_cast<VMClosureCell>(object.ptr);
+        for (auto free_var : closure->free_vars) {
+          stack.push_back(free_var);
+        }
+        InvokeGlobal(this->functions[closure->func_index]);
         goto main_loop;
       }
       case Opcode::GetField: {
@@ -567,7 +572,12 @@ void VirtualMachine::Run() {
         goto main_loop;
       }
       case Opcode::AllocClosure: {
-        LOG(FATAL) << "AllocClosure" << std::endl;
+        std::vector<VMObject> free_vars;
+        auto field_start = stack.size() - instr.num_freevar;
+        for (size_t i = 0; i < instr.num_freevar; i++) {
+          free_vars.push_back(stack[field_start + i]);
+        }
+        stack.push_back(VMClosure(instr.func_index, free_vars));
         pc++;
         goto main_loop;
       }

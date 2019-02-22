@@ -110,8 +110,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           stack_index--;
           break;
         case Opcode::InvokeClosure:
-          // this instruction will push one return value into stack
-          stack_index++;
+          // Need to handle specially.
           break;
         case Opcode::Ret:
         case Opcode::Goto:
@@ -178,17 +177,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     void VisitExpr_(const GlobalVarNode* gvar) {
-      auto global = GetRef<GlobalVar>(gvar);
-      auto it = this->context->global_map.find(global);
-      CHECK(it != this->context->global_map.end());
-      RELAY_LOG(INFO)
-        << "VisitExpr_: generating invoke for "
-        << global->name_hint
-        << " with func_index="
-        << it->second;
-      auto arity = this->context->module->Lookup(global)->params.size();
-      // stack_index -= arity;
-      Emit(Invoke(it->second));
+      LOG(FATAL) << "Global variables should only appear in the call position";
     }
 
     void VisitExpr_(const IfNode* if_node) {
@@ -332,17 +321,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           GetRef<Function>(func_node),
           call_node->checked_type());
       } else if (auto global_node = op.as<GlobalVarNode>()) {
-        // auto global = GetRef<GlobalVar>(global_node);
-        // auto func = context->module->Lookup(global);
-        // auto it = this->context->global_map.find(global);
-        // CHECK(it != this->context->global_map.end());
-        // // If we are going to call a closure allocation
-        // // wrapper then we need to emit a closure here.
-        // if (IsClosure(func)) {
-        //   Emit(AllocClosure(it->second, func->params.size()));
-        // } else {
-        //   Emit(Invoke(it->second));
-        // }
         auto global = GetRef<GlobalVar>(global_node);
         auto it = this->context->global_map.find(global);
         CHECK(it != this->context->global_map.end());
@@ -351,14 +329,29 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           << global->name_hint
           << " with func_index="
           << it->second;
-        auto arity = this->context->module->Lookup(global)->params.size();
-        CHECK(arity < stack_index);
-        stack_index = stack_index - (arity - 1);
-        Emit(Invoke(it->second));
+
+        auto func = this->context->module->Lookup(global);
+        if (IsClosure(func)) {
+          auto arity = func->params.size();
+          // auto inner_arity = Downcast<Function>(func->body)->params.size();
+          // auto arity = outer_arity + inner_arity;
+          stack_index = stack_index - (arity - 1);
+          std::cout << "arity: " << arity;
+          Emit(AllocClosure(it->second, arity));
+        } else {
+          auto arity = this->context->module->Lookup(global)->params.size();
+          CHECK(arity < stack_index);
+          stack_index = stack_index - (arity - 1);
+          Emit(Invoke(it->second));
+        }
       } else if (auto constructor_node = op.as<ConstructorNode>()) {
         auto constructor = GetRef<Constructor>(constructor_node);
         auto tag = GetConstructorTag(constructor);
         Emit(AllocDatatype(tag, call_node->args.size()));
+      } else if (auto var_node = op.as<VarNode>()) {
+        VisitExpr(op);
+        Emit(InvokeClosure());
+        stack_index--;
       } else {
         LOG(FATAL) << "unsupported case in vm compiler: " << op;
       }
@@ -388,15 +381,20 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // populate both the free variables and the arguments
       // on the stack.
 
-      // We will first find the parameters to the outer
-      // function (the free variables) on the stack.
-      for (auto param : func->params) {
+
+      // We first layout the function arguments.
+      auto inner_func = Downcast<Function>(func->body);
+      for (auto param : inner_func->params) {
         var_map.insert({ param, this->stack_index++ });
       }
 
-      // We will then layout the actual function arguments.
-      auto inner_func = Downcast<Function>(func->body);
-      for (auto param : inner_func->params) {
+      // We then layout parameters to the outer
+      // function (i.e the free variables) on the stack.
+      //
+      // This allows the user to push all the arguments,
+      // and then the closure on to the stack, before
+      // invoking it.
+      for (auto param : func->params) {
         var_map.insert({ param, this->stack_index++ });
       }
 
@@ -459,7 +457,8 @@ VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const F
 Module OptimizeModule(const Module& mod) {
   ToANF(mod->entry_func, mod);
   InlinePrimitives(mod);
-  return LambdaLift(mod);
+  LambdaLift(mod);
+  return InlinePrimitives(mod);
 }
 
 void PopulateGlobalMap(GlobalMap* global_map, const Module& mod) {

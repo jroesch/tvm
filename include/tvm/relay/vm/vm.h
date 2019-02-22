@@ -69,6 +69,14 @@ struct VMDatatypeCell : public VMObjectCell {
     : VMObjectCell(VMObjectTag::kDatatype), tag(tag), fields(fields) {}
 };
 
+struct VMClosureCell : public VMObjectCell {
+  size_t func_index;
+  std::vector<VMObject> free_vars;
+
+  VMClosureCell(size_t func_index, const std::vector<VMObject>& free_vars)
+    : VMObjectCell(VMObjectTag::kClosure), func_index(func_index), free_vars(free_vars) {}
+};
+
 
 inline VMObject VMTensor(const tvm::runtime::NDArray& data) {
   auto ptr = std::make_shared<VMTensorCell>(data);
@@ -82,6 +90,11 @@ inline VMObject VMDatatype(size_t tag, const std::vector<VMObject>& fields) {
 
 inline VMObject VMTuple(const std::vector<VMObject>& fields) {
   return VMDatatype(0, fields);
+}
+
+inline VMObject VMClosure(size_t func_index, std::vector<VMObject> free_vars) {
+  auto ptr = std::make_shared<VMClosureCell>(func_index, free_vars);
+  return std::dynamic_pointer_cast<VMObjectCell>(ptr);
 }
 
 inline NDArray ToNDArray(const VMObject& obj) {
@@ -237,7 +250,7 @@ struct VirtualMachine {
 
     void PushFrame(size_t arg_count, size_t ret_pc, size_t sp, const VMFunction& vm_func);
     size_t PopFrame();
-    void InvokeGlobal(const VMFunction& func, size_t arity);
+    void InvokeGlobal(const VMFunction& func);
     void Run();
 
     VMObject Invoke(const VMFunction& func, const std::vector<VMObject>& args);
