@@ -7,6 +7,7 @@
  */
 #include <tvm/relay/pass.h>
 #include <tvm/relay/expr_functor.h>
+#include <tvm/relay/logging.h>
 #include "let_list.h"
 #include "../../common/arena.h"
 
@@ -462,6 +463,11 @@ Expr ToANormalFormAux(const Expr& e, const Module& m, std::set<GlobalVar>* gv) {
 }
 
 Expr ToANormalForm(const Expr& e, const Module& m, std::set<GlobalVar>* gv) {
+  RELAY_LOG(INFO)
+    << "ToANF:" << std::endl
+    << RelayPrint(e, false);
+
+  Expr ret;
   if (const auto* f = e.as<FunctionNode>()) {
     return FunctionNode::make(f->params,
                               ToANormalFormAux(f->body, m, gv),
@@ -471,6 +477,14 @@ Expr ToANormalForm(const Expr& e, const Module& m, std::set<GlobalVar>* gv) {
   } else {
     return ToANormalFormAux(e, m, gv);
   }
+
+  CHECK(FreeVars(ret).size() == 0);
+
+  RELAY_LOG(INFO)
+    << "ToANF: transformed" << std::endl
+    << RelayPrint(ret, false);
+
+  return ret;
 }
 
 Expr ToANormalForm(const Expr& e, const Module& m) {

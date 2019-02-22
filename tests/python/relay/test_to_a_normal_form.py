@@ -143,8 +143,11 @@ def test_let():
     y = relay.Var("y")
     d = relay.const(4.0, 'float32')
     body = relay.Let(y, x, x + y)
+    sb.ret(x)
     body = relay.Let(x, d, body)
     check_eval(body, 8)
+    f = to_anf(f)
+    print(f)
     check_eval(to_a_normal_form(body), 8)
 
 if __name__ == '__main__':
