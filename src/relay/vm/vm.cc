@@ -312,6 +312,7 @@ std::ostream& operator<<(std::ostream& os, const VMFunction& vm_func) {
 }
 
 void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, size_t sp, const VMFunction& vm_func) {
+  CHECK(sp <= stack.size());
   DumpStack();
   auto frame = VMFrame(ret_pc, bp, sp, func_index, arg_count, code);
   frames.push_back(frame);
@@ -330,11 +331,22 @@ size_t VirtualMachine::PopFrame() {
 
   CHECK(0 <= stack_size - fr.sp);
   // Copy return value to the position past last function's frame
-  stack[fr.sp] = stack[stack_size - 1];
+
+  VMObject return_value = stack.back();
+  // stack[fr.sp] = stack[stack_size - 1];
   // Resize value stack.
-  stack.resize(fr.sp + 1);
+
+  stack.resize(fr.sp);
+  stack.resize(stack.size() - fr.args);
+  stack.push_back(return_value);
+
+  CHECK(stack.size() < stack_size + 1)
+    << "stack_size before modifying stack = " << stack_size + 1
+    << " stack size after modifying the stack = " << stack.size();
+
   // Reset frame.
   std::cout << "Reset frame " << bp << " -> " << fr.bp << "\n";
+  std::cout << "Stack pointer: " << fr.sp << std::endl;
   std::cout << "Reset stack " << stack_size << " -> " << stack.size() << "\n";
   bp = fr.bp;
   pc = fr.pc;
@@ -345,12 +357,10 @@ size_t VirtualMachine::PopFrame() {
   return call_stack_size;
 }
 
-void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<VMObject>& args) {
+void VirtualMachine::InvokeGlobal(const VMFunction& func, size_t arity) {
   std::cout << "===================\nInvoking global " << func.name << std::endl;
-  for (auto arg : args) {
-    stack.push_back(arg);
-  }
-
+  std::cout << "ARITY=" << func.params << std::endl;
+  std::cout << "ARITY=" << stack.size() - arity << std::endl;
   PushFrame(func.params, this->pc + 1, stack.size(), func);
   std::cout << "func.params= " << func.params << ", stack.size()= " << stack.size() << std::endl;
 
@@ -361,7 +371,11 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<VMOb
 
 VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObject>& args) {
   std::cout << "Executing function " << func.name << " bp " << bp << std::endl;
-  InvokeGlobal(func, args);
+  for (auto arg : args) {
+    stack.push_back(arg);
+  }
+
+  InvokeGlobal(func, args.size());
   Run();
   auto alloc = MemoryManager::Global()->GetAllocator(ctxs[0]);
   std::cout << "Memory used: " << alloc->UsedMemory() << " B\n";
@@ -376,35 +390,39 @@ VMObject VirtualMachine::Invoke(const GlobalVar& global, const std::vector<VMObj
 }
 
 void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size, std::vector<VMObject>& stack) {
+  auto stack_end = stack.size() - 1;
+  std::cout << "arg_count: " << arg_count;
   CHECK(arg_count <= stack.size());
 
   std::vector<TVMValue> values(arg_count);
   std::vector<int> codes(arg_count);
   runtime::TVMArgsSetter setter(values.data(), codes.data());
 
-  auto stack_start = stack.size() - arg_count - 1;
+  auto argument_start = stack.size() - arg_count;
+  std::cout << "ArgumentStart=" << argument_start << std::endl;
   for (size_t i = 0; i < arg_count; i++) {
-    NDArray data = ToNDArray(stack[stack_start + i]);
+    NDArray data = ToNDArray(stack[argument_start + i]);
     setter(i, data);
   }
 
   TVMRetValue rv;
   func.CallPacked(TVMArgs(values.data(), codes.data(), arg_count), &rv);
 
-  // Fix the object at return value position
-  if (output_size == 1) {
-    stack[stack.size() - 1] = stack[stack.size() - 2];
-  } else {
-    auto adt = std::dynamic_pointer_cast<VMDatatypeCell>(stack.back().ptr);
-    for (size_t i = 0; i < output_size; ++i) {
-      adt->fields[i] = stack[stack.size() - output_size - 1 + i];
-    }
-  }
+  // // Fix the object at return value position
+  // if (output_size == 1) {
+  //   stack[stack.size() - 1] = stack[stack.size() - 2];
+  // } else {
+  //   auto adt = std::dynamic_pointer_cast<VMDatatypeCell>(stack.back().ptr);
+  //   for (size_t i = 0; i < output_size; ++i) {
+  //     adt->fields[i] = stack[stack.size() - output_size - 1 + i];
+  //   }
+  // }
 
   // We can do this more efficiently by reverse laying out the arguments
   // and just shrinking the stack.
-  stack[stack.size() - arg_count - 1] = stack[stack.size() - 1];
-  stack.resize(stack.size() - arg_count);
+  stack[stack.size() - arg_count] = stack[stack_end];
+  std::cout << "ShrinkBy=" << arg_count - output_size << std::endl;
+  stack.resize(stack.size() - (arg_count - output_size));
 }
 
 void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
@@ -426,15 +444,16 @@ void VirtualMachine::DumpStack() {
   if (!this->debug) {
     return;
   }
+  CHECK(this->stack.size() > 0);
   std::cout << "DumpStack---\n";
   for (size_t i = bp; i < stack.size(); ++i) {
-    std::cout << i << " " << (int)stack[i]->tag << " ";
+    std::cout << i << " " << VMObjectTagString(stack[i]->tag) << " ";
     switch (stack[i]->tag) {
       case VMObjectTag::kTensor: {
         VMTensorCell* tensor = (VMTensorCell*)stack[i].operator->();
-        std::cout << tensor->data->ndim;
+        std::cout << "dimensions=" << tensor->data->ndim;
         if (tensor->data->ndim == 0) {
-          std::cout << " " << *((int*)(tensor->data->data));
+          std::cout << " " << TensorValueNode::make(tensor->data);
         }
         std::cout << " \n";
         break;
@@ -449,8 +468,9 @@ void VirtualMachine::DumpStack() {
 
 void VirtualMachine::Run() {
   CHECK(this->code);
+  this->debug = true;
   this->pc = 0;
-  auto stack_start = frames.size();
+  auto frame_start = frames.size();
   while (true) {
   main_loop:
     auto const& instr = this->code[this->pc];
@@ -466,7 +486,6 @@ void VirtualMachine::Run() {
         goto main_loop;
       }
       case Opcode::Invoke: {
-        // VMFunctionPrint(this->functions[this->func_index]);
         InvokeGlobal(this->functions[instr.func_index], {});
         goto main_loop;
       }
@@ -479,9 +498,9 @@ void VirtualMachine::Run() {
         DumpStack();
         InvokePacked(func, arity, instr.output_size, stack);
         DumpStack();
-        CHECK(start_stack - arity == stack.size())
+        CHECK(start_stack - (arity - instr.output_size) == stack.size())
           << "start_stack: " << start_stack
-          << "end_stack: " << stack.size();
+          << " end_stack: " << stack.size();
         // std::cout << "after call" << std::endl;
         pc++;
         goto main_loop;
@@ -585,7 +604,8 @@ void VirtualMachine::Run() {
         // If we have hit the point from which we started
         // running, we should return to the caller breaking
         // the dispatch loop.
-        if (PopFrame() == stack_start) {
+        DumpStack();
+        if (PopFrame() == frame_start) {
           return;
         // Otherwise we are just returning from a local call.
         //

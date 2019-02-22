@@ -57,7 +57,7 @@ def test_cond():
 
     # same
     res = veval(f, x_data, x_data)
-    tvm.testing.assert_allclose(res.asnumpy(), True)
+    np.testing.assert_allclose(res.asnumpy(), True)
 
     # diff
     res = veval(f, x_data, y_data)
@@ -66,7 +66,7 @@ def test_cond():
 
 def test_simple_if():
     x = relay.var('x', shape=(10, 10))
-    y = relay.var('x', shape=(10, 10))
+    y = relay.var('y', shape=(10, 10))
     f = relay.Function([x, y],
         relay.If(any(relay.op.equal(x, y)), x, y))
     x_data = np.random.rand(10, 10).astype('float32')
@@ -89,8 +89,8 @@ def test_simple_call():
     func = relay.Function([i], sb.get(), ret_type=relay.TensorType([], 'int32'))
     mod[sum_up] = func
     i_data = np.array(0, dtype='int32')
-    # Refactor this bit
-    mod[mod.entry_func] = relay.Function([], sum_up)
+    iarg = relay.var('i', shape=[], dtype='int32')
+    mod[mod.entry_func] = relay.Function([iarg], sum_up(iarg))
     result = veval(mod, i_data)
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
@@ -108,7 +108,8 @@ def test_count_loop():
     func = relay.Function([i], sb.get(), ret_type=relay.TensorType([], 'int32'))
     mod[sum_up] = func
     i_data = np.array(0, dtype='int32')
-    mod[mod.entry_func] = relay.Function([], sum_up)
+    iarg = relay.var('i', shape=[], dtype='int32')
+    mod[mod.entry_func] = relay.Function([iarg], sum_up(iarg))
     result = veval(mod, i_data)
     tvm.testing.assert_allclose(result.asnumpy(), i_data)
 
@@ -126,11 +127,14 @@ def test_sum_loop():
         sb.ret(relay.Call(sum_up, [one_less, new_accum]))
     func = relay.Function([i, accum], sb.get())
     mod[sum_up] = func
-    i_data = np.array(10, dtype='int32')
+    loop_bound = 0
+    i_data = np.array(loop_bound, dtype='int32')
     accum_data = np.array(0, dtype='int32')
-    mod[mod.entry_func] = relay.Function([], sum_up)
+    iarg = relay.var('i', shape=[], dtype='int32')
+    aarg = relay.var('accum', shape=[], dtype='int32')
+    mod[mod.entry_func] = relay.Function([iarg, aarg], sum_up(iarg, aarg))
     result = veval(mod, i_data, accum_data)
-    tvm.testing.assert_allclose(result.asnumpy(), sum(range(1, 11)))
+    tvm.testing.assert_allclose(result.asnumpy(), sum(range(1, loop_bound + 1)))
 
 def test_tuple_fst():
     ttype = relay.TupleType([relay.TensorType((1,)), relay.TensorType((10,))])
@@ -251,16 +255,16 @@ def test_closure():
     import pdb; pdb.set_trace()
 
 if __name__ == "__main__":
-    # test_id()
-    # test_op()
+    test_id()
+    test_op()
     test_cond()
-    # test_simple_if()
-    # test_simple_call()
-    # test_count_loop()
-    # test_sum_loop()
+    test_simple_if()
+    test_simple_call()
+    test_count_loop()
+    test_sum_loop()
     # test_tuple_fst()
     # test_tuple_second()
     # test_let_scalar()
     # test_let_tensor()
-    # test_rnn()
-    # test_closure()
+    # # test_rnn()
+    # # test_closure()

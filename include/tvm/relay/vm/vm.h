@@ -237,7 +237,7 @@ struct VirtualMachine {
 
     void PushFrame(size_t arg_count, size_t ret_pc, size_t sp, const VMFunction& vm_func);
     size_t PopFrame();
-    void InvokeGlobal(const VMFunction& func, const std::vector<VMObject>& args);
+    void InvokeGlobal(const VMFunction& func, size_t arity);
     void Run();
 
     VMObject Invoke(const VMFunction& func, const std::vector<VMObject>& args);

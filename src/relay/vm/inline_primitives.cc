@@ -7,6 +7,7 @@
 #include <tvm/runtime/memory_manager.h>
 #include <tvm/relay/expr_functor.h>
 #include <tvm/relay/vm/vm.h>
+#include <tvm/relay/logging.h>
 #include <tvm/relay/interpreter.h>
 #include "../backend/compile_engine.h"
 #include "../../runtime/naive_allocator.h"
@@ -72,18 +73,22 @@ struct PrimitiveInliner : ExprMutator {
     }
 
     Function Inline(const Function& func) {
-        // std::cout << RelayPrint(func, false) << std::endl;
+        RELAY_LOG(INFO) << "Inline "
+            << std::endl
+            << "func= " << RelayPrint(func, false)
+            << std::endl;
+
         auto inlined = FunctionNode::make(
             func->params,
             DeadCodeElimination(VisitExpr(func->body)),
             func->ret_type,
             func->type_params,
             func->attrs);
-        // std::cout << "After inlining: "
-        //           << RelayPrint(inlined, false)
-        //           << std::endl
-        //           << inlined
-        //           << std::endl;
+
+        RELAY_LOG(INFO) << "Inline "
+            << std::endl
+            << "after_func= " << RelayPrint(inlined, false)
+            << std::endl;;
         return inlined;
     }
 };

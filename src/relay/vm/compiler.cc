@@ -101,13 +101,14 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         case Opcode::LoadConst:
           stack_index++;
           break;
+        case Opcode::Invoke:
+          break;
         case Opcode::InvokePacked:
-          stack_index -= instr.arity;
+          stack_index -= (instr.arity - instr.output_size);
           break;
         case Opcode::If:
           stack_index--;
           break;
-        case Opcode::Invoke:
         case Opcode::InvokeClosure:
           // this instruction will push one return value into stack
           stack_index++;
@@ -117,7 +118,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         case Opcode::Move:
           break;
         case Opcode::Pop:
-          CHECK(instr.pop_count < 5);
           stack_index -= instr.pop_count;
           break;
       }
@@ -164,7 +164,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // on the stack.
       //
       // add notes about primitive functions.
+      std::cout << let_node->value << std::endl;
       this->VisitExpr(let_node->value);
+      std::cout << this->stack_index << std::endl;
       var_map.insert({ let_node->var, this->stack_index-1 });
       this->VisitExpr(let_node->body);
     }
@@ -184,17 +186,19 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         << global->name_hint
         << " with func_index="
         << it->second;
+      auto arity = this->context->module->Lookup(global)->params.size();
+      // stack_index -= arity;
       Emit(Invoke(it->second));
     }
 
     void VisitExpr_(const IfNode* if_node) {
+      size_t stack_index_before_branch = stack_index;
       this->VisitExpr(if_node->cond);
       auto after_cond = this->instructions.size();
 
       this->Emit(If(0, 0));
 
       // Save the stack_index before entering true branch
-      size_t stack_index_before_branch = stack_index;
       this->VisitExpr(if_node->true_branch);
 
 
@@ -210,27 +214,27 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       Emit(Move(stack_index - 1u, stack_index_before_branch));
       // Then we will emit the appropriate pops.
 
-      CHECK(num_of_push_in_true - 1 < 3);
-
-      Emit(Pop(num_of_push_in_true - 1u));
+      Emit(Pop(num_of_push_in_true - 1));
 
       Emit(Goto(0));
+
+      // Finally store how many instructions there are in the
+      // true branch.
+      auto after_true = this->instructions.size();
 
       // Now we will generate code for the false branch, first
       // we will restore the stack_index to the value before
       // the branch.
       stack_index = stack_index_before_branch;
-      auto stack_index_before_false = stack_index;
-      auto after_true = this->instructions.size();
 
       this->VisitExpr(if_node->false_branch);
-      auto num_of_push_in_false = stack_index - stack_index_before_false;
+      auto num_of_push_in_false = stack_index - stack_index_before_branch;
 
-      CHECK(num_of_push_in_false >= 0);
+      CHECK(num_of_push_in_false > 0);
 
       // We will emit a move of the last value into the initial_stack index
       // plus one.
-      Emit(Move(stack_index - 1, stack_index_before_branch));
+      Emit(Move(stack_index - 1u, stack_index_before_branch));
 
       // Then we will emit the appropriate pops.
       Emit(Pop(num_of_push_in_false - 1));
@@ -252,7 +256,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
       // Patch the Goto.
       // CHECK(this->instructions[after_true - 1].op == Opcode::Goto);
-      this->instructions[after_true - 1].pc_offset = after_false - after_true;
+      this->instructions[after_true - 1].pc_offset = (after_false - after_true) + 1;
+
+      stack_index = stack_index_before_branch + 1;
     }
 
     Instruction AllocTensorFromType(const TensorTypeNode* ttype) {
@@ -271,8 +277,8 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       if (const TensorTypeNode* ttype = ret_type.as<TensorTypeNode>()) {
         // Allocate space for the return tensor.
         auto alloc = AllocTensorFromType(ttype);
-        // Alloc to use for input
-        allocs.push_back(alloc);
+        // // Alloc to use for input
+        // allocs.push_back(alloc);
         // Alloc to use for output, but not used for this case. we should optmize that
         allocs.push_back(alloc);
         return_num = 1;
@@ -311,13 +317,11 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
     void VisitExpr_(const CallNode* call_node) {
       // First generate instructions to populate stack with arguments.
-      std::vector<size_t> args;
 
       for (auto arg : call_node->args) {
         CHECK(arg.as<VarNode>())
           << "found: " << RelayPrint(arg, false);
         this->VisitExpr(arg);
-        args.push_back(stack_index-1);
       }
 
       Expr op = call_node->op;
@@ -328,17 +332,29 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           GetRef<Function>(func_node),
           call_node->checked_type());
       } else if (auto global_node = op.as<GlobalVarNode>()) {
+        // auto global = GetRef<GlobalVar>(global_node);
+        // auto func = context->module->Lookup(global);
+        // auto it = this->context->global_map.find(global);
+        // CHECK(it != this->context->global_map.end());
+        // // If we are going to call a closure allocation
+        // // wrapper then we need to emit a closure here.
+        // if (IsClosure(func)) {
+        //   Emit(AllocClosure(it->second, func->params.size()));
+        // } else {
+        //   Emit(Invoke(it->second));
+        // }
         auto global = GetRef<GlobalVar>(global_node);
-        auto func = context->module->Lookup(global);
         auto it = this->context->global_map.find(global);
         CHECK(it != this->context->global_map.end());
-        // If we are going to call a closure allocation
-        // wrapper then we need to emit a closure here.
-        if (IsClosure(func)) {
-          Emit(AllocClosure(it->second, func->params.size()));
-        } else {
-          Emit(Invoke(it->second));
-        }
+        RELAY_LOG(INFO)
+          << "VisitExpr_: generating invoke for "
+          << global->name_hint
+          << " with func_index="
+          << it->second;
+        auto arity = this->context->module->Lookup(global)->params.size();
+        CHECK(arity < stack_index);
+        stack_index = stack_index - (arity - 1);
+        Emit(Invoke(it->second));
       } else if (auto constructor_node = op.as<ConstructorNode>()) {
         auto constructor = GetRef<Constructor>(constructor_node);
         auto tag = GetConstructorTag(constructor);
@@ -425,7 +441,7 @@ void PopulatePackedFuncMap(
 }
 
 VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const Function& func) {
-  RELAY_LOG(INFO) << "Compiling: " << std::endl
+  RELAY_LOG(INFO) << "CompileFunc: " << std::endl
     << RelayPrint(func, false) << std::endl;
   size_t params = func->params.size();
   VMCompiler compiler(context);
@@ -441,7 +457,7 @@ VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const F
 }
 
 Module OptimizeModule(const Module& mod) {
-  ToANF(mod->Lookup(mod->entry_func), mod);
+  ToANF(mod->entry_func, mod);
   InlinePrimitives(mod);
   return LambdaLift(mod);
 }
