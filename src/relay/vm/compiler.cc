@@ -152,7 +152,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     void VisitExpr_(const MatchNode* match_node) {
       auto match = GetRef<Match>(match_node);
       LOG(FATAL) << "translation of match nodes to the VM is"
-                 << "is currently unsupported"
+                 << "currently unsupported"
                  << std::endl;
     }
 
