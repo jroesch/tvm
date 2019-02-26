@@ -196,6 +196,8 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
       // We need to now clean up the stack to only leave one value on it.
       auto num_of_push_in_true = stack_index - stack_index_before_branch;
+
+      // NB(@jroesch): The if-then-else can not be empty here.
       CHECK(num_of_push_in_true > 0);
 
       // We will emit a move of the last value into the initial_stack index
@@ -332,15 +334,34 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
         auto func = this->context->module->Lookup(global);
         if (IsClosure(func)) {
+          // When we call a "closure wrapper" we need to bind
+          // the environment by emitting an allocate closure
+          // instruction.
+          //
+          //
+          // For example:
+          // fn (x) {
+          //   let f = fn (y, z) { // allocate here
+          //     return x + y + z;
+          //   };
+          //   f(10); // invoke closure here
+          // }
+          //
+          // So in the above case we will push x on to the stack
+          // then alloc a closure.
+          //
+          // We subtract one because the resulting closure will
+          // now be on the stack.
           auto arity = func->params.size();
-          // auto inner_arity = Downcast<Function>(func->body)->params.size();
-          // auto arity = outer_arity + inner_arity;
           stack_index = stack_index - (arity - 1);
-          std::cout << "arity: " << arity;
           Emit(AllocClosure(it->second, arity));
         } else {
-          auto arity = this->context->module->Lookup(global)->params.size();
+          auto arity = func->params.size();
           CHECK(arity < stack_index);
+          // When we call a function we need to reset
+          // the call stack by the number of arguments
+          // because the call instruction will
+          // pop the arguments and push the return value.
           stack_index = stack_index - (arity - 1);
           Emit(Invoke(it->second));
         }
@@ -351,7 +372,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       } else if (auto var_node = op.as<VarNode>()) {
         VisitExpr(op);
         Emit(InvokeClosure());
-        stack_index--;
+        // stack_index--;
       } else {
         LOG(FATAL) << "unsupported case in vm compiler: " << op;
       }
