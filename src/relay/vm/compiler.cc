@@ -372,7 +372,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       } else if (auto var_node = op.as<VarNode>()) {
         VisitExpr(op);
         Emit(InvokeClosure());
-        // stack_index--;
+        stack_index--;
       } else {
         LOG(FATAL) << "unsupported case in vm compiler: " << op;
       }
@@ -401,7 +401,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // We will expect that the caller will properly
       // populate both the free variables and the arguments
       // on the stack.
-
 
       // We first layout the function arguments.
       auto inner_func = Downcast<Function>(func->body);

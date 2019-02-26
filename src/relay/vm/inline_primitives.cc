@@ -99,13 +99,20 @@ struct PrimitiveInliner : ExprMutator {
     }
 };
 
-// TODO: write verifier
+// TODO(@jroesch): write verifier
 
-/* The goal of this pass is to lift out any nested functions into top-level
- * functions.
+/* This pass will eliminate primitives which have been lifted by the ANF
+ * transform inlining them directly into call sites.
  *
- * We will lift the functions out into globals which take the set of the free vars
- * and then return a function whcih has b
+ * This makes VM related code generation easier as the call target is always
+ * a primitive function.
+ *
+ * let prim = fn(...) { ... };
+ * prim(...)
+ *
+ * will become:
+ *
+ * (fn(...) { ... })(...)
  */
 Module InlinePrimitives(const Module& module) {
     PrimitiveInliner inliner(module);

@@ -85,7 +85,7 @@ struct LambdaLifter : ExprMutator {
                 args,
                 body,
                 func->func_type_annotation(),
-                free_type_vars); // TODO(@jroesch), handle that
+                free_type_vars);
 
         lifted_func = MarkClosure(lifted_func);
 
