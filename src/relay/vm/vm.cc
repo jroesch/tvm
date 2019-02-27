@@ -8,6 +8,7 @@
 #include <tvm/relay/expr_functor.h>
 #include <tvm/relay/vm/vm.h>
 #include <tvm/relay/interpreter.h>
+#include <tvm/relay/logging.h>
 #include "../backend/compile_engine.h"
 #include "../../runtime/naive_allocator.h"
 
@@ -348,10 +349,10 @@ size_t VirtualMachine::PopFrame() {
     << " stack size after modifying the stack = " << stack.size();
 
   // Reset frame.
-  std::cout << "Num Args: " << fr.args;
-  std::cout << "Reset frame " << bp << " -> " << fr.bp << "\n";
-  std::cout << "Stack pointer: " << fr.sp << std::endl;
-  std::cout << "Reset stack " << stack_size << " -> " << stack.size() << "\n";
+  RELAY_LOG(INFO) << "Num Args: " << fr.args;
+  RELAY_LOG(INFO) << "Reset frame " << bp << " -> " << fr.bp << "\n";
+  RELAY_LOG(INFO) << "Stack pointer: " << fr.sp << std::endl;
+  RELAY_LOG(INFO) << "Reset stack " << stack_size << " -> " << stack.size() << "\n";
   bp = fr.bp;
   pc = fr.pc;
   func_index = fr.func_index;
@@ -362,9 +363,11 @@ size_t VirtualMachine::PopFrame() {
 }
 
 void VirtualMachine::InvokeGlobal(const VMFunction& func) {
-  std::cout << "===================\nInvoking global " << func.name << std::endl;
+  RELAY_LOG(INFO) << "===================\nInvoking global " << func.name
+                  << std::endl;
   PushFrame(func.params, this->pc + 1, stack.size(), func);
-  std::cout << "func.params= " << func.params << ", stack.size()= " << stack.size() << std::endl;
+  RELAY_LOG(INFO) << "func.params= " << func.params
+                  << ", stack.size()= " << stack.size() << std::endl;
 
   code = func.instructions.data();
   pc = 0;
@@ -372,7 +375,8 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func) {
 }
 
 VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObject>& args) {
-  std::cout << "Executing function " << func.name << " bp " << bp << std::endl;
+  RELAY_LOG(INFO) << "Executing function " << func.name << " bp " << bp
+                  << std::endl;
   for (auto arg : args) {
     stack.push_back(arg);
   }
@@ -380,20 +384,22 @@ VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObje
   InvokeGlobal(func);
   Run();
   auto alloc = MemoryManager::Global()->GetAllocator(ctxs[0]);
-  std::cout << "Memory used: " << alloc->UsedMemory() << " B\n";
-  // std::cout << "final stack size: " << stack.size() << "bp: " << bp << std::endl;
+  RELAY_LOG(INFO) << "Memory used: " << alloc->UsedMemory() << " B\n";
+  RELAY_LOG(INFO) << "final stack size: " << stack.size() << "bp: " << bp
+                  << std::endl;
   return stack.back();
 }
 
 VMObject VirtualMachine::Invoke(const GlobalVar& global, const std::vector<VMObject>& args) {
   auto func_index = this->global_map[global];
-  std::cout << "Invoke Global " << global << " at index " << func_index << std::endl;
+  RELAY_LOG(INFO) << "Invoke Global " << global << " at index " << func_index
+                  << std::endl;
   return Invoke(this->functions[func_index], args);
 }
 
 void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size, std::vector<VMObject>& stack) {
   auto stack_end = stack.size() - 1;
-  std::cout << "arg_count: " << arg_count;
+  RELAY_LOG(INFO) << "arg_count: " << arg_count;
   CHECK(arg_count <= stack.size());
 
   std::vector<TVMValue> values(arg_count);
@@ -401,7 +407,7 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size, 
   runtime::TVMArgsSetter setter(values.data(), codes.data());
 
   auto argument_start = stack.size() - arg_count;
-  std::cout << "ArgumentStart=" << argument_start << std::endl;
+  RELAY_LOG(INFO) << "ArgumentStart=" << argument_start << std::endl;
   for (size_t i = 0; i < arg_count; i++) {
     NDArray data = ToNDArray(stack[argument_start + i]);
     setter(i, data);
@@ -423,7 +429,7 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size, 
   // We can do this more efficiently by reverse laying out the arguments
   // and just shrinking the stack.
   stack[stack.size() - arg_count] = stack[stack_end];
-  std::cout << "ShrinkBy=" << arg_count - output_size << std::endl;
+  RELAY_LOG(INFO) << "ShrinkBy=" << arg_count - output_size << std::endl;
   stack.resize(stack.size() - (arg_count - output_size));
 }
 
@@ -431,10 +437,9 @@ void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
   this->ctxs = ctxs;
 }
 
-void VirtualMachine::DumpRegister() {
-  if (!this->debug) {
-    return;
-  }
+template <typename T>
+typename std::enable_if<T::value, void>::type
+VirtualMachine::DumpRegister() {
   std::cout << std::endl << "-- Registers: --\n";
   std::cout << "Bp: " << bp << std::endl;
   std::cout << "Stack Size: " << stack.size() << std::endl;
@@ -442,11 +447,8 @@ void VirtualMachine::DumpRegister() {
   std::cout << "----\n" ;
 }
 
-void VirtualMachine::DumpStack() {
-  if (!this->debug) {
-    return;
-  }
-
+template <typename T>
+typename std::enable_if<T::value, void>::type VirtualMachine::DumpStack() {
   std::cout << "DumpStack---\n";
   for (size_t i = bp; i < stack.size(); ++i) {
     std::cout << i << " " << VMObjectTagString(stack[i]->tag) << " ";
@@ -476,9 +478,9 @@ void VirtualMachine::Run() {
   while (true) {
   main_loop:
     auto const& instr = this->code[this->pc];
-    std::cout << "Executing(" << pc << "): " ;
+    RELAY_LOG(INFO) << "Executing(" << pc << "): " ;
     InstructionPrint(std::cout, instr);
-    std::cout << "\n";
+    RELAY_LOG(INFO) << "\n";
     DumpRegister();
 
     switch (instr.op) {
@@ -699,7 +701,7 @@ std::tuple<VMObject, TagNameMap>
 EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
                const std::vector<VMObject>& vm_args) {
   VirtualMachine vm = VirtualMachine::FromModule(module, ctxs);
-  std::cout << "Entry function is " << module->entry_func << std::endl;
+  RELAY_LOG(INFO) << "Entry function is " << module->entry_func << std::endl;
   return std::make_tuple(vm.Invoke(module->entry_func, vm_args), vm.tag_index_map);
 }
 
@@ -722,7 +724,7 @@ TVM_REGISTER_API("relay._vm._Tensor")
 TVM_REGISTER_API("relay._vm._Tuple")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
   std::vector<VMObject> fields;
-  for (size_t i = 0; i < args.size(); i++) {
+  for (auto i = 0; i < args.size(); i++) {
     fields.push_back(args[i]);
   }
   *ret = VMTuple(fields);
@@ -764,7 +766,7 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
     }
 
     auto result = EvaluateModule(module, {ctx}, vm_args);
-    std::cout << "Returning results\n";
+    RELAY_LOG(INFO) << "Returning results\n";
     *ret = VMToValue(std::get<1>(result), std::get<0>(result));
 });
 

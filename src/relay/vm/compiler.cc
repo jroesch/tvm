@@ -163,9 +163,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // of instructions that will leave the final value
       // on the stack.
       //
-      std::cout << let_node->value << std::endl;
+      RELAY_LOG(INFO) << let_node->value << std::endl;
       this->VisitExpr(let_node->value);
-      std::cout << this->stack_index << std::endl;
+      RELAY_LOG(INFO) << this->stack_index << std::endl;
       var_map.insert({ let_node->var, this->stack_index-1 });
       this->VisitExpr(let_node->body);
     }
@@ -528,12 +528,14 @@ VirtualMachine CompileModule(const Module& mod_ref) {
     vm.functions[func_index] = vm_func;
   }
 
+#ifdef USE_RELAY_DEBUG
   for (auto vm_func : vm.functions) {
     std::cout << "Function: " << vm_func.name
       << std::endl
       << vm_func
       << "-------------" << std::endl;
   }
+#endif  // USE_RELAY_DEBUG
 
   PopulatePackedFuncMap(context.lowered_funcs, &vm.packed_funcs);
 

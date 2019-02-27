@@ -32,6 +32,7 @@ tvm_option(USE_LLVM "Build with LLVM, can be set to specific llvm-config path" O
 tvm_option(USE_STACKVM_RUNTIME "Include stackvm into the runtime" OFF)
 tvm_option(USE_GRAPH_RUNTIME "Build with tiny graph runtime" ON)
 tvm_option(USE_GRAPH_RUNTIME_DEBUG "Build with tiny graph runtime debug mode" OFF)
+tvm_option(USE_RELAY_DEBUG "Build with Relay debug mode" OFF)
 tvm_option(USE_SGX "Build with SGX" OFF)
 tvm_option(USE_RTTI "Build with RTTI" ON)
 tvm_option(USE_MSVC_MT "Build with MT" OFF)
@@ -174,6 +175,10 @@ if(USE_GRAPH_RUNTIME)
       PROPERTIES COMPILE_DEFINITIONS "TVM_GRAPH_RUNTIME_DEBUG")
   endif(USE_GRAPH_RUNTIME_DEBUG)
 endif(USE_GRAPH_RUNTIME)
+
+if(USE_RELAY_DEBUG)
+  message(STATUS "Build with Relay debug support...")
+endif(USE_RELAY_DEBUG)
 
 # Module rules
 include(cmake/modules/VTA.cmake)

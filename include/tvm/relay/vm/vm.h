@@ -9,6 +9,7 @@
 #include <vector>
 #include <memory>
 #include <tvm/relay/expr_functor.h>
+#include <tvm/relay/logging.h>
 #include <tvm/runtime/memory_manager.h>
 
 namespace tvm {
@@ -34,6 +35,9 @@ inline std::string VMObjectTagString(VMObjectTag tag) {
       return "Tensor";
     case VMObjectTag::kExternalFunc:
       return "ExternalFunction";
+    default:
+      LOG(FATAL) << "Object tag is not supported.";
+      return "";
   }
 }
 
@@ -256,8 +260,23 @@ struct VirtualMachine {
     VMObject Invoke(const VMFunction& func, const std::vector<VMObject>& args);
     VMObject Invoke(const GlobalVar& global, const std::vector<VMObject>& args);
 
-    void DumpRegister();
-    void DumpStack();
+    // Ignore the method that dumps register info at compile-time if debugging
+    // mode is not enabled.
+    template <typename T = EnableRelayDebug>
+    typename std::enable_if<T::value, void>::type
+    DumpRegister();
+
+    template <typename T = EnableRelayDebug>
+    typename std::enable_if<!T::value, void>::type
+    DumpRegister() {}
+
+    // Ignore the method that dumps stack info at compile-time if debugging
+    // mode is not enabled.
+    template <typename T = EnableRelayDebug>
+    typename std::enable_if<T::value, void>::type DumpStack();
+
+    template <typename T = EnableRelayDebug>
+    typename std::enable_if<!T::value, void>::type DumpStack() {}
 
     VirtualMachine() :
       functions(), frames(), stack(),

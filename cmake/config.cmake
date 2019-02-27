@@ -131,3 +131,6 @@ set(USE_SORT OFF)
 
 # Build ANTLR parser for Relay text format
 set(USE_ANTLR OFF)
+
+# Whether use Relay debug mode
+set(USE_RELAY_DEBUG OFF)
