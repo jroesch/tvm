@@ -471,7 +471,7 @@ VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const F
 }
 
 Module OptimizeModule(const Module& mod) {
-  ToANF(mod->entry_func, mod);
+  ToANormalForm(mod->entry_func, mod);
   InlinePrimitives(mod);
   LambdaLift(mod);
   return InlinePrimitives(mod);
