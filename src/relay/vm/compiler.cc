@@ -81,13 +81,12 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     std::vector<Instruction> instructions;
     std::unordered_map<Var, size_t, NodeHash, NodeEqual> var_map;
     size_t stack_index;
-    bool seen_func;
     CompileEngine engine;
     VMCompilerContext* context;
 
     VMCompiler(VMCompilerContext* context) :
       instructions(), var_map(), stack_index(0),
-      seen_func(false), engine(CompileEngine::Global()), context(context)  {}
+      engine(CompileEngine::Global()), context(context)  {}
 
     inline void Emit(const Instruction& instr) {
       RELAY_LOG(INFO) << "VMCompiler::Emit: instr=" << instr;
@@ -95,11 +94,13 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       switch (instr.op) {
         case Opcode::AllocDatatype:
         case Opcode::AllocTensor:
-        case Opcode::AllocClosure:
         case Opcode::GetField:
         case Opcode::Push:
         case Opcode::LoadConst:
           stack_index++;
+          break;
+        case Opcode::AllocClosure:
+          stack_index = stack_index - (instr.num_freevar - 1);
           break;
         case Opcode::Invoke:
           break;
@@ -162,7 +163,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // of instructions that will leave the final value
       // on the stack.
       //
-      // add notes about primitive functions.
       std::cout << let_node->value << std::endl;
       this->VisitExpr(let_node->value);
       std::cout << this->stack_index << std::endl;
@@ -353,7 +353,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           // We subtract one because the resulting closure will
           // now be on the stack.
           auto arity = func->params.size();
-          stack_index = stack_index - (arity - 1);
           Emit(AllocClosure(it->second, arity));
         } else {
           auto arity = func->params.size();
@@ -370,9 +369,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         auto tag = GetConstructorTag(constructor);
         Emit(AllocDatatype(tag, call_node->args.size()));
       } else if (auto var_node = op.as<VarNode>()) {
-        VisitExpr(op);
+        VisitExpr(GetRef<Var>(var_node));
+        stack_index -= call_node->args.size();
         Emit(InvokeClosure());
-        stack_index--;
       } else {
         LOG(FATAL) << "unsupported case in vm compiler: " << op;
       }

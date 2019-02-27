@@ -337,14 +337,18 @@ size_t VirtualMachine::PopFrame() {
   // Resize value stack.
 
   stack.resize(fr.sp);
+  DumpStack();
   stack.resize(stack.size() - fr.args);
+  DumpStack();
   stack.push_back(return_value);
+  DumpStack();
 
   CHECK(stack.size() < stack_size + 1)
     << "stack_size before modifying stack = " << stack_size + 1
     << " stack size after modifying the stack = " << stack.size();
 
   // Reset frame.
+  std::cout << "Num Args: " << fr.args;
   std::cout << "Reset frame " << bp << " -> " << fr.bp << "\n";
   std::cout << "Stack pointer: " << fr.sp << std::endl;
   std::cout << "Reset stack " << stack_size << " -> " << stack.size() << "\n";
@@ -364,7 +368,7 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func) {
 
   code = func.instructions.data();
   pc = 0;
-  bp = stack.size() - func.params;
+  bp = stack.size() - func.params ;
 }
 
 VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObject>& args) {
@@ -574,10 +578,15 @@ void VirtualMachine::Run() {
       case Opcode::AllocClosure: {
         std::vector<VMObject> free_vars;
         auto field_start = stack.size() - instr.num_freevar;
+        // Optimize this code.
         for (size_t i = 0; i < instr.num_freevar; i++) {
           free_vars.push_back(stack[field_start + i]);
         }
+        for (size_t i = 0; i < instr.num_freevar; i++) {
+          stack.pop_back();
+        }
         stack.push_back(VMClosure(instr.func_index, free_vars));
+        DumpStack();
         pc++;
         goto main_loop;
       }
