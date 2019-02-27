@@ -186,10 +186,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto after_cond = this->instructions.size();
 
       this->Emit(If(0, 0));
-
-      // Save the stack_index before entering true branch
       this->VisitExpr(if_node->true_branch);
-
 
       RELAY_LOG(INFO) << "stack_index= " << stack_index;
       RELAY_LOG(INFO) << "stack_index_before_branch= " << stack_index_before_branch;
