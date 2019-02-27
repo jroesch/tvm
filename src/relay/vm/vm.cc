@@ -440,34 +440,34 @@ void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
 template <typename T>
 typename std::enable_if<T::value, void>::type
 VirtualMachine::DumpRegister() {
-  std::cout << std::endl << "-- Registers: --\n";
-  std::cout << "Bp: " << bp << std::endl;
-  std::cout << "Stack Size: " << stack.size() << std::endl;
-  std::cout << "Frame Size: " << frames.size() << std::endl;
-  std::cout << "----\n" ;
+  RELAY_LOG(INFO) << std::endl << "-- Registers: --\n";
+  RELAY_LOG(INFO) << "Bp: " << bp << std::endl;
+  RELAY_LOG(INFO) << "Stack Size: " << stack.size() << std::endl;
+  RELAY_LOG(INFO) << "Frame Size: " << frames.size() << std::endl;
+  RELAY_LOG(INFO) << "----\n" ;
 }
 
 template <typename T>
 typename std::enable_if<T::value, void>::type VirtualMachine::DumpStack() {
-  std::cout << "DumpStack---\n";
+  RELAY_LOG(INFO) << "DumpStack---\n";
   for (size_t i = bp; i < stack.size(); ++i) {
-    std::cout << i << " " << VMObjectTagString(stack[i]->tag) << " ";
+    RELAY_LOG(INFO) << i << " " << VMObjectTagString(stack[i]->tag) << " ";
     switch (stack[i]->tag) {
       case VMObjectTag::kTensor: {
         VMTensorCell* tensor = (VMTensorCell*)stack[i].operator->();
-        std::cout << "dimensions=" << tensor->data->ndim;
+        RELAY_LOG(INFO) << "dimensions=" << tensor->data->ndim;
         if (tensor->data->ndim == 0) {
-          std::cout << " " << TensorValueNode::make(tensor->data);
+          RELAY_LOG(INFO) << " " << TensorValueNode::make(tensor->data);
         }
-        std::cout << " \n";
+        RELAY_LOG(INFO) << " \n";
         break;
       }
       default: {
-        std::cout << "\n";
+        RELAY_LOG(INFO) << "\n";
       }
     }
   }
-  std::cout << "DumpStack end---\n";
+  RELAY_LOG(INFO) << "DumpStack end---\n";
 }
 
 void VirtualMachine::Run() {
