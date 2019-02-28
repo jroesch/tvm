@@ -93,5 +93,11 @@ TVM_REGISTER_API("relay._base.set_span")
     rn->span = sp;
 });
 
+Input InputNode::make(runtime::NDArray data) {
+  NodePtr<InputNode> n = make_node<InputNode>();
+  n->data = std::move(data);
+  return Input(n);
+}
+
 }  // namespace relay
 }  // namespace tvm

@@ -352,6 +352,30 @@ class TypeInferencer : private ExprFunctor<Type(const Expr&)>,
     return rtype;
   }
 
+  // struct SubShapeMutator : TypeMutator {
+  //   std::unordered_map<IndexExpr, IndexExpr, NodeEqual, NodeHash> sh_map_;
+
+  //   SubShapeMutator(std::unordered_map<IndexExpr, IndexExpr, NodeEqual, NodeHash> sh_map) :
+  //     sh_map_(sh_map) {}
+
+  //   Type VisitType_(const TensorTypeNode* ty) {
+  //     tvm::Array<IndexExpr> shape;
+  //     for (auto sh : ty->shape) {
+  //       auto it = sh_map_.find(sh);
+  //       if (it != sh_map_.end()) {
+  //         shape.push_back(it->second);
+  //       } else {
+  //         shape.push_back(sh);
+  //       }
+  //       return TensorTypeNode::make(shape, ty->dtype);
+  //     }
+  //   }
+  // };
+
+  // Type SubShape(const Type& ty, std::unordered_map<IndexExpr, IndexExpr, NodeEqual, NodeHash> sh_map) {
+  //   return SubShapeMutator(sh_map).VisitType(ty);
+  // }
+
   // substitute the type args in the function type
   FuncType InstantiateFuncType(const FuncTypeNode* fn_ty, const Array<Type>& ty_args) {
     tvm::Map<TypeVar, Type> subst_map;

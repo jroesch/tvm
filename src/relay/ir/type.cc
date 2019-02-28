@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -227,6 +227,22 @@ TVM_STATIC_IR_FUNCTOR_REGISTER(IRPrinter, vtable)
                               tvm::IRPrinter* p) {
   p->stream << "RefTypeNode(" << node->value << ")";
 });
+
+IndexExpr Any() {
+  // This doesn't work for serialization.
+  static IndexExpr __any;
+  if (!__any.defined()) {
+    __any = tvm::Var("any");
+  }
+  CHECK(__any.defined());
+  return __any;
+}
+
+TVM_REGISTER_API("relay._make.Any")
+.set_body([](TVMArgs args, TVMRetValue* ret) {
+  *ret = Any();
+});
+
 
 }  // namespace relay
 }  // namespace tvm

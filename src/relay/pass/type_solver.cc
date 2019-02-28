@@ -145,6 +145,76 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
     return t1;
   }
 
+  IndexExpr GetShape(const IndexExpr& e) {
+    IndexExpr ex = e;
+    while (true) {
+      auto it = solver_->shape_uf_.find(ex);
+      if (it == solver_->shape_uf_.end()) {
+        return ex;
+      } else {
+        ex = (*it).second;
+      }
+    }
+  }
+
+  IndexExpr UnifyShape(const IndexExpr& lhs, const IndexExpr& rhs) {
+    auto ulhs = GetShape(lhs);
+    auto urhs = GetShape(rhs);
+
+    if (ulhs.same_as(urhs)) {
+      return ulhs;
+    }
+
+    auto left_index0 = ulhs.as<tvm::Variable>();
+    auto right_index0 = urhs.as<tvm::IntImm>();
+    if (left_index0 && right_index0) {
+      solver_->shape_uf_.Set(ulhs, urhs);
+      return urhs;
+    }
+
+    auto left_index1 = ulhs.as<tvm::IntImm>();
+    auto right_index1 = urhs.as<tvm::Variable>();
+    if (left_index1 && right_index1) {
+      solver_->shape_uf_.Set(urhs, ulhs);
+      return ulhs;
+    }
+
+    auto left_index2 = ulhs.as<tvm::IntImm>();
+    auto right_index2 = urhs.as<tvm::IntImm>();
+    if (left_index2 && right_index2 && left_index2->value == right_index2->value) {
+      return ulhs;
+    }
+
+    LOG(FATAL) << ulhs << " " << urhs;
+    return tvm::Expr();
+  }
+
+  Type VisitType_(const TensorTypeNode* op, const Type& tn) final {
+    std::cout << "CHECKING TENSOR TYPE" << std::endl;
+    const auto* tt_node = tn.as<TensorTypeNode>();
+    if (!tt_node) {
+      return Type(nullptr);
+    }
+
+    auto tt1 = GetRef<TensorType>(op);
+    auto tt2 = GetRef<TensorType>(tt_node);
+
+    if (AlphaEqual(tt1, tt2)) {
+      return tt1;
+    }
+
+    if (tt1->dtype != tt2->dtype) {
+      return Type(nullptr);
+    }
+
+    tvm::Array<IndexExpr> shape;
+    for (size_t i = 0; i < tt1->shape.size(); i++) {
+      shape.push_back(UnifyShape(tt1->shape[i], tt2->shape[i]));
+    }
+
+    return TensorTypeNode::make(shape, tt1->dtype);
+  }
+
   Type VisitType_(const TupleTypeNode* op, const Type& tn) final {
     const auto* ttn = tn.as<TupleTypeNode>();
     if (!ttn || op->fields.size() != ttn->fields.size()) {

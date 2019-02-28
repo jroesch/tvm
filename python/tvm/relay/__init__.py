@@ -66,6 +66,8 @@ scalar_type = ty.scalar_type
 RefType = ty.RefType
 GlobalTypeVar = ty.GlobalTypeVar
 TypeCall = ty.TypeCall
+TypeOf = ty.TypeOf
+Any = ty.Any
 
 # Expr
 Expr = expr.Expr

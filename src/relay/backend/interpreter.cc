@@ -30,6 +30,7 @@
 #include <tvm/relay/pass.h>
 #include <tvm/relay/attrs/debug.h>
 #include "compile_engine.h"
+#include "../ir/type_functor.h"
 
 namespace tvm {
 namespace relay {
@@ -304,8 +305,42 @@ class Interpreter :
     return MakeClosure(func);
   }
 
+  struct IsDynamicVisitor : TypeVisitor {
+    bool is_dyn{false};
+    void VisitType_(const TensorTypeNode* tt) {
+      for (auto sh : tt->shape) {
+        is_dyn = is_dyn || (Any().same_as(sh));
+      }
+    }
+  };
+
+  bool IsDynamic(const Type& ty) {
+    IsDynamicVisitor v;
+    v.VisitType(ty);
+    return v.is_dyn;
+  }
+
+  Array<IndexExpr> ToShape(const std::vector<int64_t>& sh) {
+    Array<IndexExpr> osh;
+    for (auto dim : sh) {
+       osh.push_back(tvm::Integer(dim));
+    }
+    return osh;
+  }
+
+  std::vector<int64_t> FromShape(const Array<IndexExpr>& sh) {
+    std::vector<int64_t> osh;
+    for (auto dim : sh) {
+       osh.push_back(Downcast<tvm::Integer>(sh)->value);
+    }
+    return osh;
+  }
+
   Value InvokePrimitiveOp(Function func,
                           const Array<Value>& args) {
+    static auto fshape_func =
+        Op::GetAttr<FShapeFunc>("FShapeFunc");
+
     auto call_node = func->body.as<CallNode>();
 
     if (call_node && call_node->op == Op::Get("debug")) {
@@ -342,10 +377,12 @@ class Interpreter :
     std::vector<TVMValue> values(arg_len);
     std::vector<int> codes(arg_len);
     TVMArgsSetter setter(values.data(), codes.data());
+    Array<Input> shape_func_args;
 
     auto fset_input = [&](size_t i, Value val) {
       const TensorValueNode* tv = val.as<TensorValueNode>();
       CHECK(tv != nullptr) << "expect Tensor argument";
+      shape_func_args.push_back(InputNode::make(tv->data));
       setter(i, tv->data);
       DLContext arg_ctx = tv->data->ctx;
       CHECK(arg_ctx.device_type ==  context_.device_type &&
@@ -372,6 +409,8 @@ class Interpreter :
     // we need to allocate space for the output buffer based on the
     // return type.
     auto fset_output = [&](size_t i, Type val_type) {
+      std::cout << "i=" << i
+        << "type= " << val_type;
       const TensorTypeNode* rtype = val_type.as<TensorTypeNode>();
       CHECK(rtype != nullptr);
       // Allocate output tensor.
@@ -388,17 +427,47 @@ class Interpreter :
       return out_tensor;
     };
 
+    Array<Shape> out_shapes;
+
+    auto ret_type = func->body->checked_type();
+    std::cout << "ret_type: " << ret_type << std::endl;
+    auto is_dyn = IsDynamic(ret_type);
+
+    if (is_dyn) {
+      std::cout << "IsDynamic!!" << std::endl;
+      CHECK(func->IsPrimitive());
+      auto call = Downcast<Call>(func->body);
+      auto op = Downcast<Op>(call->op);
+      auto shape_func = fshape_func[op];
+      out_shapes = shape_func(shape_func_args);
+    }
+
     PackedFunc packed_func = engine_->JIT(CCacheKeyNode::make(func, target_));
     TVMRetValue rv;
-    if (const TupleTypeNode* rtype = func->body->checked_type().as<TupleTypeNode>()) {
+    if (const TupleTypeNode* rtype = ret_type.as<TupleTypeNode>()) {
+      CHECK(!is_dyn || out_shapes.size() == rtype->fields.size());
       Array<Value> fields;
       for (size_t i = 0; i < rtype->fields.size(); ++i) {
-        fields.push_back(fset_output(i, rtype->fields[i]));
+        if (is_dyn) {
+          auto sh = out_shapes[i];
+          auto tt = Downcast<TensorType>(rtype->fields[i]);
+          fields.push_back(fset_output(i, TensorTypeNode::make(sh, tt->dtype)));
+        } else {
+          fields.push_back(fset_output(i, rtype->fields[i]));
+        }
       }
       packed_func.CallPacked(TVMArgs(values.data(), codes.data(), arg_len), &rv);
       return TupleValueNode::make(fields);
     } else {
-      Value out_tensor = fset_output(0, func->body->checked_type());
+      Value out_tensor;
+      if (is_dyn) {
+          CHECK(out_shapes.size() == 1);
+          auto sh = out_shapes[0];
+          auto tt = Downcast<TensorType>(ret_type);
+          out_tensor = fset_output(0, TensorTypeNode::make(sh, tt->dtype));
+        } else {
+          out_tensor = fset_output(0, ret_type);
+        }
       packed_func.CallPacked(TVMArgs(values.data(), codes.data(), arg_len), &rv);
       return out_tensor;
     }

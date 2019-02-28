@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -251,7 +251,13 @@ bool ReduceRel(const Array<Type>& types,
   CHECK_EQ(types.size(), 2);
   const auto* data = types[0].as<TensorTypeNode>();
   if (data == nullptr) return false;
-  CHECK(static_cast<int>(data->shape.size()) != 0);
+
+  // Reduction over zero-rank should be id?
+  if (static_cast<int>(data->shape.size()) == 0) {
+    reporter->Assign(types[1], TensorTypeNode::make({}, data->dtype));
+    return true;
+  }
+
   std::vector<IndexExpr>&& in_shape = AsVector(data->shape);
 
   const ReduceAttrs* param = attrs.as<ReduceAttrs>();

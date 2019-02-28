@@ -159,6 +159,8 @@ class TypeSolver {
     NodeRef location;
   };
 
+  tvm::Map<IndexExpr, IndexExpr> shape_uf_;
+
   /*! \brief List of all allocated type nodes */
   std::vector<TypeNode*> type_nodes_;
   /*! \brief List of all allocated relation nodes */

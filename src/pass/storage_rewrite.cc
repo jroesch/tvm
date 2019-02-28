@@ -391,6 +391,7 @@ class StoragePlanRewriter : public IRMutator {
       return e;
     }
   }
+
   Expr Mutate_(const Call* op, const Expr& e) final {
     if (op->is_intrinsic(intrinsic::tvm_access_ptr)) {
       CHECK_EQ(op->args.size(), 5U);
@@ -411,6 +412,7 @@ class StoragePlanRewriter : public IRMutator {
            {op->args[0], se->alloc_var, offset, extent, op->args[4]},
            op->call_type);
     } else {
+      std::cout << op->name;
       return IRMutator::Mutate_(op, e);
     }
   }

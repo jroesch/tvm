@@ -38,9 +38,15 @@ Expr Tensor::operator()(Array<Var> indices) const {
 
 Expr Tensor::operator()(Array<Expr> indices) const {
   using HalideIR::Internal::Call;
-  CHECK_EQ(ndim(), indices.size())
-      << "Tensor dimension mismatch in read"
-      << "ndim = " << ndim() << ", indices.size=" << indices.size();
+  if (ndim() == 0 && false /* && indices.size() != 0 */ ) {
+    LOG(FATAL) << "invalid scalar read, if scalar indices must be empty"
+      << "ndim = " << ndim()
+      << "indices = " << indices;
+  } else if (ndim() != 0) {
+    CHECK_EQ(ndim(), indices.size())
+        << "Tensor dimension mismatch in read"
+        << "ndim = " << ndim() << ", indices.size=" << indices.size();
+  }
   auto n = Call::make(
       (*this)->dtype, (*this)->op->name, indices, Call::Halide,
       (*this)->op, (*this)->value_index);

@@ -215,6 +215,24 @@ RELAY_DEFINE_NODE_REF(Id, IdNode, NodeRef);
 
 struct Module;
 
+class Input;
+struct InputNode : tvm::Node {
+  runtime::NDArray data;
+
+  InputNode() {}
+
+  void VisitAttrs(tvm::AttrVisitor* v) final {
+    v->Visit("data", &data);
+  }
+
+  TVM_DLL static Input make(runtime::NDArray data);
+
+  static constexpr const char* _type_key = "relay.Input";
+  TVM_DECLARE_NODE_TYPE_INFO(InputNode, tvm::Node);
+};
+
+RELAY_DEFINE_NODE_REF(Input, InputNode, tvm::NodeRef);
+
 }  // namespace relay
 }  // namespace tvm
 

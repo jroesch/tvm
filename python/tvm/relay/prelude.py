@@ -16,6 +16,7 @@
 # under the License.
 # pylint: disable=no-else-return, unidiomatic-typecheck, invalid-name
 """Adds certain standard global functions and ADT definitions to the module."""
+import os
 from .ty import GlobalTypeVar, TypeVar, FuncType, TupleType, scalar_type
 from .expr import Var, Function, GlobalVar, Let, If, Tuple, TupleGetItem
 from .adt import Constructor, TypeData, Clause, Match
@@ -537,3 +538,11 @@ class Prelude:
         self.define_id()
         self.define_compose()
         self.define_iterate()
+
+PRELUDE_PATH = os.path.dirname(os.path.realpath(__file__))
+def get_text_prelude():
+    from .parser import fromtext
+    file = os.path.join(PRELUDE_PATH, "text_prelude.rly")
+    with open(file) as prelude:
+        t = fromtext(prelude.read())
+        import pdb; pdb.set_trace()

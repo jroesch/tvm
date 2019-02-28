@@ -20,6 +20,7 @@ from enum import IntEnum
 from .base import RelayNode, register_relay_node
 from . import _make
 
+Any = _make.Any
 
 class Type(RelayNode):
     """The base type for all Relay types."""

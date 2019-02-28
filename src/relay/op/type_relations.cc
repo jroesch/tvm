@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -41,6 +41,69 @@ TensorType ToTensorType(const Type& t) {
   }
 }
 
+// using TypeRelation =
+//   std::function<bool(const Array<Type>& types,
+//                      int num_inputs,
+//                      const Attrs& attrs,
+//                      const TypeReporter& reporter)>;
+
+// struct SymDim {
+
+// };
+
+// struct SymShape {
+//   Array<SymDim> shape;
+//   std::vector<tvm::Expr> matched_shape;
+//   DataType dtype;
+
+//   SymShape() : shape(Array<SymDim>()) {}
+
+//   bool Match(const Type& type) {
+//     auto is_inc = type.as<IncompleteTypeNode>();
+//     if (is_inc) {
+//       return false;
+//     }
+
+//     auto is_tensor = type.as<TensorTypeNode>();
+
+//     if (!is_tensor) {
+//       LOG(FATAL) << "must be tensor";
+//     }
+
+//     // matches any
+//     if (!shape.defined()) {
+//       for (auto sh : is_tensor->shape) {
+//         matched_shape.push_back(sh);
+//       }
+//       dtype = is_tensor->dtype;
+//       return true;
+//     }
+
+//     LOG(FATAL) << "NYI";
+//   }
+// };
+
+// bool ShapeRelation(
+//   const Array<Type>& types,
+//   int num_inputs,
+//   const Attrs& attrs,
+//   const TypeReporter& reporter,
+//   std::function<SymShape(const Array<Type>& inputs)> body) {
+//     CHECK(num_inputs == types.size() - 1);
+//     Array<Type> inputs = Array<Type>(types.begin(), types.end());
+//     auto out_shape = body(inputs);
+// }
+
+// bool MatchShapes(const Array<Type>& types, const std::vector<SymShape>& pattern) {
+//   CHECK(types.size() == pattern.size());
+//   bool matches = false;
+//   for (size_t i = 0; i < types.size(); i++) {
+//     SymShape& sh = const_cast<SymShape&>(pattern[i]);
+//     matches = matches || sh.Match(types[i]);
+//   }
+//   return matches;
+// }
+
 bool IdentityRel(const Array<Type>& types,
                  int num_inputs,
                  const Attrs& attrs,
@@ -49,6 +112,13 @@ bool IdentityRel(const Array<Type>& types,
     reporter->Assign(types[i], types[0]);
   }
   return true;
+  // return ShapeRelation(types, num_inputs, attrs, reporter,
+  //   [&](const Array<Type>& inputs) {
+  //   SymShape s;
+  //   if (MatchShapes(inputs, {s})) {
+  //     return s;
+  //   }
+  // });
 }
 
 bool EqualCheck(const IndexExpr& lhs,
@@ -71,6 +141,7 @@ bool EqualConstInt(const IndexExpr& lhs, int64_t value) {
   }
   return false;
 }
+
 
 Type ConcreteBroadcast(const TensorType& t1,
                        const TensorType& t2,

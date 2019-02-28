@@ -497,6 +497,9 @@ class TypeRelationNode : public TypeConstraintNode {
 
 RELAY_DEFINE_NODE_REF(TypeRelation, TypeRelationNode, TypeConstraint);
 
+// Temporary version of Any.
+TVM_DLL IndexExpr Any();
+
 // The following fields contains advanced typing
 // Only keep the class name and reserved for future usage.
 class GenericTensorType;
