@@ -462,6 +462,12 @@ typename std::enable_if<T::value, void>::type VirtualMachine::DumpStack() {
         RELAY_LOG(INFO) << " \n";
         break;
       }
+      case VMObjectTag::kDatatype: {
+        VMDatatypeCell* datatype = (VMDatatypeCell*)stack[i].operator->();
+        std::cout << "fields: " << datatype->fields.size();
+        std::cout << "\n";
+        break;
+      }
       default: {
         RELAY_LOG(INFO) << "\n";
       }
@@ -616,7 +622,7 @@ void VirtualMachine::Run() {
         CHECK(instr.dest < stack.size())
           << "dest=" << instr.dest
           << " stack_size=" << stack.size();
-        stack[instr.dest] = stack[instr.source];
+        stack[bp + instr.dest] = stack[bp + instr.source];
         DumpStack();
         pc++;
         goto main_loop;
