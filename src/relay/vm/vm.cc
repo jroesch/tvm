@@ -456,12 +456,13 @@ typename std::enable_if<T::value, void>::type VirtualMachine::DumpStack() {
       }
       case VMObjectTag::kDatatype: {
         VMDatatypeCell* datatype = (VMDatatypeCell*)stack[i].operator->();
-        std::cout << "fields: " << datatype->fields.size();
-        std::cout << "\n";
+        RELAY_LOG(INFO) << "fields: " << datatype->fields.size();
+        RELAY_LOG(INFO) << "\n";
         break;
       }
       default: {
         RELAY_LOG(INFO) << "\n";
+        break;
       }
     }
   }
