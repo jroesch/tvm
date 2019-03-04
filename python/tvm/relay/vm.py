@@ -46,6 +46,9 @@ def _convert(arg, cargs):
     if isinstance(arg, np.ndarray):
         vm = _vm._Tensor(tvm.nd.array(arg))
         cargs.append(vm)
+    elif isinstance(arg, tvm.nd.NDArray):
+        vm = _vm._Tensor(arg)
+        cargs.append(vm)
     elif isinstance(arg, tuple):
         field_args = []
         for field in arg:
