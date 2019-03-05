@@ -176,10 +176,6 @@ if(USE_GRAPH_RUNTIME)
   endif(USE_GRAPH_RUNTIME_DEBUG)
 endif(USE_GRAPH_RUNTIME)
 
-if(USE_RELAY_DEBUG)
-  message(STATUS "Build with Relay debug support...")
-endif(USE_RELAY_DEBUG)
-
 # Module rules
 include(cmake/modules/VTA.cmake)
 include(cmake/modules/CUDA.cmake)
@@ -200,6 +196,12 @@ include(cmake/modules/contrib/HybridDump.cmake)
 add_library(tvm SHARED ${COMPILER_SRCS} ${RUNTIME_SRCS})
 add_library(tvm_topi SHARED ${TOPI_SRCS})
 add_library(tvm_runtime SHARED ${RUNTIME_SRCS})
+
+if(USE_RELAY_DEBUG)
+  message(STATUS "Build with Relay debug support...")
+  set_target_properties(tvm PROPERTIES COMPILE_DEFINITIONS "USE_RELAY_DEBUG")
+endif(USE_RELAY_DEBUG)
+
 if(NOT USE_SGX STREQUAL "OFF")
   add_dependencies(tvm sgx_edl)
   add_dependencies(tvm_runtime sgx_edl tvm_t)

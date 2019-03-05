@@ -528,14 +528,14 @@ VirtualMachine CompileModule(const Module& mod_ref) {
     vm.functions[func_index] = vm_func;
   }
 
-#ifdef USE_RELAY_DEBUG
+#ifdef USE_RELAY_LOG
   for (auto vm_func : vm.functions) {
     std::cout << "Function: " << vm_func.name
       << std::endl
       << vm_func
       << "-------------" << std::endl;
   }
-#endif  // USE_RELAY_DEBUG
+#endif  // USE_RELAY_LOG
 
   PopulatePackedFuncMap(context.lowered_funcs, &vm.packed_funcs);
 

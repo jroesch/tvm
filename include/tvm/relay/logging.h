@@ -22,8 +22,19 @@ struct EnableRelayDebug {
   static constexpr bool value = true;
 };
 
+static inline bool logging_enabled() {
+  if (auto var = std::getenv("USE_RELAY_LOG")) {
+    std::string is_on(var);
+    return is_on == "1";
+  } else {
+    return false;
+  }
+}
+
 // Use dmlc logging directly if debugging mode is enabled.
-#define RELAY_LOG(severity) LOG(severity)
+#define RELAY_LOG(severity) LOG_IF(severity, logging_enabled())
+
+// Define various Relay assertion helpers.
 #define RELAY_ASSERT(condition) CHECK(condition)
 #define RELAY_ASSERT_EQ(val1, val2) CHECK_EQ(val1, val2)
 #define RELAY_ASSERT_NE(val1, val2) CHECK_NE(val1, val2)

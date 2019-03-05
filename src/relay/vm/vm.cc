@@ -93,7 +93,6 @@ Instruction::Instruction(const Instruction& instr) {
 // TODO(@jroesch): this leaks memory fix me
 Instruction::~Instruction() {}
 
-
 Instruction Push(size_t stack_index) {
   Instruction instr;
   instr.op = Opcode::Push;
