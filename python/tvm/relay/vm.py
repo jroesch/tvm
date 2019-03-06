@@ -23,7 +23,9 @@ _set_vm_obj_function(VMObject)
 def optimize(expr, mod=None):
     # TODO: We need to move this optimization code into the optimizer/pass manager
     ck_expr = ir_pass.infer_type(expr, mod=mod)
-    fused_expr = ir_pass.fuse_ops(ck_expr, mod=mod)
+    simplified_expr = ir_pass.simplify_inference(ck_expr)
+    simplified_expr = ir_pass.infer_type(simplified_expr, mod=mod)
+    fused_expr = ir_pass.fuse_ops(simplified_expr, mod=mod)
     ck_fused = ir_pass.infer_type(fused_expr, mod=mod)
     return ck_fused
 
@@ -64,7 +66,7 @@ def convert(args):
 
     return cargs
 
-def eval_vm(mod, ctx, *args):
+def eval_vm(mod, ctx, *args, **kwargs):
     """
     Evaluate a module on a given context with the provided arguments.
 
@@ -72,14 +74,19 @@ def eval_vm(mod, ctx, *args):
     ----------
     mod: relay.Module
         The module to optimize, will execute its entry_func.
+
     ctx: tvm.Context
         The TVM context to execute on.
-    args: ...
+
+    args: List[tvm.NDArray, np.ndarray]
         The arguments to evaluate.
+
+    kwargs: Dict[str, Union[tvm.NDArrray, np.ndarray]]
+        The keyword arguments to evaluate.
     """
     main_func = mod[mod.entry_func]
 
-    if len(main_func.params) == 0 and isinstance(main_func.body, GlobalVar):
+    if not main_func.params and isinstance(main_func.body, GlobalVar):
         main_func = eta_expand(main_func.body, mod)
 
     assert isinstance(main_func, Function)
@@ -88,6 +95,26 @@ def eval_vm(mod, ctx, *args):
 
     args = list(args)
     assert isinstance(args, list)
+
+    params = main_func.params
+    if kwargs:
+        param_names = [parm.name_hint for param in params]
+        arg_count = len(args)
+
+        for i, name in enumerate(param_names):
+            if i < arg_count:
+                if kwargs.get(name):
+                    raise Exception("Duplicate argument found in both inputs \
+                                    (at position: {0}) and keyword argument \
+                                    (with name: {1})".format(i, name))
+            else:
+                args.append(kwargs[name])
+
+    if len(args) != len(params):
+        raise Exception("Mismatch found between the expected and provided \
+                        arguments, expected: {0], provided: \
+                        {1}".format(len(args), len(params)))
+
     cargs = convert(args)
 
     result = _vm._evaluate_vm(mod, ctx.device_type, ctx.device_id, *cargs)

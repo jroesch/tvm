@@ -14,6 +14,7 @@
 
 #include <vector>
 #include <iostream>
+#include <chrono>
 
 using namespace tvm::runtime;
 
@@ -389,16 +390,18 @@ VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObje
   return stack.back();
 }
 
-VMObject VirtualMachine::Invoke(const GlobalVar& global, const std::vector<VMObject>& args) {
+VMObject VirtualMachine::Invoke(const GlobalVar& global,
+                                const std::vector<VMObject>& args) {
   auto func_index = this->global_map[global];
   RELAY_LOG(INFO) << "Invoke Global " << global << " at index " << func_index
                   << std::endl;
   return Invoke(this->functions[func_index], args);
 }
 
-void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size, std::vector<VMObject>& stack) {
+void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size,
+                  std::vector<VMObject>& stack) {
   auto stack_end = stack.size() - 1;
-  RELAY_LOG(INFO) << "arg_count: " << arg_count;
+  RELAY_LOG(INFO) << "arg_count: " << arg_count << " output_size: " << output_size;
   CHECK(arg_count <= stack.size());
 
   std::vector<TVMValue> values(arg_count);
@@ -406,7 +409,7 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size, 
   runtime::TVMArgsSetter setter(values.data(), codes.data());
 
   auto argument_start = stack.size() - arg_count;
-  RELAY_LOG(INFO) << "ArgumentStart=" << argument_start << std::endl;
+  RELAY_LOG(INFO) << "argument_start = " << argument_start << std::endl;
   for (size_t i = 0; i < arg_count; i++) {
     NDArray data = ToNDArray(stack[argument_start + i]);
     setter(i, data);
@@ -415,20 +418,10 @@ void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size, 
   TVMRetValue rv;
   func.CallPacked(TVMArgs(values.data(), codes.data(), arg_count), &rv);
 
-  // // Fix the object at return value position
-  // if (output_size == 1) {
-  //   stack[stack.size() - 1] = stack[stack.size() - 2];
-  // } else {
-  //   auto adt = std::dynamic_pointer_cast<VMDatatypeCell>(stack.back().ptr);
-  //   for (size_t i = 0; i < output_size; ++i) {
-  //     adt->fields[i] = stack[stack.size() - output_size - 1 + i];
-  //   }
-  // }
-
   // We can do this more efficiently by reverse laying out the arguments
   // and just shrinking the stack.
   stack[stack.size() - arg_count] = stack[stack_end];
-  RELAY_LOG(INFO) << "ShrinkBy=" << arg_count - output_size << std::endl;
+  RELAY_LOG(INFO) << "ShrinkBy = " << arg_count - output_size << std::endl;
   stack.resize(stack.size() - (arg_count - output_size));
 }
 
@@ -770,7 +763,13 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
       vm_args.push_back(obj);
     }
 
+    auto start = std::chrono::high_resolution_clock::now();
     auto result = EvaluateModule(module, {ctx}, vm_args);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+            .count();
+    LOG(INFO) << "Inference time: " << duration;
     RELAY_LOG(INFO) << "Returning results\n";
     *ret = VMToValue(std::get<1>(result), std::get<0>(result));
 });

@@ -10,6 +10,7 @@ import model_zoo
 
 
 def benchmark_execution(mx_symbol,
+                        measure=False,
                         data_shape=(1, 3, 224, 224),
                         out_shape=(1, 1000),
                         dtype='float32'):
@@ -37,19 +38,26 @@ def benchmark_execution(mx_symbol,
 
         m = graph_runtime.create(graph, lib, ctx)
         # set inputs
-        m.set_input("data", tvm.nd.array(x.astype(dtype)))
+        m.set_input("data", x)
         m.set_input(**params)
         m.run()
         out = m.get_output(0, tvm.nd.empty(out_shape, dtype))
+
+        if measure:
+            print("Evaluate graph runtime inference time cost...")
+            ftimer = m.module.time_evaluator("run", ctx, number=1, repeat=20)
+            # Measure in millisecond.
+            prof_res = np.array(ftimer().results) * 1000
+            print("Mean inference time (std dev): %.2f ms (%.2f ms)" %
+                  (np.mean(prof_res), np.std(prof_res)))
+
         return out.asnumpy()
 
     def get_tvm_vm_output(symbol, x, args, auxs, target, ctx, dtype='float32'):
         func, params = get_func_param(symbol, x, args, auxs)
-        params = [params[k] for k in params]
-        params = [x] + params
         ex = relay.create_executor('vm', mod=relay.Module(), ctx=ctx)
-        result = ex.evaluate(func)(*params)
-        return result.asnumpy()
+        result = ex.evaluate(func)(x, **params)
+        return result.asnumpy().astype(dtype)
 
     # random input
     x = np.random.uniform(size=data_shape).astype(dtype)
@@ -58,8 +66,10 @@ def benchmark_execution(mx_symbol,
 
     _, args, auxs = get_mxnet_output(mx_symbol, x, dtype)
     assert "data" not in args
-    tvm_out = get_tvm_output(mx_symbol, x, args, auxs, target, ctx, dtype)
-    vm_out = get_tvm_vm_output(mx_symbol, x, args, auxs, target, ctx, dtype)
+    tvm_out = get_tvm_output(mx_symbol, tvm.nd.array(x.astype(dtype)), args,
+                             auxs, target, ctx, dtype)
+    vm_out = get_tvm_vm_output(mx_symbol, tvm.nd.array(x.astype(dtype)), args,
+                               auxs, target, ctx, dtype)
     tvm.testing.assert_allclose(vm_out, tvm_out, rtol=1e-5, atol=1e-5)
 
 
@@ -126,8 +136,8 @@ def test_multi_outputs():
 
 
 if __name__ == '__main__':
-    test_mlp()
-    # test_resnet()
+    # test_mlp()
+    test_resnet()
     # test_vgg()
     # test_multi_outputs()
     # test_dqn()

@@ -10,11 +10,14 @@
 #include <tvm/relay/error.h>
 #include <tvm/relay/interpreter.h>
 #include <tvm/relay/logging.h>
+#include <tvm/relay/pass.h>
 #include "../backend/compile_engine.h"
 #include "../../runtime/naive_allocator.h"
 
 #include <vector>
 #include <iostream>
+#include <unordered_map>
+#include <unordered_set>
 
 using namespace tvm::runtime;
 
@@ -82,6 +85,11 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     std::unordered_map<Var, size_t, NodeHash, NodeEqual> var_map;
     size_t stack_index;
     CompileEngine engine;
+
+    /*! \brief The functions that have been lowered. */
+    std::unordered_map<LoweredFunc, size_t, NodeHash, NodeEqual> seen_funcs;
+
+    /*! \brief Global shared meta data */
     VMCompilerContext* context;
 
     VMCompiler(VMCompilerContext* context) :
@@ -293,8 +301,15 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto cfunc = engine->Lower(key);
       // TODO: support lowered funcs for multiple targets
       CHECK(cfunc->funcs.size() == 1);
-      auto op_index = this->context->lowered_funcs.size();
-      this->context->lowered_funcs.push_back(cfunc->funcs[0]);
+      auto op_index = -1;
+      if (seen_funcs.find(cfunc->funcs[0]) == seen_funcs.end()) {
+        op_index = this->context->lowered_funcs.size();
+        this->context->lowered_funcs.push_back(cfunc->funcs[0]);
+        seen_funcs[cfunc->funcs[0]] = op_index;
+        LOG(INFO) << "lowered_funcs:  " << cfunc->funcs[0].operator->()->name;
+      } else {
+        op_index = seen_funcs[cfunc->funcs[0]];
+      }
 
       // If Tensor, 1
       // If Tuple, size of tuple
@@ -486,13 +501,11 @@ void PopulateGlobalMap(GlobalMap* global_map, const Module& mod) {
   }
 }
 
-// Verify
-
 VirtualMachine CompileModule(const Module& mod_ref) {
   Module mod = mod_ref;
+
   // Run some optimizations first, this code should
   // be moved to pass manager.
-
   mod = OptimizeModule(mod);
 
   VirtualMachine vm;
