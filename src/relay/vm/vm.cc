@@ -701,15 +701,21 @@ std::tuple<VMObject, TagNameMap>
 EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
                const std::vector<VMObject>& vm_args) {
   VirtualMachine vm = VirtualMachine::FromModule(module, ctxs);
+  //TODO(zhiics) This measurement is for temporary usage. Remove it later. We
+  //need to introduce a better profiling method.
+#if ENABLE_PROFILING
   RELAY_LOG(INFO) << "Entry function is " << module->entry_func << std::endl;
   auto start = std::chrono::high_resolution_clock::now();
+#endif  // ENABLE_PROFILING
   std::tuple<VMObject, TagNameMap> res =
       std::make_tuple(vm.Invoke(module->entry_func, vm_args), vm.tag_index_map);
+#if ENABLE_PROFILING
   auto end = std::chrono::high_resolution_clock::now();
   auto duration =
       std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
           .count();
   LOG(INFO) << "Inference time: " << duration << "ms\n";
+#endif  // ENABLE_PROFILING
   return res;
 }
 
