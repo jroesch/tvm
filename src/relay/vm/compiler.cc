@@ -306,7 +306,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         op_index = this->context->lowered_funcs.size();
         this->context->lowered_funcs.push_back(cfunc->funcs[0]);
         seen_funcs[cfunc->funcs[0]] = op_index;
-        LOG(INFO) << "lowered_funcs:  " << cfunc->funcs[0].operator->()->name;
       } else {
         op_index = seen_funcs[cfunc->funcs[0]];
       }

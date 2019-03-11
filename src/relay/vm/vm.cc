@@ -471,14 +471,15 @@ typename std::enable_if<T::value, void>::type VirtualMachine::DumpStack() {
 
 void VirtualMachine::Run() {
   CHECK(this->code);
-  this->debug = true;
   this->pc = 0;
   auto frame_start = frames.size();
   while (true) {
   main_loop:
     auto const& instr = this->code[this->pc];
     RELAY_LOG(INFO) << "Executing(" << pc << "): " ;
+#if USE_RELAY_LOG
     InstructionPrint(std::cout, instr);
+#endif  // USE_RELAY_LOG
     RELAY_LOG(INFO) << "\n";
     DumpRegister();
 
@@ -701,7 +702,15 @@ EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
                const std::vector<VMObject>& vm_args) {
   VirtualMachine vm = VirtualMachine::FromModule(module, ctxs);
   RELAY_LOG(INFO) << "Entry function is " << module->entry_func << std::endl;
-  return std::make_tuple(vm.Invoke(module->entry_func, vm_args), vm.tag_index_map);
+  auto start = std::chrono::high_resolution_clock::now();
+  std::tuple<VMObject, TagNameMap> res =
+      std::make_tuple(vm.Invoke(module->entry_func, vm_args), vm.tag_index_map);
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+          .count();
+  LOG(INFO) << "Inference time: " << duration << "ms\n";
+  return res;
 }
 
 TVM_REGISTER_API("relay._vm._ValueToVM")
@@ -764,13 +773,7 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
       vm_args.push_back(obj);
     }
 
-    auto start = std::chrono::high_resolution_clock::now();
     auto result = EvaluateModule(module, {ctx}, vm_args);
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(end - start)
-            .count();
-    LOG(INFO) << "Inference time: " << duration;
     RELAY_LOG(INFO) << "Returning results\n";
     *ret = VMToValue(std::get<1>(result), std::get<0>(result));
 });

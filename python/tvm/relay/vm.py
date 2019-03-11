@@ -66,7 +66,7 @@ def convert(args):
 
     return cargs
 
-def eval_vm(mod, ctx, *args, **kwargs):
+def _eval_vm(mod, ctx, *args):
     """
     Evaluate a module on a given context with the provided arguments.
 
@@ -80,9 +80,6 @@ def eval_vm(mod, ctx, *args, **kwargs):
 
     args: List[tvm.NDArray, np.ndarray]
         The arguments to evaluate.
-
-    kwargs: Dict[str, Union[tvm.NDArrray, np.ndarray]]
-        The keyword arguments to evaluate.
     """
     main_func = mod[mod.entry_func]
 
@@ -95,26 +92,6 @@ def eval_vm(mod, ctx, *args, **kwargs):
 
     args = list(args)
     assert isinstance(args, list)
-
-    params = main_func.params
-    if kwargs:
-        param_names = [parm.name_hint for param in params]
-        arg_count = len(args)
-
-        for i, name in enumerate(param_names):
-            if i < arg_count:
-                if kwargs.get(name):
-                    raise Exception("Duplicate argument found in both inputs \
-                                    (at position: {0}) and keyword argument \
-                                    (with name: {1})".format(i, name))
-            else:
-                args.append(kwargs[name])
-
-    if len(args) != len(params):
-        raise Exception("Mismatch found between the expected and provided \
-                        arguments, expected: {0], provided: \
-                        {1}".format(len(args), len(params)))
-
     cargs = convert(args)
 
     result = _vm._evaluate_vm(mod, ctx.device_type, ctx.device_id, *cargs)
@@ -154,7 +131,7 @@ class VMExecutor(Executor):
 
         def _vm_wrapper(*args, **kwargs):
             args = self._convert_args(main, args, kwargs)
-            return eval_vm(self.mod, self.ctx, *args)
+            return _eval_vm(self.mod, self.ctx, *args)
 
         return _vm_wrapper
 

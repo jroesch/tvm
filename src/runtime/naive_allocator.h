@@ -23,14 +23,14 @@ class NaiveAllocator final : public Allocator {
     buf.data = DeviceAPI::Get(ctx_)->AllocDataSpace(
         ctx_, nbytes, alignment, type_hint);
     used_memory_.fetch_add(nbytes, std::memory_order_relaxed);
-    LOG(INFO) << "allocate " << nbytes << " B, used memory " << used_memory_ << " B";
+    // LOG(INFO) << "allocate " << nbytes << " B, used memory " << used_memory_ << " B";
     return buf;
   }
 
   void Free(const Buffer& buffer) override {
     DeviceAPI::Get(ctx_)->FreeDataSpace(buffer.ctx, buffer.data);
     used_memory_.fetch_sub(buffer.size, std::memory_order_relaxed);
-    LOG(INFO) << "free " << buffer.size << " B, used memory " << used_memory_ << " B";
+    // LOG(INFO) << "free " << buffer.size << " B, used memory " << used_memory_ << " B";
   }
 
   size_t UsedMemory() override {

@@ -246,8 +246,6 @@ struct VirtualMachine {
 
     std::vector<TVMContext> ctxs;
 
-    bool debug{false};
-
     // Interface debugging.
     std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual> global_map;
     std::unordered_map<size_t, Constructor> tag_index_map;
