@@ -11,102 +11,13 @@
 #include <tvm/relay/expr_functor.h>
 #include <tvm/relay/logging.h>
 #include <tvm/runtime/memory_manager.h>
+#include <tvm/runtime/object.h>
 
 namespace tvm {
 namespace relay {
 namespace vm {
 
-using runtime::NDArray;
-
-enum struct VMObjectTag {
-  kTensor,
-  kClosure,
-  kDatatype,
-  kExternalFunc,
-};
-
-inline std::string VMObjectTagString(VMObjectTag tag) {
-  switch (tag) {
-    case VMObjectTag::kClosure:
-      return "Closure";
-    case VMObjectTag::kDatatype:
-      return "Datatype";
-    case VMObjectTag::kTensor:
-      return "Tensor";
-    case VMObjectTag::kExternalFunc:
-      return "ExternalFunction";
-    default:
-      LOG(FATAL) << "Object tag is not supported.";
-      return "";
-  }
-}
-
-// TODO(@jroesch): Use intrusive pointer.
-struct VMObjectCell {
-  VMObjectTag tag;
-  VMObjectCell(VMObjectTag tag) : tag(tag) {}
-  VMObjectCell() {}
-  virtual ~VMObjectCell() {}
-};
-
-struct VMTensorCell : public VMObjectCell {
-  tvm::runtime::NDArray data;
-  VMTensorCell(const tvm::runtime::NDArray& data)
-    : VMObjectCell(VMObjectTag::kTensor), data(data) {}
-};
-
-struct VMObject {
-  std::shared_ptr<VMObjectCell> ptr;
-  VMObject(std::shared_ptr<VMObjectCell> ptr) : ptr(ptr) {}
-  VMObject() : ptr() {}
-  VMObject(const VMObject& obj) : ptr(obj.ptr) {}
-  VMObjectCell* operator->() {
-    return this->ptr.operator->();
-  }
-};
-
-struct VMDatatypeCell : public VMObjectCell {
-  size_t tag;
-  std::vector<VMObject> fields;
-
-  VMDatatypeCell(size_t tag, const std::vector<VMObject>& fields)
-    : VMObjectCell(VMObjectTag::kDatatype), tag(tag), fields(fields) {}
-};
-
-struct VMClosureCell : public VMObjectCell {
-  size_t func_index;
-  std::vector<VMObject> free_vars;
-
-  VMClosureCell(size_t func_index, const std::vector<VMObject>& free_vars)
-    : VMObjectCell(VMObjectTag::kClosure), func_index(func_index), free_vars(free_vars) {}
-};
-
-
-inline VMObject VMTensor(const tvm::runtime::NDArray& data) {
-  auto ptr = std::make_shared<VMTensorCell>(data);
-  return std::dynamic_pointer_cast<VMObjectCell>(ptr);
-}
-
-inline VMObject VMDatatype(size_t tag, const std::vector<VMObject>& fields) {
-  auto ptr = std::make_shared<VMDatatypeCell>(tag, fields);
-  return std::dynamic_pointer_cast<VMObjectCell>(ptr);
-}
-
-inline VMObject VMTuple(const std::vector<VMObject>& fields) {
-  return VMDatatype(0, fields);
-}
-
-inline VMObject VMClosure(size_t func_index, std::vector<VMObject> free_vars) {
-  auto ptr = std::make_shared<VMClosureCell>(func_index, free_vars);
-  return std::dynamic_pointer_cast<VMObjectCell>(ptr);
-}
-
-inline NDArray ToNDArray(const VMObject& obj) {
-  CHECK(obj.ptr.get());
-  CHECK(obj.ptr->tag == VMObjectTag::kTensor) << "Expect Tensor, Got " << VMObjectTagString(obj.ptr->tag);
-  std::shared_ptr<VMTensorCell> o = std::dynamic_pointer_cast<VMTensorCell>(obj.ptr);
-  return o->data;
-}
+using namespace tvm::runtime;
 
 enum struct Opcode {
   Push,
@@ -235,8 +146,8 @@ struct VirtualMachine {
     std::vector<PackedFunc> packed_funcs;
     std::vector<VMFunction> functions;
     std::vector<VMFrame> frames;
-    std::vector<VMObject> stack;
-    std::vector<VMObject> constants;
+    std::vector<Object> stack;
+    std::vector<Object> constants;
 
     // Frame State
     size_t func_index;
@@ -255,8 +166,8 @@ struct VirtualMachine {
     void InvokeGlobal(const VMFunction& func);
     void Run();
 
-    VMObject Invoke(const VMFunction& func, const std::vector<VMObject>& args);
-    VMObject Invoke(const GlobalVar& global, const std::vector<VMObject>& args);
+    Object Invoke(const VMFunction& func, const std::vector<Object>& args);
+    Object Invoke(const GlobalVar& global, const std::vector<Object>& args);
 
     // Ignore the method that dumps register info at compile-time if debugging
     // mode is not enabled.

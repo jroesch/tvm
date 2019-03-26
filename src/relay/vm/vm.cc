@@ -21,15 +21,15 @@ using namespace tvm::runtime;
 namespace tvm {
 
 // Packed Function extensions.
-TVMRetValue& runtime::TVMRetValue::operator=(relay::vm::VMObject other) {
-  this->SwitchToClass(kVMObject, other);
+TVMRetValue& runtime::TVMRetValue::operator=(relay::vm::Object other) {
+  this->SwitchToClass(kObject, other);
   return *this;
 }
 
-runtime::TVMArgValue::operator relay::vm::VMObject() const {
-  if (type_code_ == kNull) return relay::vm::VMObject(nullptr);
-  TVM_CHECK_TYPE_CODE(type_code_, kVMObject);
-  return *ptr<relay::vm::VMObject>();
+runtime::TVMArgValue::operator relay::vm::Object() const {
+  if (type_code_ == kNull) return relay::vm::Object(nullptr);
+  TVM_CHECK_TYPE_CODE(type_code_, kObject);
+  return *ptr<relay::vm::Object>();
 }
 
 namespace relay {
@@ -333,7 +333,7 @@ size_t VirtualMachine::PopFrame() {
   CHECK(0 <= stack_size - fr.sp);
   // Copy return value to the position past last function's frame
 
-  VMObject return_value = stack.back();
+  Object return_value = stack.back();
   // stack[fr.sp] = stack[stack_size - 1];
   // Resize value stack.
 
@@ -374,7 +374,7 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func) {
   bp = stack.size() - func.params ;
 }
 
-VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObject>& args) {
+Object VirtualMachine::Invoke(const VMFunction& func, const std::vector<Object>& args) {
   RELAY_LOG(INFO) << "Executing function " << func.name << " bp " << bp
                   << std::endl;
   for (auto arg : args) {
@@ -390,8 +390,8 @@ VMObject VirtualMachine::Invoke(const VMFunction& func, const std::vector<VMObje
   return stack.back();
 }
 
-VMObject VirtualMachine::Invoke(const GlobalVar& global,
-                                const std::vector<VMObject>& args) {
+Object VirtualMachine::Invoke(const GlobalVar& global,
+                                const std::vector<Object>& args) {
   auto func_index = this->global_map[global];
   RELAY_LOG(INFO) << "Invoke Global " << global << " at index " << func_index
                   << std::endl;
@@ -399,7 +399,7 @@ VMObject VirtualMachine::Invoke(const GlobalVar& global,
 }
 
 void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size,
-                  std::vector<VMObject>& stack) {
+                  std::vector<Object>& stack) {
   auto stack_end = stack.size() - 1;
   RELAY_LOG(INFO) << "arg_count: " << arg_count << " output_size: " << output_size;
   CHECK(arg_count <= stack.size());
@@ -443,10 +443,10 @@ template <typename T>
 typename std::enable_if<T::value, void>::type VirtualMachine::DumpStack() {
   RELAY_LOG(INFO) << "DumpStack---\n";
   for (size_t i = bp; i < stack.size(); ++i) {
-    RELAY_LOG(INFO) << i << " " << VMObjectTagString(stack[i]->tag) << " ";
+    RELAY_LOG(INFO) << i << " " << stack[i]->tag << " ";
     switch (stack[i]->tag) {
-      case VMObjectTag::kTensor: {
-        VMTensorCell* tensor = (VMTensorCell*)stack[i].operator->();
+      case ObjectTag::kTensor: {
+        TensorCell* tensor = (TensorCell*)stack[i].operator->();
         RELAY_LOG(INFO) << "dimensions=" << tensor->data->ndim;
         if (tensor->data->ndim == 0) {
           RELAY_LOG(INFO) << " " << TensorValueNode::make(tensor->data);
@@ -454,8 +454,8 @@ typename std::enable_if<T::value, void>::type VirtualMachine::DumpStack() {
         RELAY_LOG(INFO) << " \n";
         break;
       }
-      case VMObjectTag::kDatatype: {
-        VMDatatypeCell* datatype = (VMDatatypeCell*)stack[i].operator->();
+      case ObjectTag::kDatatype: {
+        DatatypeCell* datatype = (DatatypeCell*)stack[i].operator->();
         RELAY_LOG(INFO) << "fields: " << datatype->fields.size();
         RELAY_LOG(INFO) << "\n";
         break;
@@ -512,8 +512,8 @@ void VirtualMachine::Run() {
       case Opcode::InvokeClosure: {
         auto object = stack.back();
         stack.pop_back();
-        CHECK(object->tag == VMObjectTag::kClosure);
-        const std::shared_ptr<VMClosureCell>& closure = std::dynamic_pointer_cast<VMClosureCell>(object.ptr);
+        CHECK(object->tag == ObjectTag::kClosure);
+        const std::shared_ptr<ClosureCell>& closure = std::dynamic_pointer_cast<ClosureCell>(object.ptr);
         for (auto free_var : closure->free_vars) {
           stack.push_back(free_var);
         }
@@ -523,8 +523,8 @@ void VirtualMachine::Run() {
       case Opcode::GetField: {
         auto object = stack[bp + instr.object_offset];
         DumpStack();
-        CHECK(object->tag == VMObjectTag::kDatatype) << "Object is not data type object " << bp << " " << instr.object_offset << " " << (int)object->tag;
-        const std::shared_ptr<VMDatatypeCell>& tuple = std::dynamic_pointer_cast<VMDatatypeCell>(object.ptr);
+        CHECK(object->tag == ObjectTag::kDatatype) << "Object is not data type object " << bp << " " << instr.object_offset << " " << (int)object->tag;
+        const std::shared_ptr<DatatypeCell>& tuple = std::dynamic_pointer_cast<DatatypeCell>(object.ptr);
         auto field = tuple->fields[instr.field_index];
         stack.push_back(field);
         pc++;
@@ -563,22 +563,22 @@ void VirtualMachine::Run() {
         shape.assign(ti.shape, ti.shape + ti.ndim);
         auto allocator = MemoryManager::Global()->GetAllocator(ctxs[0]);
         auto data = NDArray::Empty(shape, ti.dtype, ctxs[0], allocator);
-        stack.push_back(VMTensor(data));
+        stack.push_back(TensorObj(data));
         pc++;
         goto main_loop;
       }
       case Opcode::AllocDatatype: {
-        std::vector<VMObject> fields;
+        std::vector<Object> fields;
         size_t stack_size = stack.size();
         for (size_t i = 0; i < instr.num_fields; ++i) {
           fields.push_back(stack[stack_size - instr.num_fields + i]);
         }
-        stack.push_back(VMDatatype(instr.constructor_tag, fields));
+        stack.push_back(DatatypeObj(instr.constructor_tag, fields));
         pc++;
         goto main_loop;
       }
       case Opcode::AllocClosure: {
-        std::vector<VMObject> free_vars;
+        std::vector<Object> free_vars;
         auto field_start = stack.size() - instr.num_freevar;
         // Optimize this code.
         for (size_t i = 0; i < instr.num_freevar; i++) {
@@ -587,7 +587,7 @@ void VirtualMachine::Run() {
         for (size_t i = 0; i < instr.num_freevar; i++) {
           stack.pop_back();
         }
-        stack.push_back(VMClosure(instr.func_index, free_vars));
+        stack.push_back(ClosureObj(instr.func_index, free_vars));
         DumpStack();
         pc++;
         goto main_loop;
@@ -649,16 +649,16 @@ VirtualMachine VirtualMachine::FromModule(const Module& module,
 
 /*! \brief Convert from an array of relay.Value into VM compatible objects.
  */
-void ConvertArgsToVM(tvm::Array<Value> args, std::vector<VMObject>& out) {
+void ConvertArgsToVM(tvm::Array<Value> args, std::vector<Object>& out) {
   for (auto arg : args) {
     if (auto tensor = arg.as<TensorValueNode>()) {
-      out.push_back(VMTensor(tensor->data));
+      out.push_back(TensorObj(tensor->data));
     } else if (auto tuple = arg.as<TupleValueNode>()) {
-      std::vector<VMObject> fields;
+      std::vector<Object> fields;
       for (auto field : tuple->fields) {
         ConvertArgsToVM({field}, fields);
       }
-      out.push_back(VMDatatype(0, fields));
+      out.push_back(DatatypeObj(0, fields));
     } else {
       LOG(FATAL) << "unknown case: " << arg;
     }
@@ -667,8 +667,8 @@ void ConvertArgsToVM(tvm::Array<Value> args, std::vector<VMObject>& out) {
 
 /*! \brief Convert from an array of relay.Value into VM compatible objects.
  */
-VMObject ValueToVM(Value value) {
-  std::vector<VMObject> out;
+Object ValueToVM(Value value) {
+  std::vector<Object> out;
   ConvertArgsToVM({value}, out);
   CHECK_LT(out.size(), 2);
   return out[0];
@@ -676,13 +676,13 @@ VMObject ValueToVM(Value value) {
 
 using TagNameMap = std::unordered_map<size_t, tvm::relay::Constructor>;
 
-Value VMToValue(TagNameMap& tag_index_map, VMObject obj) {
+Value VMToValue(TagNameMap& tag_index_map, Object obj) {
   switch (obj->tag) {
-    case VMObjectTag::kTensor: {
+    case ObjectTag::kTensor: {
       return TensorValueNode::make(ToNDArray(obj));
     }
-    case VMObjectTag::kDatatype: {
-      auto data_type = std::dynamic_pointer_cast<VMDatatypeCell>(obj.ptr);
+    case ObjectTag::kDatatype: {
+      auto data_type = std::dynamic_pointer_cast<DatatypeCell>(obj.ptr);
 
       tvm::Array<Value> fields;
       for (size_t i = 0; i < data_type->fields.size(); ++i) {
@@ -697,9 +697,9 @@ Value VMToValue(TagNameMap& tag_index_map, VMObject obj) {
   }
 }
 
-std::tuple<VMObject, TagNameMap>
+std::tuple<Object, TagNameMap>
 EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
-               const std::vector<VMObject>& vm_args) {
+               const std::vector<Object>& vm_args) {
   VirtualMachine vm = VirtualMachine::FromModule(module, ctxs);
   //TODO(zhiics) This measurement is for temporary usage. Remove it later. We
   //need to introduce a better profiling method.
@@ -707,7 +707,7 @@ EvaluateModule(const Module& module, const std::vector<TVMContext> ctxs,
   RELAY_LOG(INFO) << "Entry function is " << module->entry_func << std::endl;
   auto start = std::chrono::high_resolution_clock::now();
 #endif  // ENABLE_PROFILING
-  std::tuple<VMObject, TagNameMap> res =
+  std::tuple<Object, TagNameMap> res =
       std::make_tuple(vm.Invoke(module->entry_func, vm_args), vm.tag_index_map);
 #if ENABLE_PROFILING
   auto end = std::chrono::high_resolution_clock::now();
@@ -732,27 +732,34 @@ TVM_REGISTER_API("relay._vm._VMToValue")
 
 TVM_REGISTER_API("relay._vm._Tensor")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
-    *ret = VMTensor(args[0]);
+    *ret = TensorObj(args[0]);
 });
 
 TVM_REGISTER_API("relay._vm._Tuple")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
-  std::vector<VMObject> fields;
+  std::vector<Object> fields;
   for (auto i = 0; i < args.size(); i++) {
     fields.push_back(args[i]);
   }
-  *ret = VMTuple(fields);
+  *ret = TupleObj(fields);
 });
 
-TVM_REGISTER_API("relay._vm._VMObjectTag")
+template<typename T>
+std::string ToString(const T& t) {
+  std::stringstream s;
+  s << t;
+  return s.str();
+}
+
+TVM_REGISTER_API("relay._vm._ObjectTag")
 .set_body([](TVMArgs args, TVMRetValue* ret) {
-  VMObject obj = args[0];
-  *ret = VMObjectTagString(obj->tag);
+  Object obj = args[0];
+  *ret = ToString(obj->tag);
 });
 
 // TVM_REGISTER_API("relay._vm._Datatype")
 // .set_body([](TVMArgs args, TVMRetValue* ret) {
-//     *ret = VMDatatype(args[0]);
+//     *ret = DatatypeObj(args[0]);
 // });
 
 TVM_REGISTER_API("relay._vm._evaluate_vm")
@@ -773,9 +780,9 @@ TVM_REGISTER_API("relay._vm._evaluate_vm")
       LOG(FATAL) << "expected function or module";
     }
 
-    std::vector<VMObject> vm_args;
+    std::vector<Object> vm_args;
     for (auto i = 3; i < args.size(); i++) {
-      VMObject obj = args[i];
+      Object obj = args[i];
       vm_args.push_back(obj);
     }
 

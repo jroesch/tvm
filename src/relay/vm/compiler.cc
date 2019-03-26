@@ -527,7 +527,7 @@ VirtualMachine CompileModule(const Module& mod_ref) {
   vm.constants.resize(context.const_map.size());
 
   for (auto pair : context.const_map) {
-    vm.constants[pair.second] = VMTensor(pair.first->data);
+    vm.constants[pair.second] = TensorObj(pair.first->data);
   }
 
   for (auto named_func : mod->functions) {

@@ -10,7 +10,6 @@
 #include <tvm/packed_func_ext.h>
 #include <tvm/runtime/ndarray.h>
 #include <tvm/runtime/packed_func.h>
-#include <tvm/relay/vm/vm.h>
 #include <dmlc/json.h>
 #include <dmlc/memory_io.h>
 #include <string>
@@ -35,8 +34,8 @@ inline Type String2Type(std::string s) {
   return TVMType2Type(runtime::String2TVMType(s));
 }
 
-using relay::vm::VMObject;
-using relay::vm::VMObjectCell;
+using runtime::Object;
+using runtime::ObjectCell;
 
 // indexer to index all the ndoes
 class NodeIndexer : public AttrVisitor {
@@ -45,8 +44,8 @@ class NodeIndexer : public AttrVisitor {
   std::vector<Node*> node_list{nullptr};
   std::unordered_map<DLTensor*, size_t> tensor_index;
   std::vector<DLTensor*> tensor_list;
-  std::unordered_map<VMObjectCell*, size_t> vm_obj_index;
-  std::vector<VMObjectCell*> vm_obj_list;
+  std::unordered_map<ObjectCell*, size_t> vm_obj_index;
+  std::vector<ObjectCell*> vm_obj_list;
 
   void Visit(const char* key, double* value) final {}
   void Visit(const char* key, int64_t* value) final {}
@@ -68,8 +67,8 @@ class NodeIndexer : public AttrVisitor {
     tensor_list.push_back(ptr);
   }
 
-  void Visit(const char* key, VMObject* value) final {
-    VMObjectCell* ptr = value->ptr.get();
+  void Visit(const char* key, Object* value) final {
+    ObjectCell* ptr = value->ptr.get();
     if (vm_obj_index.count(ptr)) return;
     CHECK_EQ(vm_obj_index.size(), vm_obj_list.size());
     vm_obj_index[ptr] = vm_obj_list.size();
@@ -159,7 +158,7 @@ class JSONAttrGetter : public AttrVisitor {
  public:
   const std::unordered_map<Node*, size_t>* node_index_;
   const std::unordered_map<DLTensor*, size_t>* tensor_index_;
-  const std::unordered_map<VMObjectCell*, size_t>* vm_obj_index_;
+  const std::unordered_map<ObjectCell*, size_t>* vm_obj_index_;
   JSONNode* node_;
 
   void Visit(const char* key, double* value) final {
@@ -194,7 +193,7 @@ class JSONAttrGetter : public AttrVisitor {
     node_->attrs[key] = std::to_string(
         tensor_index_->at(const_cast<DLTensor*>((*value).operator->())));
   }
-  void Visit(const char* key, VMObject* value) final {
+  void Visit(const char* key, Object* value) final {
     node_->attrs[key] = std::to_string(
         vm_obj_index_->at(value->ptr.get()));
   }
@@ -251,7 +250,7 @@ class JSONAttrSetter : public AttrVisitor {
  public:
   const std::vector<NodePtr<Node> >* node_list_;
   const std::vector<runtime::NDArray>* tensor_list_;
-  const std::vector<VMObject>* vm_obj_list_;
+  const std::vector<Object>* vm_obj_list_;
 
   JSONNode* node_;
 
@@ -307,7 +306,7 @@ class JSONAttrSetter : public AttrVisitor {
     CHECK_LE(index, tensor_list_->size());
     *value = tensor_list_->at(index);
   }
-  void Visit(const char* key, VMObject* value) final {
+  void Visit(const char* key, Object* value) final {
     size_t index;
     ParseValue(key, &index);
     CHECK_LE(index, vm_obj_list_->size());
@@ -490,8 +489,8 @@ class NodeAttrSetter : public AttrVisitor {
   void Visit(const char* key, runtime::NDArray* value) final {
     *value = GetAttr(key).operator runtime::NDArray();
   }
-  void Visit(const char* key, VMObject* value) final {
-    *value = GetAttr(key).operator VMObject();
+  void Visit(const char* key, Object* value) final {
+    *value = GetAttr(key).operator Object();
   }
 
  private:
