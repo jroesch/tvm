@@ -5,7 +5,7 @@ from mxnet import gluon
 import tvm
 import numpy as np
 from tvm import relay
-from tvm.relay.vm import eval_vm, eta_expand
+from tvm.relay.vm import eta_expand
 from tvm.relay.scope_builder import ScopeBuilder
 from tvm.relay.prelude import Prelude
 
