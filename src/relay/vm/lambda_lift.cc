@@ -67,22 +67,11 @@ struct LambdaLifter : ExprMutator {
         }
 
         auto free_type_vars = FreeTypeVars(func, module_);
-
-        tvm::Map<Var, Expr> subst_map;
-        tvm::Array<Var> args;
-        size_t i = 0;
-        for (auto fv : free_vars) {
-            std::string name = "free_var" + std::to_string(i++);
-            auto arg = VarNode::make(name, fv->type_annotation);
-            subst_map.Set(fv, arg);
-            args.push_back(arg);
-        }
-
-        auto body = Downcast<Function>(Bind(func, subst_map));
+        auto body = Downcast<Function>(Bind(func, {}));
 
         auto lifted_func =
             FunctionNode::make(
-                args,
+                free_vars,
                 body,
                 func->func_type_annotation(),
                 free_type_vars);

@@ -1,4 +1,6 @@
 import os
+
+from nose.tools import nottest
 import mxnet as mx
 from mxnet import gluon
 
@@ -160,6 +162,7 @@ def test_tuple_second():
     result = veval(f, (i_data, j_data))
     tvm.testing.assert_allclose(result.asnumpy(), j_data)
 
+@nottest
 def test_list_constructor():
     def to_list(o):
         if isinstance(o, tvm.relay.backend.interpreter.TensorValue):
@@ -219,34 +222,6 @@ def test_let_scalar():
     x_data = np.array(np.random.rand()).astype('float32')
     result = veval(f, x_data)
     tvm.testing.assert_allclose(result.asnumpy(), x_data + 42.0)
-
-def import_mxnet_model(cell_type, input_size, hidden_size, fname, batch=1, seq_len=100):
-    ctx = mx.context.cpu()
-    dtype = 'float32'
-    if cell_type == 'gru' or cell_type == 'rnn':
-        num_states = 1
-    elif cell_type == 'lstm':
-        num_states = 2
-    else:
-        raise RuntimeError("Unsupported RNN cell type: %s" % cell_type)
-    data_names = ['data0']
-    inputs = [mx.nd.random.uniform(shape=(seq_len, batch, input_size), dtype=dtype, ctx=ctx)]
-    for i in range(num_states):
-        data_names.append('data%s' % (i+1))
-        inputs.append(mx.nd.zeros((batch, hidden_size), dtype=dtype, ctx=ctx))
-
-    model_data_dir = os.path.dirname(os.path.realpath(__file__))
-    net = gluon.nn.SymbolBlock.imports("%s/model_zoo_data/%s-symbol.json.data" % (model_data_dir, fname), data_names,
-                                       "%s/model_zoo_data/%s-0001.params.data" % (model_data_dir, fname), ctx=ctx)
-    net.hybridize()
-    inputs = []
-    inputs.append(mx.sym.Variable("data"))
-    inputs.append(mx.sym.Variable("state"))
-    return relay.frontend.from_mxnet(net, {}, input_symbols=inputs)
-
-def test_rnn():
-    net = import_mxnet_model('rnn', 128, 128, "rnn_i128_h128")
-#    execute_mxnet_model('gru', 128, 128, "gru_i128_h128")
 
 def test_closure():
     x = relay.var('x', shape=())

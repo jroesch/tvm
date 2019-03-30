@@ -13,8 +13,8 @@ MemoryManager* MemoryManager::Global() {
 Allocator* MemoryManager::GetAllocator(TVMContext ctx) {
   std::lock_guard<std::mutex> lock(mu_);
   if (allocators_.find(ctx) == allocators_.end()) {
-    LOG(INFO) << "New allocator for " << DeviceName(ctx.device_type) << "("
-              << ctx.device_id << ")";
+    // LOG(INFO) << "New allocator for " << DeviceName(ctx.device_type) << "("
+    //           << ctx.device_id << ")";
     std::unique_ptr<Allocator> alloc(new NaiveAllocator(ctx));
     //std::unique_ptr<Allocator> alloc(new PooledAllocator(ctx, 128));
     allocators_.emplace(ctx, std::move(alloc));

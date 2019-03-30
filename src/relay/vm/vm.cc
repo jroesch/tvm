@@ -40,11 +40,19 @@ Instruction::Instruction() {}
 
 Instruction::Instruction(const Instruction& instr) {
   this->op = instr.op;
+  this->dst = instr.dst;
+
   switch (instr.op) {
-    case Opcode::Push:
-      this->stack_index = instr.stack_index;
+    case Opcode::Move:
+      this->from = instr.from;
+      return;
+    case Opcode::Phi:
+      this->phi_cond = instr.phi_cond;
+      this->phi_op1 = instr.phi_op1;
+      this->phi_op2 = instr.phi_op2;
       return;
     case Opcode::Ret:
+      this->result = instr.result;
       return;
     case Opcode::AllocTensor:
       this->tensor_info = instr.tensor_info;
@@ -52,41 +60,43 @@ Instruction::Instruction(const Instruction& instr) {
     case Opcode::AllocDatatype:
       this->constructor_tag = instr.constructor_tag;
       this->num_fields = instr.num_fields;
+      this->datatype_fields = instr.datatype_fields;
       return;
     case Opcode::AllocClosure:
       this->clo_index = instr.clo_index;
       this->num_freevar = instr.num_freevar;
+      this->free_vars = instr.free_vars;
       return;
     case Opcode::InvokePacked:
       this->packed_index = instr.packed_index;
       this->arity = instr.arity;
       this->output_size = instr.output_size;
+      this->packed_args = instr.packed_args;
       return;
     case Opcode::InvokeClosure:
+      this->closure = instr.closure;
+      this->closure_args_num = instr.closure_args_num;
+      this->closure_args = instr.closure_args;
       return;
     case Opcode::If:
+      this->if_cond = instr.if_cond;
       this->true_offset = instr.true_offset;
       this->false_offset = instr.false_offset;
       return;
     case Opcode::Invoke:
       this->func_index = instr.func_index;
+      this->num_args = instr.num_args;
+      this->invoke_args_registers = instr.invoke_args_registers;
       return;
     case Opcode::LoadConst:
       this->const_index = instr.const_index;
       return;
     case Opcode::GetField:
-      this->object_offset = instr.object_offset;
+      this->object = instr.object;
       this->field_index = instr.field_index;
       return;
     case Opcode::Goto:
       this->pc_offset = instr.pc_offset;
-      return;
-    case Opcode::Move:
-      this->source = instr.source;
-      this->dest = instr.dest;
-      return;
-    case Opcode::Pop:
-      this->pop_count = instr.pop_count;
       return;
   }
 }
@@ -94,38 +104,30 @@ Instruction::Instruction(const Instruction& instr) {
 // TODO(@jroesch): this leaks memory fix me
 Instruction::~Instruction() {}
 
-Instruction Push(size_t stack_index) {
-  Instruction instr;
-  instr.op = Opcode::Push;
-  instr.stack_index = stack_index;
-  return instr;
-}
-
-Instruction Pop(size_t pop_count) {
-  Instruction instr;
-  instr.op = Opcode::Pop;
-  instr.pop_count = pop_count;
-  return instr;
-}
-
-Instruction Ret() {
+Instruction Ret(VirtualRegisterNum result) {
   Instruction instr;
   instr.op = Opcode::Ret;
+  instr.result = result;
   return instr;
 }
 
-Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size) {
+Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size, std::vector<VirtualRegisterNum> args) {
   Instruction instr;
   instr.op = Opcode::InvokePacked;
   instr.packed_index = packed_index;
   instr.arity = arity;
   instr.output_size = output_size;
+  instr.packed_args = new VirtualRegisterNum[arity];
+  for (int i = 0; i < arity; ++i) {
+    instr.packed_args[i] = args[i];
+  }
   return instr;
 }
 
-Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype) {
+Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype, size_t dst) {
   Instruction instr;
   instr.op = Opcode::AllocTensor;
+  instr.dst = dst;
   instr.tensor_info.shape = new int64_t[shape.size()];
   instr.tensor_info.ndim = shape.size();
   std::memcpy(
@@ -136,35 +138,57 @@ Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype) {
   return instr;
 }
 
-Instruction AllocDatatype(size_t tag, size_t num_fields) {
+Instruction AllocDatatype(size_t tag, size_t num_fields, std::vector<size_t> datatype_fields, size_t dst) {
   Instruction instr;
   instr.op = Opcode::AllocDatatype;
+  instr.dst = dst;
   instr.constructor_tag = tag;
   instr.num_fields = num_fields;
+  instr.datatype_fields = new VirtualRegisterNum[num_fields];
+  for (auto i = 0; i < num_fields; ++i) {
+    instr.datatype_fields[i] = datatype_fields[i];
+  }
   return instr;
 }
 
-Instruction AllocClosure(size_t func_index, size_t free_vars) {
+Instruction AllocClosure(size_t func_index, size_t free_vars, std::vector<size_t> free_var_register, size_t dst) {
   Instruction instr;
   instr.op = Opcode::AllocClosure;
+  instr.dst = dst;
   instr.clo_index = func_index;
   instr.num_freevar = free_vars;
+  instr.free_vars = new VirtualRegisterNum[instr.num_freevar];
+  for (size_t i = 0; i < instr.num_freevar; ++i) {
+    instr.free_vars[i] = free_var_register[i];
+  }
   return instr;
 }
 
-Instruction GetField(size_t object_offset, size_t field_index) {
+Instruction GetField(VirtualRegisterNum object, size_t field_index, VirtualRegisterNum dst) {
   Instruction instr;
   instr.op = Opcode::GetField;
-  instr.object_offset = object_offset;
+  instr.dst = dst;
+  instr.object = object;
   instr.field_index = field_index;
   return instr;
 }
 
-Instruction If(size_t true_branch, size_t false_branch) {
+Instruction If(VirtualRegisterNum cond, size_t true_branch, size_t false_branch) {
   Instruction instr;
   instr.op = Opcode::If;
+  instr.if_cond = cond;
   instr.true_offset = true_branch;
   instr.false_offset = false_branch;
+  return instr;
+}
+
+Instruction Phi(VirtualRegisterNum cond, VirtualRegisterNum op1, VirtualRegisterNum op2, VirtualRegisterNum dst) {
+  Instruction instr;
+  instr.op = Opcode::Phi;
+  instr.dst = dst;
+  instr.phi_cond = cond;
+  instr.phi_op1 = op1;
+  instr.phi_op2 = op2;
   return instr;
 }
 
@@ -175,53 +199,76 @@ Instruction Goto(size_t pc_offset) {
   return instr;
 }
 
-Instruction Invoke(size_t func_index) {
+Instruction Invoke(size_t func_index, std::vector<VirtualRegisterNum> args_registers, VirtualRegisterNum dst) {
   Instruction instr;
   instr.op = Opcode::Invoke;
+  instr.dst = dst;
   instr.func_index = func_index;
+  instr.num_args = args_registers.size();
+  instr.invoke_args_registers = new VirtualRegisterNum[instr.num_args];
+  for (auto i = 0; i < instr.num_args; ++i) {
+    instr.invoke_args_registers[i] = args_registers[i];
+  }
   return instr;
 }
 
-Instruction InvokeClosure() {
+Instruction InvokeClosure(VirtualRegisterNum closure, std::vector<VirtualRegisterNum> args, VirtualRegisterNum dst) {
   Instruction instr;
   instr.op = Opcode::InvokeClosure;
+  instr.dst = dst;
+  instr.closure = closure;
+  instr.closure_args_num = args.size();
+  instr.closure_args = new VirtualRegisterNum[args.size()];
+  for (auto i = 0; i < args.size(); ++i) {
+    instr.closure_args[i] = args[i];
+  }
   return instr;
 }
 
-Instruction LoadConst(size_t const_index) {
+Instruction LoadConst(size_t const_index, VirtualRegisterNum dst) {
   Instruction instr;
   instr.op = Opcode::LoadConst;
+  instr.dst = dst;
   instr.const_index = const_index;
   return instr;
 }
 
-Instruction Move(size_t source, size_t dest) {
+Instruction Move(VirtualRegisterNum src, VirtualRegisterNum dst) {
   Instruction instr;
   instr.op = Opcode::Move;
-  instr.source = source;
-  instr.dest = dest;
+  instr.dst = dst;
+  instr.from = src;
   return instr;
 }
 
 void InstructionPrint(std::ostream& os, const Instruction& instr) {
   switch (instr.op) {
-    case Opcode::Push: {
-      os << "push " << instr.stack_index;
+    case Opcode::Move: {
+      os << "move " 
+         << instr.from << " " 
+         << instr.dst;
       break;
     }
     case Opcode::Ret: {
-      os << "ret";
+      os << "ret " 
+         << instr.result;
       break;
     }
     case Opcode::InvokePacked: {
       os << "invoke_packed ";
       os << instr.packed_index;
       os << " " << instr.arity;
-      os << " " << instr.output_size;
+      os << "(";
+      for (size_t i = 0; i < instr.arity; ++i) {
+        os << instr.packed_args[i] << ",";
+      }
+      os << ")";
+      os << " " << instr.output_size;  
       break;
     }
     case Opcode::AllocTensor: {
-      os << "alloc_tensor";
+      os << "alloc_tensor ";
+      os << instr.dst << " ";
       os << "(";
 
       for (size_t i = 0; i < instr.tensor_info.ndim; i++) {
@@ -232,42 +279,58 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
       break;
     }
     case Opcode::AllocDatatype: {
-      os << "alloc_data";
-      os << " ";
+      os << "alloc_data ";
+      os << instr.dst << " ";
       os << instr.constructor_tag << " ";
       os << instr.num_fields;
       break;
     }
     case Opcode::AllocClosure: {
-      os << "alloc_closure";
-      os << " ";
+      os << "alloc_closure ";
+      os << instr.dst << " ";
       os << instr.clo_index << " ";
-      os << instr.num_freevar;
+      os << instr.num_freevar << "(";
+      for (size_t i = 0; i < instr.num_freevar; ++i) {
+        os << instr.free_vars[i] << ",";
+      }
+      os << ")";
       break;
     }
     case Opcode::If: {
       os << "if "
+         << "$" << instr.if_cond << " "
          << instr.true_offset << " "
          << instr.false_offset;
       break;
     }
     case Opcode::Invoke: {
       os << "invoke "
-         << instr.func_index;
+         << "$" << instr.dst << " "
+         << instr.func_index << " "
+         << instr.num_args << "(";
+         for (size_t i = 0; i < instr.num_args; ++i) {
+           os << instr.invoke_args_registers[i] << ",";
+         }
+         os << ")";
       break;
     }
     case Opcode::InvokeClosure: {
-      os << "invoke_closure";
+      os << "invoke_closure "
+         << "$" << instr.dst << " "
+         << instr.closure << " "
+         << instr.closure_args_num << "()";
       break;
     }
     case Opcode::LoadConst: {
       os << "load_const "
+         << "$" << instr.dst << " "
          << instr.const_index;
       break;
     }
     case Opcode::GetField: {
       os << "get_field "
-         << instr.object_offset << " "
+         << instr.dst << " "
+         << instr.object << " "
          << instr.field_index;
       break;
     }
@@ -276,15 +339,12 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
          << instr.pc_offset;
       break;
     }
-    case Opcode::Move: {
-      os << "move "
-         << instr.source << " "
-         << instr.dest;
-      break;
-    }
-    case Opcode::Pop: {
-      os << "pop "
-         << instr.pop_count;
+    case Opcode::Phi: {
+      os << "phi "
+         << instr.dst << " "
+         << instr.phi_cond << " "
+         << instr.phi_op1 << " "
+         << instr.phi_op2;
       break;
     }
     default:
@@ -312,82 +372,49 @@ std::ostream& operator<<(std::ostream& os, const VMFunction& vm_func) {
   return os;
 }
 
-void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, size_t sp, const VMFunction& vm_func) {
-  CHECK(sp <= stack.size());
-  DumpStack();
-  auto frame = VMFrame(ret_pc, bp, sp, func_index, arg_count, code);
+void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func) {
+  auto frame = VMFrame(ret_pc, func_index, arg_count, code, top_stack, vm_func.register_file_map);
+  register_stack.resize(top_stack + vm_func.register_file_size);
+  top_stack = register_stack.size();
   frames.push_back(frame);
 }
 
 size_t VirtualMachine::PopFrame() {
   CHECK(frames.size() != 0);
   const VMFrame& fr = frames.back();
-  auto stack_size = stack.size();
-  // Copy return value;
-  CHECK(stack_size - fr.args - 1 < stack.size())
-    << "attempting to read stack slot: "
-    << stack_size - fr.args - 1
-    << " stack_size: "
-    << stack_size;
-
-  CHECK(0 <= stack_size - fr.sp);
-  // Copy return value to the position past last function's frame
-
-  Object return_value = stack.back();
-  // stack[fr.sp] = stack[stack_size - 1];
-  // Resize value stack.
-
-  stack.resize(fr.sp);
-  DumpStack();
-  stack.resize(stack.size() - fr.args);
-  DumpStack();
-  stack.push_back(return_value);
-  DumpStack();
-
-  CHECK(stack.size() < stack_size + 1)
-    << "stack_size before modifying stack = " << stack_size + 1
-    << " stack size after modifying the stack = " << stack.size();
-
-  // Reset frame.
-  RELAY_LOG(INFO) << "Num Args: " << fr.args;
-  RELAY_LOG(INFO) << "Reset frame " << bp << " -> " << fr.bp << "\n";
-  RELAY_LOG(INFO) << "Stack pointer: " << fr.sp << std::endl;
-  RELAY_LOG(INFO) << "Reset stack " << stack_size << " -> " << stack.size() << "\n";
-  bp = fr.bp;
-  pc = fr.pc;
   func_index = fr.func_index;
   code = fr.code;
+  pc = fr.pc;
   auto call_stack_size = frames.size();
   frames.pop_back();
+  top_stack = fr.register_stack_start;
+  register_stack.resize(top_stack);
   return call_stack_size;
 }
 
-void VirtualMachine::InvokeGlobal(const VMFunction& func) {
-  RELAY_LOG(INFO) << "===================\nInvoking global " << func.name
+void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<Object>& args) {
+  RELAY_LOG(INFO) << "===================\nInvoking global " << func.name << " " << args.size()
                   << std::endl;
-  PushFrame(func.params, this->pc + 1, stack.size(), func);
-  RELAY_LOG(INFO) << "func.params= " << func.params
-                  << ", stack.size()= " << stack.size() << std::endl;
+
+  PushFrame(func.params, this->pc + 1, func);
+  for (size_t i = 0; i < args.size(); ++i) {
+    WriteRegister(i+1, args[i]);
+  }
+  RELAY_LOG(INFO) << "func.params= " << func.params << std::endl;
 
   code = func.instructions.data();
   pc = 0;
-  bp = stack.size() - func.params ;
 }
 
 Object VirtualMachine::Invoke(const VMFunction& func, const std::vector<Object>& args) {
-  RELAY_LOG(INFO) << "Executing function " << func.name << " bp " << bp
-                  << std::endl;
-  for (auto arg : args) {
-    stack.push_back(arg);
-  }
+  RELAY_LOG(INFO) << "Executing function " << func.name << std::endl;
 
-  InvokeGlobal(func);
+  this->top_stack = 0;
+  InvokeGlobal(func, args);
   Run();
   auto alloc = MemoryManager::Global()->GetAllocator(ctxs[0]);
   RELAY_LOG(INFO) << "Memory used: " << alloc->UsedMemory() << " B\n";
-  RELAY_LOG(INFO) << "final stack size: " << stack.size() << "bp: " << bp
-                  << std::endl;
-  return stack.back();
+  return return_register;
 }
 
 Object VirtualMachine::Invoke(const GlobalVar& global,
@@ -399,74 +426,36 @@ Object VirtualMachine::Invoke(const GlobalVar& global,
 }
 
 void InvokePacked(const PackedFunc& func, size_t arg_count, size_t output_size,
-                  std::vector<Object>& stack) {
-  auto stack_end = stack.size() - 1;
-  RELAY_LOG(INFO) << "arg_count: " << arg_count << " output_size: " << output_size;
-  CHECK(arg_count <= stack.size());
-
+                  std::vector<Object>& args) {
   std::vector<TVMValue> values(arg_count);
   std::vector<int> codes(arg_count);
   runtime::TVMArgsSetter setter(values.data(), codes.data());
 
-  auto argument_start = stack.size() - arg_count;
-  RELAY_LOG(INFO) << "argument_start = " << argument_start << std::endl;
   for (size_t i = 0; i < arg_count; i++) {
-    NDArray data = ToNDArray(stack[argument_start + i]);
+    NDArray data = ToNDArray(args[i]);
     setter(i, data);
   }
 
   TVMRetValue rv;
   func.CallPacked(TVMArgs(values.data(), codes.data(), arg_count), &rv);
-
-  // We can do this more efficiently by reverse laying out the arguments
-  // and just shrinking the stack.
-  stack[stack.size() - arg_count] = stack[stack_end];
-  RELAY_LOG(INFO) << "ShrinkBy = " << arg_count - output_size << std::endl;
-  stack.resize(stack.size() - (arg_count - output_size));
 }
 
 void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
   this->ctxs = ctxs;
 }
 
-template <typename T>
-typename std::enable_if<T::value, void>::type
-VirtualMachine::DumpRegister() {
-  RELAY_LOG(INFO) << std::endl << "-- Registers: --\n";
-  RELAY_LOG(INFO) << "Bp: " << bp << std::endl;
-  RELAY_LOG(INFO) << "Stack Size: " << stack.size() << std::endl;
-  RELAY_LOG(INFO) << "Frame Size: " << frames.size() << std::endl;
-  RELAY_LOG(INFO) << "----\n" ;
+size_t VirtualMachine::LookupRegister(size_t r) {
+  auto current_frame = frames.back();
+  return current_frame.register_stack_start + current_frame.register_file_map.at(r);
 }
 
-template <typename T>
-typename std::enable_if<T::value, void>::type VirtualMachine::DumpStack() {
-  RELAY_LOG(INFO) << "DumpStack---\n";
-  for (size_t i = bp; i < stack.size(); ++i) {
-    RELAY_LOG(INFO) << i << " " << stack[i]->tag << " ";
-    switch (stack[i]->tag) {
-      case ObjectTag::kTensor: {
-        TensorCell* tensor = (TensorCell*)stack[i].operator->();
-        RELAY_LOG(INFO) << "dimensions=" << tensor->data->ndim;
-        if (tensor->data->ndim == 0) {
-          RELAY_LOG(INFO) << " " << TensorValueNode::make(tensor->data);
-        }
-        RELAY_LOG(INFO) << " \n";
-        break;
-      }
-      case ObjectTag::kDatatype: {
-        DatatypeCell* datatype = (DatatypeCell*)stack[i].operator->();
-        RELAY_LOG(INFO) << "fields: " << datatype->fields.size();
-        RELAY_LOG(INFO) << "\n";
-        break;
-      }
-      default: {
-        RELAY_LOG(INFO) << "\n";
-        break;
-      }
-    }
-  }
-  RELAY_LOG(INFO) << "DumpStack end---\n";
+void VirtualMachine::WriteRegister(size_t r, Object val) {
+  register_stack[LookupRegister(r)] = val;
+}
+
+Object VirtualMachine::ReadRegister(size_t r) {
+  auto res = register_stack[LookupRegister(r)];
+  return res;
 }
 
 void VirtualMachine::Run() {
@@ -476,78 +465,87 @@ void VirtualMachine::Run() {
   while (true) {
   main_loop:
     auto const& instr = this->code[this->pc];
-    RELAY_LOG(INFO) << "Executing(" << pc << "): " ;
+    RELAY_LOG(INFO) << "\nExecuting(" << pc << "): " ;
 #if USE_RELAY_LOG
     InstructionPrint(std::cout, instr);
 #endif  // USE_RELAY_LOG
-    RELAY_LOG(INFO) << "\n";
-    DumpRegister();
 
     switch (instr.op) {
+      case Opcode::Move: {
+        Object from_obj;
+        if (instr.from == 0) {
+          from_obj = return_register;
+        } else {
+          from_obj = ReadRegister(instr.from);
+        }
+        WriteRegister(instr.dst, from_obj);
+        pc++;
+        goto main_loop;
+      }
       case Opcode::LoadConst: {
-        stack.push_back(this->constants[instr.const_index]);
+        WriteRegister(instr.dst, this->constants[instr.const_index]);
         pc++;
         goto main_loop;
       }
       case Opcode::Invoke: {
-        InvokeGlobal(this->functions[instr.func_index]);
+        std::vector<Object> args;        
+        for (size_t i = 0; i < instr.num_args; ++i) {
+          args.push_back(ReadRegister(instr.invoke_args_registers[i]));
+        }
+        InvokeGlobal(this->functions[instr.func_index], args);
         goto main_loop;
       }
       case Opcode::InvokePacked: {
-        auto start_stack = stack.size();
         const auto& func = packed_funcs[instr.packed_index];
         const auto& arity = instr.arity;
-        // std::cout << "before call" << std::endl;
-        // std::cout << this->stack.size() << std::endl;
-        DumpStack();
-        InvokePacked(func, arity, instr.output_size, stack);
-        DumpStack();
-        CHECK(start_stack - (arity - instr.output_size) == stack.size())
-          << "start_stack: " << start_stack
-          << " end_stack: " << stack.size();
-        // std::cout << "after call" << std::endl;
+        std::vector<Object> args;
+        for (size_t i = 0; i < arity; ++i) {
+          args.push_back(ReadRegister(instr.packed_args[i]));
+        }
+        InvokePacked(func, arity, instr.output_size, args);
+        for (size_t i = 0; i < instr.output_size; ++i) {
+          WriteRegister(instr.packed_args[instr.arity - instr.output_size + i], args[instr.arity - instr.output_size + i]);
+        }
         pc++;
         goto main_loop;
       }
       case Opcode::InvokeClosure: {
-        auto object = stack.back();
-        stack.pop_back();
+        auto object = ReadRegister(instr.closure);
         CHECK(object->tag == ObjectTag::kClosure);
         const std::shared_ptr<ClosureCell>& closure = std::dynamic_pointer_cast<ClosureCell>(object.ptr);
-        for (auto free_var : closure->free_vars) {
-          stack.push_back(free_var);
+        std::vector<Object> args;
+        for (size_t i = 0; i < instr.closure_args_num; ++i) {
+          args.push_back(ReadRegister(instr.closure_args[i]));
         }
-        InvokeGlobal(this->functions[closure->func_index]);
+        for (auto free_var : closure->free_vars) {
+          args.push_back(free_var);
+        }
+        InvokeGlobal(this->functions[closure->func_index], args);
         goto main_loop;
       }
       case Opcode::GetField: {
-        auto object = stack[bp + instr.object_offset];
-        DumpStack();
-        CHECK(object->tag == ObjectTag::kDatatype) << "Object is not data type object " << bp << " " << instr.object_offset << " " << (int)object->tag;
+        auto object = ReadRegister(instr.object);
+        CHECK(object->tag == ObjectTag::kDatatype) << "Object is not data type object, register " << instr.object << ", Object tag " << (int)object->tag;
         const std::shared_ptr<DatatypeCell>& tuple = std::dynamic_pointer_cast<DatatypeCell>(object.ptr);
         auto field = tuple->fields[instr.field_index];
-        stack.push_back(field);
+        WriteRegister(instr.dst, field);
         pc++;
         goto main_loop;
       }
       case Opcode::Goto: {
-        pc += instr.pc_offset + 1;
+        pc += instr.pc_offset;
         goto main_loop;
       }
       case Opcode::If: {
-        DumpStack();
         // How do we do this efficiently?
         DLContext cpu_ctx;
         cpu_ctx.device_type = kDLCPU;
         cpu_ctx.device_id = 0;
 
-        const auto& cond = stack.back();
+        const auto& cond = ReadRegister(instr.if_cond);
         NDArray cpu_array = ToNDArray(cond).CopyTo(cpu_ctx);
         CHECK_EQ(TVMType2Type(cpu_array->dtype), Bool());
         bool branch = reinterpret_cast<uint8_t*>(cpu_array->data)[0];
-
-        // Remove cond.
-        stack.pop_back();
 
         if (branch) {
           pc += instr.true_offset;
@@ -563,61 +561,47 @@ void VirtualMachine::Run() {
         shape.assign(ti.shape, ti.shape + ti.ndim);
         auto allocator = MemoryManager::Global()->GetAllocator(ctxs[0]);
         auto data = NDArray::Empty(shape, ti.dtype, ctxs[0], allocator);
-        stack.push_back(TensorObj(data));
+        auto obj = TensorObj(data);
+        WriteRegister(instr.dst, obj);
         pc++;
         goto main_loop;
       }
       case Opcode::AllocDatatype: {
         std::vector<Object> fields;
-        size_t stack_size = stack.size();
         for (size_t i = 0; i < instr.num_fields; ++i) {
-          fields.push_back(stack[stack_size - instr.num_fields + i]);
+          fields.push_back(ReadRegister(instr.datatype_fields[i]));
         }
-        stack.push_back(DatatypeObj(instr.constructor_tag, fields));
+        Object obj = DatatypeObj(instr.constructor_tag, fields);
+        WriteRegister(instr.dst, obj);
         pc++;
         goto main_loop;
       }
       case Opcode::AllocClosure: {
         std::vector<Object> free_vars;
-        auto field_start = stack.size() - instr.num_freevar;
-        // Optimize this code.
         for (size_t i = 0; i < instr.num_freevar; i++) {
-          free_vars.push_back(stack[field_start + i]);
+          free_vars.push_back(ReadRegister(instr.free_vars[i]));
         }
-        for (size_t i = 0; i < instr.num_freevar; i++) {
-          stack.pop_back();
+        WriteRegister(instr.dst, ClosureObj(instr.func_index, free_vars));
+        pc++;
+        goto main_loop;
+      }
+      case Opcode::Phi: {
+        DLContext cpu_ctx;
+        cpu_ctx.device_type = kDLCPU;
+        cpu_ctx.device_id = 0;
+
+        auto cond = ReadRegister(instr.phi_cond);
+        NDArray cpu_array = ToNDArray(cond).CopyTo(cpu_ctx);
+        CHECK_EQ(TVMType2Type(cpu_array->dtype), Bool());
+        bool branch = reinterpret_cast<uint8_t*>(cpu_array->data)[0];
+
+        if (branch) {
+          auto op1 = ReadRegister(instr.phi_op1);
+          WriteRegister(instr.dst, op1);
+        } else {
+          auto op2 = ReadRegister(instr.phi_op2);
+          WriteRegister(instr.dst, op2);
         }
-        stack.push_back(ClosureObj(instr.func_index, free_vars));
-        DumpStack();
-        pc++;
-        goto main_loop;
-      }
-      case Opcode::Push: {
-        CHECK(bp + instr.stack_index < stack.size()) << bp << " " << instr.stack_index << " " << stack.size();
-        stack.push_back(stack[bp + instr.stack_index]);
-        DumpStack();
-        pc++;
-        goto main_loop;
-      }
-      case Opcode::Pop: {
-        CHECK(bp + instr.pop_count < stack.size())
-          << "bp=" << bp
-          << " pop_count=" << instr.pop_count;
-        auto new_size = stack.size() - instr.pop_count;
-        stack.resize(new_size);
-        DumpStack();
-        pc++;
-        goto main_loop;
-      }
-      case Opcode::Move: {
-        CHECK(instr.source < stack.size())
-          << "source=" << instr.source
-          << " stack_size=" << stack.size();
-        CHECK(instr.dest < stack.size())
-          << "dest=" << instr.dest
-          << " stack_size=" << stack.size();
-        stack[bp + instr.dest] = stack[bp + instr.source];
-        DumpStack();
         pc++;
         goto main_loop;
       }
@@ -625,7 +609,8 @@ void VirtualMachine::Run() {
         // If we have hit the point from which we started
         // running, we should return to the caller breaking
         // the dispatch loop.
-        DumpStack();
+        return_register = ReadRegister(instr.result);
+
         if (PopFrame() == frame_start) {
           return;
         // Otherwise we are just returning from a local call.

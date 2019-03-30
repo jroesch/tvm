@@ -7,6 +7,7 @@
 #include <tvm/runtime/memory_manager.h>
 #include <tvm/relay/expr_functor.h>
 #include <tvm/relay/vm/vm.h>
+#include <tvm/relay/vm/register_allocation.h>
 #include <tvm/relay/error.h>
 #include <tvm/relay/interpreter.h>
 #include <tvm/relay/logging.h>
@@ -82,8 +83,14 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     std::unordered_map<Var, Expr, NodeHash, NodeEqual> expr_map;
 
     std::vector<Instruction> instructions;
-    std::unordered_map<Var, size_t, NodeHash, NodeEqual> var_map;
-    size_t stack_index;
+
+    // var -> register num
+    std::unordered_map<Var, VirtualRegisterNum, NodeHash, NodeEqual> var_register_map;
+
+    size_t last_register;
+
+    // Total number of virtual registers allocated
+    size_t registers_num;
     CompileEngine engine;
 
     /*! \brief The functions that have been lowered. */
@@ -93,8 +100,21 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     VMCompilerContext* context;
 
     VMCompiler(VMCompilerContext* context) :
-      instructions(), var_map(), stack_index(0),
+      instructions(), last_register(0), registers_num(1),
       engine(CompileEngine::Global()), context(context)  {}
+
+    size_t NewRegister() {
+      return registers_num++;
+    }
+    
+    /*! \brief Compute live intervals for all virtual registers. */
+    std::vector<LiveInterval> LiveIntervals() {
+      std::vector<LiveInterval> intervals;
+      for (size_t i = 0; i < registers_num; ++i) {
+        intervals.push_back(LiveInterval{i, 0, instructions.size()});
+      }
+      return intervals;
+    }
 
     inline void Emit(const Instruction& instr) {
       RELAY_LOG(INFO) << "VMCompiler::Emit: instr=" << instr;
@@ -103,30 +123,20 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         case Opcode::AllocDatatype:
         case Opcode::AllocTensor:
         case Opcode::GetField:
-        case Opcode::Push:
         case Opcode::LoadConst:
-          stack_index++;
-          break;
-        case Opcode::AllocClosure:
-          stack_index = stack_index - (instr.num_freevar - 1);
-          break;
+        case Opcode::Phi:
         case Opcode::Invoke:
+        case Opcode::AllocClosure:
+        case Opcode::Move:
+          last_register = instr.dst;
           break;
         case Opcode::InvokePacked:
-          stack_index -= (instr.arity - instr.output_size);
-          break;
-        case Opcode::If:
-          stack_index--;
+          last_register = instr.packed_args[instr.arity - 1];
           break;
         case Opcode::InvokeClosure:
-          // Need to handle specially.
-          break;
+        case Opcode::If:
         case Opcode::Ret:
         case Opcode::Goto:
-        case Opcode::Move:
-          break;
-        case Opcode::Pop:
-          stack_index -= instr.pop_count;
           break;
       }
       instructions.push_back(instr);
@@ -136,26 +146,28 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       auto rconst = GetRef<Constant>(const_node);
       auto it = this->context->const_map.find(rconst);
       CHECK(it != this->context->const_map.end());
-      Emit(LoadConst(it->second));
+      Emit(LoadConst(it->second, NewRegister()));
     }
 
     void VisitExpr_(const VarNode* var_node) {
       auto var = GetRef<Var>(var_node);
-      auto it = this->var_map.find(var);
-      CHECK(it != this->var_map.end());
-      auto instr = Push(it->second);
-      CHECK(instr.op == Opcode::Push);
-      Emit(instr);
+      auto reg_it = this->var_register_map.find(var);
+      CHECK(reg_it != this->var_register_map.end());
+      last_register = reg_it->second;
     }
 
     void VisitExpr_(const TupleNode* tuple_node) {
       auto tuple = GetRef<Tuple>(tuple_node);
+      std::vector<size_t> fields_registers;
+
       for (auto& field : tuple->fields) {
         this->VisitExpr(field);
+        fields_registers.push_back(last_register);
       }
+
       // TODO: handle complex field expression
       // TODO: use correct tag
-      Emit(AllocDatatype(0, tuple->fields.size()));
+      Emit(AllocDatatype(0, tuple->fields.size(), fields_registers, NewRegister()));
     }
 
     void VisitExpr_(const MatchNode* match_node) {
@@ -173,15 +185,16 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       //
       RELAY_LOG(INFO) << let_node->value << std::endl;
       this->VisitExpr(let_node->value);
-      RELAY_LOG(INFO) << this->stack_index << std::endl;
-      var_map.insert({ let_node->var, this->stack_index-1 });
+      RELAY_LOG(INFO) << this->last_register << std::endl;      
+      var_register_map.insert({ let_node->var, this->last_register });      
       this->VisitExpr(let_node->body);
     }
 
     void VisitExpr_(const TupleGetItemNode* get_node) {
       auto get = GetRef<TupleGetItem>(get_node);
       this->VisitExpr(get->tuple);
-      Emit(GetField(this->stack_index-1, get->index));
+      auto tuple_register = last_register;
+      Emit(GetField(tuple_register, get->index, NewRegister()));
     }
 
     void VisitExpr_(const GlobalVarNode* gvar) {
@@ -189,28 +202,16 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     void VisitExpr_(const IfNode* if_node) {
-      size_t stack_index_before_branch = stack_index;
       this->VisitExpr(if_node->cond);
+
+      size_t cond_register = last_register;
+
       auto after_cond = this->instructions.size();
 
-      this->Emit(If(0, 0));
+      this->Emit(If(cond_register, 0, 0));
       this->VisitExpr(if_node->true_branch);
 
-      RELAY_LOG(INFO) << "stack_index= " << stack_index;
-      RELAY_LOG(INFO) << "stack_index_before_branch= " << stack_index_before_branch;
-
-      // We need to now clean up the stack to only leave one value on it.
-      auto num_of_push_in_true = stack_index - stack_index_before_branch;
-
-      // NB(@jroesch): The if-then-else can not be empty here.
-      CHECK(num_of_push_in_true > 0);
-
-      // We will emit a move of the last value into the initial_stack index
-      // plus one.
-      Emit(Move(stack_index - 1u, stack_index_before_branch));
-      // Then we will emit the appropriate pops.
-
-      Emit(Pop(num_of_push_in_true - 1));
+      size_t true_register = last_register;
 
       Emit(Goto(0));
 
@@ -218,22 +219,9 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // true branch.
       auto after_true = this->instructions.size();
 
-      // Now we will generate code for the false branch, first
-      // we will restore the stack_index to the value before
-      // the branch.
-      stack_index = stack_index_before_branch;
-
       this->VisitExpr(if_node->false_branch);
-      auto num_of_push_in_false = stack_index - stack_index_before_branch;
 
-      CHECK(num_of_push_in_false > 0);
-
-      // We will emit a move of the last value into the initial_stack index
-      // plus one.
-      Emit(Move(stack_index - 1u, stack_index_before_branch));
-
-      // Then we will emit the appropriate pops.
-      Emit(Pop(num_of_push_in_false - 1));
+      size_t false_register = last_register;
 
       // Compute the total number of instructions
       // after generating false.
@@ -254,7 +242,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // CHECK(this->instructions[after_true - 1].op == Opcode::Goto);
       this->instructions[after_true - 1].pc_offset = (after_false - after_true) + 1;
 
-      stack_index = stack_index_before_branch + 1;
+      Emit(Phi(cond_register, true_register, false_register, NewRegister()));
     }
 
     Instruction AllocTensorFromType(const TensorTypeNode* ttype) {
@@ -264,10 +252,10 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       }
       DataType dtype = ttype->dtype;
       TVMType dltype = Type2TVMType(dtype);
-      return AllocTensor(shapes, dltype);
+      return AllocTensor(shapes, dltype, NewRegister());
     }
 
-    void EmitInvokePrimitive(const Function& func, const Type& ret_type) {
+    void EmitInvokePrimitive(const Function& func, std::vector<size_t> args_registers, const Type& ret_type) {
       std::vector<Instruction> allocs;
       size_t return_num = 0;
       if (const TensorTypeNode* ttype = ret_type.as<TensorTypeNode>()) {
@@ -279,19 +267,22 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         allocs.push_back(alloc);
         return_num = 1;
       } else if (const TupleTypeNode* ttype = ret_type.as<TupleTypeNode>()) {
+        std::vector<size_t> fields_registers;
+
         for (size_t i = 0; i < ttype->fields.size(); ++i) {
           auto f = ttype->fields[i];
           auto f_type = f.as<TensorTypeNode>();
           allocs.push_back(AllocTensorFromType(f_type));
+          fields_registers.push_back(allocs.back().dst);
         }
         return_num = ttype->fields.size();
-        allocs.push_back(AllocDatatype(0, return_num));
       } else {
         LOG(FATAL) << "Unsupported return value type";
       }
 
       for (auto& alloc : allocs) {
         Emit(alloc);
+        args_registers.push_back(alloc.dst);
       }
 
       // Next generate the invoke instruction.
@@ -313,17 +304,27 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // If Tensor, 1
       // If Tuple, size of tuple
       size_t arity = func->params.size() + return_num;
-      CHECK(arity < 10);
-      Emit(InvokePacked(op_index, arity, return_num));
+      Emit(InvokePacked(op_index, arity, return_num, args_registers));
+      if (return_num > 1) {
+        // return value is a tuple, we need to create a tuple
+        std::vector<size_t> fields_registers;
+        for (size_t i = func->params.size(); i < arity; ++i) {
+          fields_registers.push_back(args_registers[i]);
+        }
+        Emit(AllocDatatype(0, return_num, fields_registers, NewRegister()));
+      }
     }
 
     void VisitExpr_(const CallNode* call_node) {
       // First generate instructions to populate stack with arguments.
 
+      std::vector<size_t> args_registers;
+
       for (auto arg : call_node->args) {
         CHECK(arg.as<VarNode>())
           << "found: " << RelayPrint(arg, false);
         this->VisitExpr(arg);
+        args_registers.push_back(last_register);
       }
 
       Expr op = call_node->op;
@@ -332,6 +333,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         CHECK(func_node->IsPrimitive());
         EmitInvokePrimitive(
           GetRef<Function>(func_node),
+          args_registers,
           call_node->checked_type());
       } else if (auto global_node = op.as<GlobalVarNode>()) {
         auto global = GetRef<GlobalVar>(global_node);
@@ -345,44 +347,25 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
         auto func = this->context->module->Lookup(global);
         if (IsClosure(func)) {
-          // When we call a "closure wrapper" we need to bind
-          // the environment by emitting an allocate closure
-          // instruction.
-          //
-          //
-          // For example:
-          // fn (x) {
-          //   let f = fn (y, z) { // allocate here
-          //     return x + y + z;
-          //   };
-          //   f(10); // invoke closure here
-          // }
-          //
-          // So in the above case we will push x on to the stack
-          // then alloc a closure.
-          //
-          // We subtract one because the resulting closure will
-          // now be on the stack.
           auto arity = func->params.size();
-          Emit(AllocClosure(it->second, arity));
+          std::vector<size_t> free_var_registers;
+          for (size_t i = 0; i < arity; ++i) {
+            free_var_registers.push_back(var_register_map.at(func->params[i]));
+          }
+          Emit(AllocClosure(it->second, arity, free_var_registers, NewRegister()));
         } else {
-          auto arity = func->params.size();
-          CHECK(arity < stack_index);
-          // When we call a function we need to reset
-          // the call stack by the number of arguments
-          // because the call instruction will
-          // pop the arguments and push the return value.
-          stack_index = stack_index - (arity - 1);
-          Emit(Invoke(it->second));
+          Emit(Invoke(it->second, args_registers, NewRegister()));
+          // 0 is return value register
+          Emit(Move(0, NewRegister()));
         }
       } else if (auto constructor_node = op.as<ConstructorNode>()) {
         auto constructor = GetRef<Constructor>(constructor_node);
         auto tag = GetConstructorTag(constructor);
-        Emit(AllocDatatype(tag, call_node->args.size()));
+        Emit(AllocDatatype(tag, call_node->args.size(), args_registers, NewRegister()));
       } else if (auto var_node = op.as<VarNode>()) {
         VisitExpr(GetRef<Var>(var_node));
-        stack_index -= call_node->args.size();
-        Emit(InvokeClosure());
+        Emit(InvokeClosure(last_register, args_registers, NewRegister()));
+        Emit(Move(0, NewRegister()));
       } else {
         LOG(FATAL) << "unsupported case in vm compiler: " << op;
       }
@@ -408,24 +391,23 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     void CompileClosure(const Function& func) {
-      // We will expect that the caller will properly
-      // populate both the free variables and the arguments
-      // on the stack.
-
       // We first layout the function arguments.
       auto inner_func = Downcast<Function>(func->body);
+
+      size_t i = 1;
       for (auto param : inner_func->params) {
-        var_map.insert({ param, this->stack_index++ });
+        auto arg_register = NewRegister();
+        CHECK_EQ(i, arg_register);
+        var_register_map.insert({ param, arg_register });
+        i++;
       }
 
-      // We then layout parameters to the outer
-      // function (i.e the free variables) on the stack.
-      //
-      // This allows the user to push all the arguments,
-      // and then the closure on to the stack, before
-      // invoking it.
+      // We then assign register num to the free variables
       for (auto param : func->params) {
-        var_map.insert({ param, this->stack_index++ });
+        auto arg_register = NewRegister();        
+        CHECK_EQ(i, arg_register);        
+        var_register_map.insert({ param, arg_register });        
+        i++;
       }
 
       // We will now process the body like normal.
@@ -441,8 +423,10 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         return;
       }
 
-      for (auto param : func->params) {
-        var_map.insert({ param, this->stack_index++ });
+      for (auto i = 0; i < func->params.size(); ++i) {
+        auto arg_register = NewRegister();
+        CHECK_EQ(arg_register, i+1);
+        var_register_map.insert({ func->params[i], arg_register });
       }
 
       this->VisitExpr(func->body);
@@ -474,13 +458,18 @@ VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const F
   size_t params = func->params.size();
   VMCompiler compiler(context);
   compiler.Compile(func);
-  compiler.instructions.push_back(Ret());
+  // return the last evaluated expression
+  compiler.instructions.push_back(Ret(compiler.last_register));
+
+  std::unordered_map<size_t, size_t> register_file_map = 
+    RegisterAllocation(compiler.LiveIntervals());
+
   // Would like to refactor this so we only check if closure once.
   if (IsClosure(func)) {
     auto inner_params = Downcast<Function>(func->body)->params.size();
-    return VMFunction(var->name_hint, params + inner_params, compiler.instructions);
+    return VMFunction(var->name_hint, params + inner_params, compiler.instructions, compiler.registers_num, register_file_map);
   } else {
-    return VMFunction(var->name_hint, params, compiler.instructions);
+    return VMFunction(var->name_hint, params, compiler.instructions, compiler.registers_num, register_file_map);
   }
 }
 

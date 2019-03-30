@@ -12,6 +12,7 @@
 #include <tvm/relay/logging.h>
 #include <tvm/runtime/memory_manager.h>
 #include <tvm/runtime/object.h>
+#include <tvm/relay/vm/register_allocation.h>
 
 namespace tvm {
 namespace relay {
@@ -20,8 +21,7 @@ namespace vm {
 using namespace tvm::runtime;
 
 enum struct Opcode {
-  Push,
-  Pop,
+  Move,
   Ret,
   Invoke,
   InvokeClosure,
@@ -31,9 +31,9 @@ enum struct Opcode {
   AllocClosure,
   GetField,
   If,
+  Phi,
   LoadConst,
-  Goto,
-  Move,
+  Goto
 };
 
 struct Instruction {
@@ -44,20 +44,51 @@ struct Instruction {
   };
 
   Opcode op;
+
+  // Destination register that the opcode writes to
+  VirtualRegisterNum dst;
+
   union {
     size_t stack_index;
     TensorInfo tensor_info;
+
+    // For InvokeClosure
+    struct {
+      VirtualRegisterNum closure;
+      size_t closure_args_num;
+      VirtualRegisterNum* closure_args;
+    };
+    // For Ret
+    struct {
+      VirtualRegisterNum result;
+    };
+    // For Move
+    struct {
+      VirtualRegisterNum from;
+    };
     struct {
       size_t packed_index;
       size_t arity;
       size_t output_size;
+      VirtualRegisterNum* packed_args;
     };
+    // For Phi node
     struct {
+      VirtualRegisterNum phi_cond;
+      VirtualRegisterNum phi_op1;
+      VirtualRegisterNum phi_op2;
+    };
+    // For If node
+    struct {
+      VirtualRegisterNum if_cond;
       size_t true_offset;
       size_t false_offset;
     };
+    // For Invoke
     struct {
       size_t func_index;
+      size_t num_args;
+      VirtualRegisterNum* invoke_args_registers;
     };
     struct {
       size_t const_index;
@@ -65,24 +96,22 @@ struct Instruction {
     struct {
       size_t pc_offset;
     };
+    // For GetField
     struct {
-      size_t object_offset;
+      VirtualRegisterNum object;
       size_t field_index;
     };
+    // For AllocDatatype
     struct {
       size_t constructor_tag;
       size_t num_fields;
+      VirtualRegisterNum* datatype_fields;
     };
+    // For AllocClosure
     struct {
       size_t clo_index;
       size_t num_freevar;
-    };
-    struct {
-      size_t pop_count;
-    };
-    struct {
-      size_t source;
-      size_t dest;
+      VirtualRegisterNum* free_vars;
     };
   };
 
@@ -94,28 +123,33 @@ struct Instruction {
 };
 
 // Helpers to build instructions.
-Instruction Push(size_t stack_index);
-Instruction Pop(size_t pop_count);
-Instruction Ret();
-Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size);
-Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype);
-Instruction AllocDatatype(size_t tag, size_t num_fields);
-Instruction AllocClosure(size_t func_index, size_t num_freevar);
-Instruction GetField(size_t object_offset, size_t field_index);
-Instruction If(size_t true_branch, size_t false_branch);
+Instruction Phi(VirtualRegisterNum cond, VirtualRegisterNum op1, VirtualRegisterNum op2, VirtualRegisterNum dst);
+Instruction Ret(VirtualRegisterNum result);
+Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size, std::vector<VirtualRegisterNum> args);
+Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype, VirtualRegisterNum dst);
+Instruction AllocDatatype(size_t tag, size_t num_fields, std::vector<VirtualRegisterNum> fields, VirtualRegisterNum dst);
+Instruction AllocClosure(size_t func_index, size_t num_freevar, std::vector<VirtualRegisterNum> free_vars, VirtualRegisterNum dst);
+Instruction GetField(VirtualRegisterNum object, size_t field_index, VirtualRegisterNum dst);
+Instruction If(VirtualRegisterNum cond, size_t true_branch, size_t false_branch);
 Instruction Goto(size_t pc_offset);
-Instruction Invoke(size_t func_index);
-Instruction InvokeClosure();
-Instruction LoadConst(size_t const_index);
-Instruction Move(size_t source, size_t dest);
+Instruction Invoke(size_t func_index, std::vector<VirtualRegisterNum> args, VirtualRegisterNum dst);
+Instruction InvokeClosure(VirtualRegisterNum closure, std::vector<VirtualRegisterNum> args, VirtualRegisterNum dst);
+Instruction LoadConst(size_t const_index, VirtualRegisterNum dst);
+Instruction Move(VirtualRegisterNum src, VirtualRegisterNum dst);
 
 struct VMFunction {
   std::string name;
   size_t params;
   std::vector<Instruction> instructions;
+  size_t register_file_size;
 
-  VMFunction(std::string name, size_t params, std::vector<Instruction> instructions)
-    : name(name), params(params), instructions(instructions) {}
+  // register num -> memory slot
+  std::unordered_map<size_t, size_t> register_file_map;
+
+  VMFunction(std::string name, size_t params, std::vector<Instruction> instructions, size_t register_file_size,
+             std::unordered_map<size_t, size_t> register_file_map)
+    : name(name), params(params), instructions(instructions), register_file_size(register_file_size),
+      register_file_map(register_file_map) {}
 
   VMFunction() {}
 
@@ -131,14 +165,20 @@ void VMFunctionPrint(const VMFunction& vm_func);
  */
 struct VMFrame {
     size_t pc;
-    size_t bp;
-    size_t sp;
     size_t func_index;
     size_t args;
     const Instruction* code;
 
-    VMFrame(size_t pc, size_t bp, size_t sp, size_t func_index, size_t args, const Instruction* code)
-      : pc(pc), bp(bp), sp(sp), func_index(func_index), args(args), code(code) {}
+    // Points to the offset of this function's register file start inside VM's register stack
+    size_t register_stack_start;
+
+    // map from virtual register to memory slot
+    std::unordered_map<VirtualRegisterNum, SlotNum> register_file_map;
+
+    VMFrame(size_t pc, size_t func_index, size_t args, const Instruction* code, size_t register_stack_start,
+            std::unordered_map<size_t, size_t> register_file_map)
+      : pc(pc), func_index(func_index), args(args), code(code), register_stack_start(register_stack_start),
+        register_file_map(register_file_map) {}
 };
 
 struct VirtualMachine {
@@ -146,14 +186,18 @@ struct VirtualMachine {
     std::vector<PackedFunc> packed_funcs;
     std::vector<VMFunction> functions;
     std::vector<VMFrame> frames;
-    std::vector<Object> stack;
     std::vector<Object> constants;
 
     // Frame State
     size_t func_index;
     const Instruction* code;
     size_t pc;
-    size_t bp;
+    // Top position of register stack
+    size_t top_stack;
+    // Special register to save function call return value
+    Object return_register;
+    // Global memory used by all functions' registers
+    std::vector<Object> register_stack;
 
     std::vector<TVMContext> ctxs;
 
@@ -161,35 +205,22 @@ struct VirtualMachine {
     std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual> global_map;
     std::unordered_map<size_t, Constructor> tag_index_map;
 
-    void PushFrame(size_t arg_count, size_t ret_pc, size_t sp, const VMFunction& vm_func);
+    void PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func);
     size_t PopFrame();
-    void InvokeGlobal(const VMFunction& func);
+    void InvokeGlobal(const VMFunction& func, const std::vector<Object>& args);
     void Run();
+
+    // Find a register's offset inside the register_stack. 
+    size_t LookupRegister(VirtualRegisterNum r);
+    void WriteRegister(VirtualRegisterNum r, Object v);
+    Object ReadRegister(VirtualRegisterNum r);
 
     Object Invoke(const VMFunction& func, const std::vector<Object>& args);
     Object Invoke(const GlobalVar& global, const std::vector<Object>& args);
 
-    // Ignore the method that dumps register info at compile-time if debugging
-    // mode is not enabled.
-    template <typename T = EnableRelayDebug>
-    typename std::enable_if<T::value, void>::type
-    DumpRegister();
-
-    template <typename T = EnableRelayDebug>
-    typename std::enable_if<!T::value, void>::type
-    DumpRegister() {}
-
-    // Ignore the method that dumps stack info at compile-time if debugging
-    // mode is not enabled.
-    template <typename T = EnableRelayDebug>
-    typename std::enable_if<T::value, void>::type DumpStack();
-
-    template <typename T = EnableRelayDebug>
-    typename std::enable_if<!T::value, void>::type DumpStack() {}
-
     VirtualMachine() :
-      functions(), frames(), stack(),
-      func_index(0), code(nullptr), pc(0), bp(0) {}
+      functions(), frames(),
+      func_index(0), code(nullptr), pc(0) {}
 
     void Init(const std::vector<TVMContext>& ctxs);
 
