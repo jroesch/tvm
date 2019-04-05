@@ -31,7 +31,7 @@ enum struct Opcode {
   AllocClosure,
   GetField,
   If,
-  Phi,
+  Select,
   LoadConst,
   Goto
 };
@@ -49,7 +49,6 @@ struct Instruction {
   VirtualRegisterNum dst;
 
   union {
-    size_t stack_index;
     TensorInfo tensor_info;
 
     // For InvokeClosure
@@ -72,11 +71,11 @@ struct Instruction {
       size_t output_size;
       VirtualRegisterNum* packed_args;
     };
-    // For Phi node
+    // For Select node
     struct {
-      VirtualRegisterNum phi_cond;
-      VirtualRegisterNum phi_op1;
-      VirtualRegisterNum phi_op2;
+      VirtualRegisterNum select_cond;
+      VirtualRegisterNum select_op1;
+      VirtualRegisterNum select_op2;
     };
     // For If node
     struct {
@@ -123,17 +122,17 @@ struct Instruction {
 };
 
 // Helpers to build instructions.
-Instruction Phi(VirtualRegisterNum cond, VirtualRegisterNum op1, VirtualRegisterNum op2, VirtualRegisterNum dst);
+Instruction Select(VirtualRegisterNum cond, VirtualRegisterNum op1, VirtualRegisterNum op2, VirtualRegisterNum dst);
 Instruction Ret(VirtualRegisterNum result);
-Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size, std::vector<VirtualRegisterNum> args);
+Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size, const std::vector<VirtualRegisterNum>& args);
 Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype, VirtualRegisterNum dst);
-Instruction AllocDatatype(size_t tag, size_t num_fields, std::vector<VirtualRegisterNum> fields, VirtualRegisterNum dst);
-Instruction AllocClosure(size_t func_index, size_t num_freevar, std::vector<VirtualRegisterNum> free_vars, VirtualRegisterNum dst);
+Instruction AllocDatatype(size_t tag, size_t num_fields, const std::vector<VirtualRegisterNum>& fields, VirtualRegisterNum dst);
+Instruction AllocClosure(size_t func_index, size_t num_freevar, const std::vector<VirtualRegisterNum>& free_vars, VirtualRegisterNum dst);
 Instruction GetField(VirtualRegisterNum object, size_t field_index, VirtualRegisterNum dst);
 Instruction If(VirtualRegisterNum cond, size_t true_branch, size_t false_branch);
 Instruction Goto(size_t pc_offset);
-Instruction Invoke(size_t func_index, std::vector<VirtualRegisterNum> args, VirtualRegisterNum dst);
-Instruction InvokeClosure(VirtualRegisterNum closure, std::vector<VirtualRegisterNum> args, VirtualRegisterNum dst);
+Instruction Invoke(size_t func_index, const std::vector<VirtualRegisterNum>& args, VirtualRegisterNum dst);
+Instruction InvokeClosure(VirtualRegisterNum closure, const std::vector<VirtualRegisterNum>& args, VirtualRegisterNum dst);
 Instruction LoadConst(size_t const_index, VirtualRegisterNum dst);
 Instruction Move(VirtualRegisterNum src, VirtualRegisterNum dst);
 

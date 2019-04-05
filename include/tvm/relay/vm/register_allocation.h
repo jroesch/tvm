@@ -7,7 +7,7 @@
  * Poletto, M., & Sarkar, V. (1999). Linear scan register allocation. 
  * ACM Transactions on Programming Languages and Systems (TOPLAS), 21(5), 895-913.
  * 
- * We don't consider spiling and register coalescing right now.
+ * We don't consider spilling and register coalescing right now.
  */
 #ifndef TVM_RELAY_VM_REGISTER_ALLOCATION_H_
 #define TVM_RELAY_VM_REGISTER_ALLOCATION_H_

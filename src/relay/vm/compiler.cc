@@ -124,7 +124,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         case Opcode::AllocTensor:
         case Opcode::GetField:
         case Opcode::LoadConst:
-        case Opcode::Phi:
+        case Opcode::Select:
         case Opcode::Invoke:
         case Opcode::AllocClosure:
         case Opcode::Move:
@@ -242,7 +242,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // CHECK(this->instructions[after_true - 1].op == Opcode::Goto);
       this->instructions[after_true - 1].pc_offset = (after_false - after_true) + 1;
 
-      Emit(Phi(cond_register, true_register, false_register, NewRegister()));
+      Emit(Select(cond_register, true_register, false_register, NewRegister()));
     }
 
     Instruction AllocTensorFromType(const TensorTypeNode* ttype) {

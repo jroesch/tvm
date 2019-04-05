@@ -46,10 +46,10 @@ Instruction::Instruction(const Instruction& instr) {
     case Opcode::Move:
       this->from = instr.from;
       return;
-    case Opcode::Phi:
-      this->phi_cond = instr.phi_cond;
-      this->phi_op1 = instr.phi_op1;
-      this->phi_op2 = instr.phi_op2;
+    case Opcode::Select:
+      this->select_cond = instr.select_cond;
+      this->select_op1 = instr.select_op1;
+      this->select_op2 = instr.select_op2;
       return;
     case Opcode::Ret:
       this->result = instr.result;
@@ -111,7 +111,7 @@ Instruction Ret(VirtualRegisterNum result) {
   return instr;
 }
 
-Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size, std::vector<VirtualRegisterNum> args) {
+Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size, const std::vector<VirtualRegisterNum>& args) {
   Instruction instr;
   instr.op = Opcode::InvokePacked;
   instr.packed_index = packed_index;
@@ -138,7 +138,7 @@ Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype, siz
   return instr;
 }
 
-Instruction AllocDatatype(size_t tag, size_t num_fields, std::vector<size_t> datatype_fields, size_t dst) {
+Instruction AllocDatatype(size_t tag, size_t num_fields, const std::vector<VirtualRegisterNum>& datatype_fields, size_t dst) {
   Instruction instr;
   instr.op = Opcode::AllocDatatype;
   instr.dst = dst;
@@ -151,7 +151,7 @@ Instruction AllocDatatype(size_t tag, size_t num_fields, std::vector<size_t> dat
   return instr;
 }
 
-Instruction AllocClosure(size_t func_index, size_t free_vars, std::vector<size_t> free_var_register, size_t dst) {
+Instruction AllocClosure(size_t func_index, size_t free_vars, const std::vector<VirtualRegisterNum>& free_var_register, size_t dst) {
   Instruction instr;
   instr.op = Opcode::AllocClosure;
   instr.dst = dst;
@@ -182,13 +182,13 @@ Instruction If(VirtualRegisterNum cond, size_t true_branch, size_t false_branch)
   return instr;
 }
 
-Instruction Phi(VirtualRegisterNum cond, VirtualRegisterNum op1, VirtualRegisterNum op2, VirtualRegisterNum dst) {
+Instruction Select(VirtualRegisterNum cond, VirtualRegisterNum op1, VirtualRegisterNum op2, VirtualRegisterNum dst) {
   Instruction instr;
-  instr.op = Opcode::Phi;
+  instr.op = Opcode::Select;
   instr.dst = dst;
-  instr.phi_cond = cond;
-  instr.phi_op1 = op1;
-  instr.phi_op2 = op2;
+  instr.select_cond = cond;
+  instr.select_op1 = op1;
+  instr.select_op2 = op2;
   return instr;
 }
 
@@ -199,7 +199,7 @@ Instruction Goto(size_t pc_offset) {
   return instr;
 }
 
-Instruction Invoke(size_t func_index, std::vector<VirtualRegisterNum> args_registers, VirtualRegisterNum dst) {
+Instruction Invoke(size_t func_index, const std::vector<VirtualRegisterNum>& args_registers, VirtualRegisterNum dst) {
   Instruction instr;
   instr.op = Opcode::Invoke;
   instr.dst = dst;
@@ -212,7 +212,7 @@ Instruction Invoke(size_t func_index, std::vector<VirtualRegisterNum> args_regis
   return instr;
 }
 
-Instruction InvokeClosure(VirtualRegisterNum closure, std::vector<VirtualRegisterNum> args, VirtualRegisterNum dst) {
+Instruction InvokeClosure(VirtualRegisterNum closure, const std::vector<VirtualRegisterNum>& args, VirtualRegisterNum dst) {
   Instruction instr;
   instr.op = Opcode::InvokeClosure;
   instr.dst = dst;
@@ -339,12 +339,12 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
          << instr.pc_offset;
       break;
     }
-    case Opcode::Phi: {
+    case Opcode::Select: {
       os << "phi "
          << instr.dst << " "
-         << instr.phi_cond << " "
-         << instr.phi_op1 << " "
-         << instr.phi_op2;
+         << instr.select_cond << " "
+         << instr.select_op1 << " "
+         << instr.select_op2;
       break;
     }
     default:
@@ -585,21 +585,21 @@ void VirtualMachine::Run() {
         pc++;
         goto main_loop;
       }
-      case Opcode::Phi: {
+      case Opcode::Select: {
         DLContext cpu_ctx;
         cpu_ctx.device_type = kDLCPU;
         cpu_ctx.device_id = 0;
 
-        auto cond = ReadRegister(instr.phi_cond);
+        auto cond = ReadRegister(instr.select_cond);
         NDArray cpu_array = ToNDArray(cond).CopyTo(cpu_ctx);
         CHECK_EQ(TVMType2Type(cpu_array->dtype), Bool());
         bool branch = reinterpret_cast<uint8_t*>(cpu_array->data)[0];
 
         if (branch) {
-          auto op1 = ReadRegister(instr.phi_op1);
+          auto op1 = ReadRegister(instr.select_op1);
           WriteRegister(instr.dst, op1);
         } else {
-          auto op2 = ReadRegister(instr.phi_op2);
+          auto op2 = ReadRegister(instr.select_op2);
           WriteRegister(instr.dst, op2);
         }
         pc++;
