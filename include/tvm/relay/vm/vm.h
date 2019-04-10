@@ -167,8 +167,10 @@ struct VMFrame {
 
     std::vector<Object> register_file;
 
+    VirtualRegisterNum caller_return_register;
+
     VMFrame(size_t pc, size_t func_index, size_t args, const Instruction* code, size_t register_file_size)
-      : pc(pc), func_index(func_index), args(args), code(code), register_file(register_file_size)
+      : pc(pc), func_index(func_index), args(args), code(code), register_file(register_file_size), caller_return_register(0)
        {}
 };
 

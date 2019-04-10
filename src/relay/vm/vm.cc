@@ -394,7 +394,7 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<Obje
 
   PushFrame(func.params, this->pc + 1, func);
   for (size_t i = 0; i < args.size(); ++i) {
-    WriteRegister(i+1, args[i]);
+    WriteRegister(i, args[i]);
   }
   RELAY_LOG(INFO) << "func.params= " << func.params << std::endl;
 
@@ -482,6 +482,7 @@ void VirtualMachine::Run() {
           args.push_back(ReadRegister(instr.invoke_args_registers[i]));
         }
         InvokeGlobal(this->functions[instr.func_index], args);
+        frames.back().caller_return_register = instr.dst;
         goto main_loop;
       }
       case Opcode::InvokePacked: {
@@ -510,6 +511,7 @@ void VirtualMachine::Run() {
           args.push_back(free_var);
         }
         InvokeGlobal(this->functions[closure->func_index], args);
+        frames.back().caller_return_register = instr.dst;
         goto main_loop;
       }
       case Opcode::GetField: {
@@ -599,6 +601,7 @@ void VirtualMachine::Run() {
         // running, we should return to the caller breaking
         // the dispatch loop.
         return_register = ReadRegister(instr.result);
+        auto caller_return_register = frames.back().caller_return_register;
 
         if (PopFrame() == frame_start) {
           return;
@@ -607,6 +610,7 @@ void VirtualMachine::Run() {
         // Since we have already popped the stack we will just
         // resume at the top of the dispatch loop.
         } else {
+          WriteRegister(caller_return_register, return_register);
           goto main_loop;
         }
       }

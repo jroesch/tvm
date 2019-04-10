@@ -99,7 +99,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
     VMCompilerContext* context;
 
     VMCompiler(VMCompilerContext* context) :
-      instructions(), last_register(0), registers_num(1),
+      instructions(), last_register(0), registers_num(0),
       engine(CompileEngine::Global()), context(context)  {}
 
     size_t NewRegister() {
@@ -118,12 +118,12 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
         case Opcode::Invoke:
         case Opcode::AllocClosure:
         case Opcode::Move:
+        case Opcode::InvokeClosure:
           last_register = instr.dst;
           break;
         case Opcode::InvokePacked:
           last_register = instr.packed_args[instr.arity - 1];
           break;
-        case Opcode::InvokeClosure:
         case Opcode::If:
         case Opcode::Ret:
         case Opcode::Goto:
@@ -345,8 +345,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
           Emit(AllocClosure(it->second, arity, free_var_registers, NewRegister()));
         } else {
           Emit(Invoke(it->second, args_registers, NewRegister()));
-          // 0 is return value register
-          Emit(Move(0, NewRegister()));
         }
       } else if (auto constructor_node = op.as<ConstructorNode>()) {
         auto constructor = GetRef<Constructor>(constructor_node);
@@ -355,7 +353,6 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       } else if (auto var_node = op.as<VarNode>()) {
         VisitExpr(GetRef<Var>(var_node));
         Emit(InvokeClosure(last_register, args_registers, NewRegister()));
-        Emit(Move(0, NewRegister()));
       } else {
         LOG(FATAL) << "unsupported case in vm compiler: " << op;
       }
@@ -384,7 +381,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       // We first layout the function arguments.
       auto inner_func = Downcast<Function>(func->body);
 
-      size_t i = 1;
+      size_t i = 0;
       for (auto param : inner_func->params) {
         auto arg_register = NewRegister();
         CHECK_EQ(i, arg_register);
@@ -415,7 +412,7 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
 
       for (auto i = 0; i < func->params.size(); ++i) {
         auto arg_register = NewRegister();
-        CHECK_EQ(arg_register, i+1);
+        CHECK_EQ(arg_register, i);
         var_register_map.insert({ func->params[i], arg_register });
       }
 
