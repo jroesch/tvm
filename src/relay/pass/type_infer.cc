@@ -581,7 +581,7 @@ class TypeInferencer::Resolver : public ExprMutator, PatternMutator {
   }
 
   Expr VisitExpr_(const VarNode* op) final {
-    return VisitVar(GetRef<Var>(op));
+    return AttachCheckedType(op);
   }
 
   Expr VisitExpr_(const ConstantNode* op) final {
@@ -686,7 +686,7 @@ class TypeInferencer::Resolver : public ExprMutator, PatternMutator {
     bool need_update_var = (
         std::is_base_of<VarNode, T>::value &&
         update_missing_type_annotation_ &&
-        !new_var->type_annotation.defined());
+        !new_var->type_annotation.same_as(checked_type));
 
     bool need_update_fn = (
         std::is_base_of<FunctionNode, T>::value &&
