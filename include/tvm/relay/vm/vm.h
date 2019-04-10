@@ -12,13 +12,14 @@
 #include <tvm/relay/logging.h>
 #include <tvm/runtime/memory_manager.h>
 #include <tvm/runtime/object.h>
-#include <tvm/relay/vm/register_allocation.h>
 
 namespace tvm {
 namespace relay {
 namespace vm {
 
 using namespace tvm::runtime;
+
+using VirtualRegisterNum = size_t;
 
 enum struct Opcode {
   Move,
@@ -164,14 +165,10 @@ struct VMFrame {
     size_t args;
     const Instruction* code;
 
-    // Points to the offset of this function's register file start inside VM's register stack
-    size_t register_stack_start;
+    std::vector<Object> register_file;
 
-    // map from virtual register to memory slot
-    std::unordered_map<VirtualRegisterNum, SlotNum> register_file_map;
-
-    VMFrame(size_t pc, size_t func_index, size_t args, const Instruction* code, size_t register_stack_start)
-      : pc(pc), func_index(func_index), args(args), code(code), register_stack_start(register_stack_start)
+    VMFrame(size_t pc, size_t func_index, size_t args, const Instruction* code, size_t register_file_size)
+      : pc(pc), func_index(func_index), args(args), code(code), register_file(register_file_size)
        {}
 };
 
@@ -186,12 +183,8 @@ struct VirtualMachine {
     size_t func_index;
     const Instruction* code;
     size_t pc;
-    // Top position of register stack
-    size_t top_stack;
     // Special register to save function call return value
     Object return_register;
-    // Global memory used by all functions' registers
-    std::vector<Object> register_stack;
 
     std::vector<TVMContext> ctxs;
 
@@ -204,10 +197,8 @@ struct VirtualMachine {
     void InvokeGlobal(const VMFunction& func, const std::vector<Object>& args);
     void Run();
 
-    // Find a register's offset inside the register_stack. 
-    size_t LookupRegister(VirtualRegisterNum r);
-    void WriteRegister(VirtualRegisterNum r, Object v);
-    Object ReadRegister(VirtualRegisterNum r);
+    inline void WriteRegister(VirtualRegisterNum r, Object v);
+    inline Object ReadRegister(VirtualRegisterNum r);
 
     Object Invoke(const VMFunction& func, const std::vector<Object>& args);
     Object Invoke(const GlobalVar& global, const std::vector<Object>& args);

@@ -373,9 +373,7 @@ std::ostream& operator<<(std::ostream& os, const VMFunction& vm_func) {
 }
 
 void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func) {
-  auto frame = VMFrame(ret_pc, func_index, arg_count, code, top_stack);
-  register_stack.resize(top_stack + vm_func.register_file_size);
-  top_stack = register_stack.size();
+  auto frame = VMFrame(ret_pc, func_index, arg_count, code, vm_func.register_file_size);
   frames.push_back(frame);
 }
 
@@ -387,8 +385,6 @@ size_t VirtualMachine::PopFrame() {
   pc = fr.pc;
   auto call_stack_size = frames.size();
   frames.pop_back();
-  top_stack = fr.register_stack_start;
-  register_stack.resize(top_stack);
   return call_stack_size;
 }
 
@@ -409,7 +405,6 @@ void VirtualMachine::InvokeGlobal(const VMFunction& func, const std::vector<Obje
 Object VirtualMachine::Invoke(const VMFunction& func, const std::vector<Object>& args) {
   RELAY_LOG(INFO) << "Executing function " << func.name << std::endl;
 
-  this->top_stack = 0;
   InvokeGlobal(func, args);
   Run();
   auto alloc = MemoryManager::Global()->GetAllocator(ctxs[0]);
@@ -444,17 +439,12 @@ void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
   this->ctxs = ctxs;
 }
 
-inline size_t VirtualMachine::LookupRegister(size_t r) {
-  return frames.back().register_stack_start + r;
+inline void VirtualMachine::WriteRegister(size_t r, Object val) {
+  frames.back().register_file[r] = val;
 }
 
-void VirtualMachine::WriteRegister(size_t r, Object val) {
-  register_stack[LookupRegister(r)] = val;
-}
-
-Object VirtualMachine::ReadRegister(size_t r) {
-  auto res = register_stack[LookupRegister(r)];
-  return res;
+inline Object VirtualMachine::ReadRegister(size_t r) {
+  return frames.back().register_file[r];
 }
 
 void VirtualMachine::Run() {
