@@ -65,9 +65,33 @@ def test_dyn_concat():
     print("type check")
     print(tres.astext(True))
     import pdb; pdb.set_trace()
+    """
+    i = relay.var("i", shape=(), dtype='int32')
+    st = relay.var("st", type_annotation=relay.TypeOf(init))
+    update = _body(i, st)
+    dim = relay.take(relay.op.shape_of(iter), indices=i, axis=0)
+    def _cond(i, st):
+        return relay.op.min(relay.op.less(i, dim))
 
-    # ex = relay.create_executor()
-    # result = ex.evaluate(res)
+    mod = relay.module.Module()
+    wl = relay.GlobalVar("while_loop")
+    loop_vars = [i, st]
+    sb = relay.ScopeBuilder()
+    with sb.if_scope(_cond(*loop_vars)):
+        sb.ret(wl(i + int32(1), update))
+    with sb.else_scope():
+        sb.ret(relay.Tuple(loop_vars))
+    func = relay.Function(loop_vars, sb.get())
+    mod[wl] = func
+    print(relay.ir_pass.infer_type(func, mod=mod))
+    ret = relay.Call(wl, [relay.const(0, 'int32'), init])
+    mod[mod.entry_func] = relay.Function([], ret)
+    print(relay.ir_pass.infer_type(mod[mod.entry_func], mod=mod))
+    """"
+
+    ex = relay.create_executor("debug", mod=mod, ctx=tvm.cpu(), target="llvm")
+    result = ex.evaluate(mod.entry_func)()
+    print(result)
     # import pdb; pdb.set_trace()
     # np.testing.assert_allclose(result.asnumpy(), np.array(range(10)))
 

@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -92,11 +92,13 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
  public:
   explicit Unifier(TypeSolver* solver) : solver_(solver) {}
 
-  Type Unify(const Type& src, const Type& dst) {
+  Type Unify(const Type& src, const Type& dst, bool arg_type=false) {
     // Known limitation
     // - handle shape pattern matching
     TypeNode* lhs = solver_->GetTypeNode(dst);
     TypeNode* rhs = solver_->GetTypeNode(src);
+    lhs->arg_type |= arg_type;
+    rhs->arg_type |= arg_type;
 
     // do occur check so we don't create self-referencing structure
     if (lhs->FindRoot() == rhs->FindRoot()) {
@@ -120,6 +122,7 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
         << "Unable to unify parent types: "
         << lhs->resolved_type << " and " << rhs->resolved_type;
       TypeNode* top = solver_->GetTypeNode(resolved);
+      top->arg_type = arg_type;
       solver_->MergeFromTo(lhs, top);
       solver_->MergeFromTo(rhs, top);
       return resolved;
@@ -185,7 +188,7 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
       return ulhs;
     }
 
-    LOG(FATAL) << ulhs << " " << urhs;
+    // LOG(FATAL) << ulhs << " " << urhs;
     return tvm::Expr();
   }
 
@@ -198,6 +201,8 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
 
     auto tt1 = GetRef<TensorType>(op);
     auto tt2 = GetRef<TensorType>(tt_node);
+    TypeNode* tn1 = solver_->GetTypeNode(tt1);
+    TypeNode* tn2 = solver_->GetTypeNode(tt2);
 
     if (AlphaEqual(tt1, tt2)) {
       return tt1;
@@ -209,7 +214,14 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
 
     tvm::Array<IndexExpr> shape;
     for (size_t i = 0; i < tt1->shape.size(); i++) {
-      shape.push_back(UnifyShape(tt1->shape[i], tt2->shape[i]));
+      auto dim = UnifyShape(tt1->shape[i], tt2->shape[i]);
+      if (dim.defined()) {
+        shape.push_back(dim);
+      } else {
+        CHECK(tn1->arg_type || tn2->arg_type)
+            << "Cannot resolve " << tt1 << " and " << tt2;
+        shape.push_back(Any());
+      }
     }
 
     return TensorTypeNode::make(shape, tt1->dtype);
@@ -482,11 +494,16 @@ void TypeSolver::MergeFromTo(TypeNode* src, TypeNode* dst) {
 }
 
 // Add equality constraint
-Type TypeSolver::Unify(const Type& dst, const Type& src, const NodeRef&) {
+Type TypeSolver::Unify(const Type& dst, const Type& src, const NodeRef& node, bool arg_type) {
   // NB(@jroesch): we should probably pass location into the unifier to do better
   // error reporting as well.
   Unifier unifier(this);
-  return unifier.Unify(dst, src);
+  Type ret = unifier.Unify(dst, src, arg_type);
+  if (!ret.defined()) {
+    LOG(FATAL) << "failed to unify " << dst << " <-> " << src << " at "
+               << AsText(node, false);
+  }
+  return ret;
 }
 
 void TypeSolver::ReportError(const Error& err, const NodeRef& location)  {

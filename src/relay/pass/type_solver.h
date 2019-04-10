@@ -88,7 +88,7 @@ class TypeSolver {
    * \param rhs The right operand
    * \param location The location at which the unification problem arose.
    */
-  Type Unify(const Type& lhs, const Type& rhs, const NodeRef& location);
+  Type Unify(const Type& lhs, const Type& rhs, const NodeRef& location, bool arg_type=false);
 
   /*!
    * \brief Report an error at the provided location.
@@ -120,6 +120,8 @@ class TypeSolver {
   struct TypeNode {
     /*! \brief The final resolved type */
     Type resolved_type;
+    /*! \brief Whether this type is arg type */
+    bool arg_type{false};
     /*! \brief type node in the union find algorithm */
     TypeNode* parent{nullptr};
     /*! \brief set of relations that is related to this type node */
@@ -133,12 +135,16 @@ class TypeSolver {
       if (this->parent == nullptr) return this;
       // slow path with path compression.
       TypeNode* root = this;
+      bool arg_type = root->arg_type;
       while (root->parent != nullptr) {
         root = root->parent;
+        arg_type |= root->arg_type;
       }
+      root->arg_type = arg_type;
       for (TypeNode* p = this; p != root;) {
         TypeNode* parent = p->parent;
         p->parent = root;
+        p->arg_type = arg_type;
         p = parent;
       }
       return root;

@@ -662,7 +662,9 @@ class PrettyPrinter :
   Doc PrintAttr(const NodeRef& value, bool meta = false) {
     if (value.defined()) {
       Doc printed_attr;
-      if (meta) {
+      if (value == Any()) {
+        printed_attr << "Any";
+      } else if (meta) {
         printed_attr = meta_.GetMetaNode(value);
       } else {
         printed_attr = VisitAttr(value);
