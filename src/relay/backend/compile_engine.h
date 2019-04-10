@@ -26,6 +26,7 @@
 #ifndef TVM_RELAY_BACKEND_COMPILE_ENGINE_H_
 #define TVM_RELAY_BACKEND_COMPILE_ENGINE_H_
 
+#include <tvm/ir_pass.h>
 #include <tvm/lowered_func.h>
 #include <tvm/relay/expr.h>
 #include <string>
@@ -68,11 +69,14 @@ class CCacheKeyNode : public Node {
  public:
   /*! \brief The source function to be lowered. */
   Function source_func;
+  /*! \brief Input shapes to the function. */
+  Array<Shape> input_shapes;
   /*! \brief The hardware target.*/
   Target target;
 
   void VisitAttrs(tvm::AttrVisitor* v) final {
     v->Visit("source_func", &source_func);
+    v->Visit("input_shapes", &input_shapes);
     v->Visit("target", &target);
   }
   /*! \return The hash value of CCacheKey. */
@@ -90,6 +94,7 @@ class CCacheKeyNode : public Node {
    * \return the created key.
    */
   TVM_DLL static CCacheKey make(Function source_func,
+                                Array<Shape> input_shapes,
                                 Target target);
 
   static constexpr const char* _type_key = "relay.CCacheKey";
@@ -196,6 +201,12 @@ inline size_t CCacheKeyNode::Hash() const {
   if (hash_ != 0) return hash_;
   // do structral hash, avoid 0.
   hash_ = StructuralHash()(this->source_func);
+  for (auto shape : input_shapes) {
+    for (auto dim : shape) {
+      hash_ = dmlc::HashCombine(
+          hash_, std::hash<int64_t>()(dim.as<IntImm>()->value));
+    }
+  }
   hash_ = dmlc::HashCombine(
       hash_, std::hash<std::string>()(target->str()));
   if (hash_ == 0) hash_ = 1;
@@ -205,6 +216,21 @@ inline size_t CCacheKeyNode::Hash() const {
 inline bool CCacheKeyNode::Equal(
     const CCacheKeyNode* other) const {
   if (Hash() != other->Hash()) return false;
+  if (this->input_shapes.size() != other->input_shapes.size()) {
+    return false;
+  }
+  for (unsigned i = 0; i < this->input_shapes.size(); ++i) {
+    auto& tshape = this->input_shapes[i];
+    auto& oshape = other->input_shapes[i];
+    if (tshape.size() != oshape.size()) {
+      return false;
+    }
+    for (unsigned j = 0; j < tshape.size(); ++j) {
+      if (!tvm::ir::Equal(tshape[j], oshape[j])) {
+        return false;
+      }
+    }
+  }
   return this->target->str() == other->target->str() &&
       AlphaEqual(this->source_func, other->source_func);
 }

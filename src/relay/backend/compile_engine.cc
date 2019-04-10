@@ -40,9 +40,10 @@
 namespace tvm {
 namespace relay {
 
-CCacheKey CCacheKeyNode::make(Function source_func, Target target) {
+CCacheKey CCacheKeyNode::make(Function source_func, Array<Shape> input_shapes, Target target) {
   auto n = make_node<CCacheKeyNode>();
   n->source_func = std::move(source_func);
+  n->input_shapes = input_shapes;
   n->target = std::move(target);
   return CCacheKey(n);
 }
@@ -291,7 +292,10 @@ class CompileEngineImpl : public CompileEngineNode {
   // For now, build one module per function.
   PackedFunc JIT(const CCacheKey& key) final {
     CCacheValue value = LowerInternal(key);
-    if (value->packed_func != nullptr) return value->packed_func;
+    if (value->packed_func != nullptr) {
+      std::cout << "Cached packed func" << std::endl;
+      return value->packed_func;
+    }
     // build the function.
     if (const auto* f = runtime::Registry::Get("relay.backend.build")) {
       tvm::runtime::Module m = (*f)(value->cached_func->funcs, key->target);
@@ -416,7 +420,7 @@ const CompileEngine& CompileEngine::Global() {
 
 
 TVM_REGISTER_GLOBAL("relay.backend._make_CCacheKey")
-.set_body_typed<CCacheKey(Function, Target)>(CCacheKeyNode::make);
+.set_body_typed<CCacheKey(Function, Array<Shape>, Target)>(CCacheKeyNode::make);
 
 TVM_REGISTER_GLOBAL("relay.backend._CompileEngineGlobal")
 .set_body_typed<CompileEngine()>([]() {

@@ -412,7 +412,6 @@ class StoragePlanRewriter : public IRMutator {
            {op->args[0], se->alloc_var, offset, extent, op->args[4]},
            op->call_type);
     } else {
-      std::cout << op->name;
       return IRMutator::Mutate_(op, e);
     }
   }

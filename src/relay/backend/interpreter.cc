@@ -338,6 +338,7 @@ class Interpreter :
 
   Value InvokePrimitiveOp(Function func,
                           const Array<Value>& args) {
+    std::cout << "========================================================\n";
     static auto fshape_func =
         Op::GetAttr<FShapeFunc>("FShapeFunc");
 
@@ -378,11 +379,18 @@ class Interpreter :
     std::vector<int> codes(arg_len);
     TVMArgsSetter setter(values.data(), codes.data());
     Array<Input> shape_func_args;
+    Array<Shape> input_shapes;
 
     auto fset_input = [&](size_t i, Value val) {
       const TensorValueNode* tv = val.as<TensorValueNode>();
       CHECK(tv != nullptr) << "expect Tensor argument";
+      Shape shape;
+      for (auto dim : tv->data.Shape()) {
+        shape.push_back(tvm::Integer(dim));
+      }
+      std::cout << "set input: i=" << i << " type= " << shape << std::endl;
       shape_func_args.push_back(InputNode::make(tv->data));
+      input_shapes.push_back(shape);
       setter(i, tv->data);
       DLContext arg_ctx = tv->data->ctx;
       CHECK(arg_ctx.device_type ==  context_.device_type &&
@@ -409,8 +417,8 @@ class Interpreter :
     // we need to allocate space for the output buffer based on the
     // return type.
     auto fset_output = [&](size_t i, Type val_type) {
-      std::cout << "i=" << i
-        << "type= " << val_type;
+      std::cout << "set output: i=" << i
+        << " type= " << val_type << std::endl;
       const TensorTypeNode* rtype = val_type.as<TensorTypeNode>();
       CHECK(rtype != nullptr);
       // Allocate output tensor.
@@ -438,11 +446,13 @@ class Interpreter :
       CHECK(func->IsPrimitive());
       auto call = Downcast<Call>(func->body);
       auto op = Downcast<Op>(call->op);
+      CHECK_GT(fshape_func.count(op), 0) 
+          << "internal error, cannot find ShapeFunc for " << op->name;
       auto shape_func = fshape_func[op];
       out_shapes = shape_func(shape_func_args);
     }
 
-    PackedFunc packed_func = engine_->JIT(CCacheKeyNode::make(func, target_));
+    PackedFunc packed_func = engine_->JIT(CCacheKeyNode::make(func, input_shapes, target_));
     TVMRetValue rv;
     if (const TupleTypeNode* rtype = ret_type.as<TupleTypeNode>()) {
       CHECK(!is_dyn || out_shapes.size() == rtype->fields.size());

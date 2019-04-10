@@ -274,6 +274,22 @@ Array<Array<Layout>> ConcatenateLayout(
   return Array<Array<Layout> > {Array<Layout>(old_in_layouts.size(), ret), {ret}};
 }
 
+Array<Shape> ConcatenateShapeFunc(const Array<Input>& inputs) {
+  auto out_shape = inputs[0]->data.Shape();
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    auto in_shape = inputs[i]->data.Shape();
+    for (size_t j = 0; j < in_shape.size(); ++j) {
+      out_shape[j] += in_shape[j];
+    }
+  }
+  Shape ret;
+  for (size_t i = 0; i < out_shape.size(); ++i) {
+    ret.push_back(tvm::Integer(out_shape[i]));
+  }
+  return { ret };
+}
+
+
 Expr MakeConcatenate(Expr data,
                      int axis) {
   auto attrs = make_node<ConcatenateAttrs>();
@@ -300,7 +316,8 @@ RELAY_REGISTER_OP("concatenate")
 .add_type_rel("Concatenate", ConcatenateRel)
 .set_attr<FInferCorrectLayout>("FInferCorrectLayout", ConcatenateLayout)
 .set_attr<FTVMCompute>("FTVMCompute", ConcatenateCompute)
-.set_attr<TOpPattern>("TOpPattern", kInjective);
+.set_attr<TOpPattern>("TOpPattern", kInjective)
+.set_attr<FShapeFunc>("FShapeFunc", ConcatenateShapeFunc);
 
 TVM_REGISTER_NODE_TYPE(StackAttrs);
 
