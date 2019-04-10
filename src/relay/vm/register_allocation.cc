@@ -14,7 +14,7 @@ namespace tvm {
 namespace relay {
 namespace vm {
 
-std::unordered_map<VirtualRegisterNum, SlotNum>
+std::pair<std::unordered_map<VirtualRegisterNum, SlotNum>, SlotNum>
 RegisterAllocation(std::vector<LiveInterval> live_intervals) {
   std::sort(live_intervals.begin(), live_intervals.end(), [](const LiveInterval& a, const LiveInterval& b) {
     if (a.line_start != a.line_start) {
@@ -46,7 +46,7 @@ RegisterAllocation(std::vector<LiveInterval> live_intervals) {
       register_file_map[next_interval.reg] = assign;
     }
   }
-  return register_file_map;
+  return make_pair(register_file_map, next_slot);
 }
 
 }  // namespace vm

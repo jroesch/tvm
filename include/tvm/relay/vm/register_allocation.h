@@ -41,7 +41,7 @@ public:
   }
 };
 
-std::unordered_map<VirtualRegisterNum, SlotNum>
+std::pair<std::unordered_map<VirtualRegisterNum, SlotNum>, SlotNum>
 RegisterAllocation(std::vector<LiveInterval> live_intervals);
 
 }  // namespace vm

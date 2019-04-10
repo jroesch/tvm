@@ -414,6 +414,83 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       this->VisitExpr(inner_func->body);
     }
 
+    void TranslateOpcode(const std::unordered_map<size_t, size_t>& register_map) {
+      for (auto& instr : instructions) {
+
+        switch (instr.op) {
+        case Opcode::AllocDatatype: {
+          instr.dst = register_map.at(instr.dst);
+          for (size_t i = 0; i < instr.num_fields; ++i) {
+            instr.datatype_fields[i] = register_map.at(instr.datatype_fields[i]);
+          }
+          break;
+        }
+        case Opcode::AllocTensor: {
+          instr.dst = register_map.at(instr.dst);
+          break;
+        }
+        case Opcode::GetField: {
+          instr.object = register_map.at(instr.object);
+          instr.dst = register_map.at(instr.dst);
+          break;
+        }
+        case Opcode::LoadConst: {
+          instr.dst = register_map.at(instr.dst);
+          break;
+        }
+        case Opcode::Select: {
+          instr.select_cond = register_map.at(instr.select_cond);
+          instr.select_op1 = register_map.at(instr.select_op1);
+          instr.select_op2 = register_map.at(instr.select_op2);
+          instr.dst = register_map.at(instr.dst);
+          break;
+        }
+        case Opcode::Invoke: {
+          for (size_t i = 0; i < instr.num_args; ++i) {
+            instr.invoke_args_registers[i] = register_map.at(instr.invoke_args_registers[i]);
+          }
+          break;
+        }
+        case Opcode::AllocClosure: {
+          for (size_t i = 0; i < instr.num_freevar; ++i) {
+            instr.free_vars[i] = register_map.at(instr.free_vars[i]);
+          }
+          instr.dst = register_map.at(instr.dst);
+          break;
+        }
+        case Opcode::Move: {
+          instr.from = register_map.at(instr.from);
+          instr.dst = register_map.at(instr.dst);
+          break;
+        }
+        case Opcode::InvokePacked: {
+          for (size_t i = 0; i < instr.arity - instr.output_size; ++i) {
+            instr.packed_args[i] = register_map.at(instr.packed_args[i]);
+          }
+          instr.dst = register_map.at(instr.dst);
+          break;
+        }
+        case Opcode::InvokeClosure: {
+          for (size_t i = 0; i < instr.closure_args_num; ++i) {
+            instr.closure_args[i] = register_map.at(instr.closure_args[i]);
+          }
+          break;
+        }
+        case Opcode::If: {
+          instr.if_cond = register_map.at(instr.if_cond);
+          break;
+        }
+        case Opcode::Ret: {
+          instr.result = register_map.at(instr.result);
+        }
+        case Opcode::Goto:
+          break;
+        /*
+          */
+      }
+      }
+    }
+
     void Compile(const Function& func) {
       RelayPrint(func, false);
 
@@ -461,15 +538,22 @@ VMFunction CompileFunc(VMCompilerContext* context, const GlobalVar& var, const F
   // return the last evaluated expression
   compiler.instructions.push_back(Ret(compiler.last_register));
 
-  std::unordered_map<size_t, size_t> register_file_map = 
-    RegisterAllocation(compiler.LiveIntervals());
+  SlotNum allocated_stack = compiler.registers_num;
+
+  if (true) {
+    // TODO (wweic) Add a flag to disable register allocation
+    auto register_alloc_result = RegisterAllocation(compiler.LiveIntervals());
+    std::unordered_map<size_t, size_t> register_file_map = register_alloc_result.first;
+    allocated_stack = register_alloc_result.second;
+    compiler.TranslateOpcode(register_file_map);
+  }
 
   // Would like to refactor this so we only check if closure once.
   if (IsClosure(func)) {
     auto inner_params = Downcast<Function>(func->body)->params.size();
-    return VMFunction(var->name_hint, params + inner_params, compiler.instructions, compiler.registers_num, register_file_map);
+    return VMFunction(var->name_hint, params + inner_params, compiler.instructions, allocated_stack);
   } else {
-    return VMFunction(var->name_hint, params, compiler.instructions, compiler.registers_num, register_file_map);
+    return VMFunction(var->name_hint, params, compiler.instructions, allocated_stack);
   }
 }
 

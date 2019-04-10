@@ -142,13 +142,9 @@ struct VMFunction {
   std::vector<Instruction> instructions;
   size_t register_file_size;
 
-  // register num -> memory slot
-  std::unordered_map<size_t, size_t> register_file_map;
-
-  VMFunction(std::string name, size_t params, std::vector<Instruction> instructions, size_t register_file_size,
-             std::unordered_map<size_t, size_t> register_file_map)
-    : name(name), params(params), instructions(instructions), register_file_size(register_file_size),
-      register_file_map(register_file_map) {}
+  VMFunction(std::string name, size_t params, std::vector<Instruction> instructions, size_t register_file_size)
+    : name(name), params(params), instructions(instructions), register_file_size(register_file_size)
+      {}
 
   VMFunction() {}
 
@@ -174,10 +170,9 @@ struct VMFrame {
     // map from virtual register to memory slot
     std::unordered_map<VirtualRegisterNum, SlotNum> register_file_map;
 
-    VMFrame(size_t pc, size_t func_index, size_t args, const Instruction* code, size_t register_stack_start,
-            std::unordered_map<size_t, size_t> register_file_map)
-      : pc(pc), func_index(func_index), args(args), code(code), register_stack_start(register_stack_start),
-        register_file_map(register_file_map) {}
+    VMFrame(size_t pc, size_t func_index, size_t args, const Instruction* code, size_t register_stack_start)
+      : pc(pc), func_index(func_index), args(args), code(code), register_stack_start(register_stack_start)
+       {}
 };
 
 struct VirtualMachine {

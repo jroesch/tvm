@@ -373,7 +373,7 @@ std::ostream& operator<<(std::ostream& os, const VMFunction& vm_func) {
 }
 
 void VirtualMachine::PushFrame(size_t arg_count, size_t ret_pc, const VMFunction& vm_func) {
-  auto frame = VMFrame(ret_pc, func_index, arg_count, code, top_stack, vm_func.register_file_map);
+  auto frame = VMFrame(ret_pc, func_index, arg_count, code, top_stack);
   register_stack.resize(top_stack + vm_func.register_file_size);
   top_stack = register_stack.size();
   frames.push_back(frame);
@@ -444,9 +444,8 @@ void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) {
   this->ctxs = ctxs;
 }
 
-size_t VirtualMachine::LookupRegister(size_t r) {
-  auto current_frame = frames.back();
-  return current_frame.register_stack_start + current_frame.register_file_map.at(r);
+inline size_t VirtualMachine::LookupRegister(size_t r) {
+  return frames.back().register_stack_start + r;
 }
 
 void VirtualMachine::WriteRegister(size_t r, Object val) {
