@@ -39,7 +39,7 @@ enum struct Opcode {
 
 struct Instruction {
   struct TensorInfo {
-      int64_t* shape;
+      VirtualRegisterNum shape_register;
       size_t ndim;
       DLDataType dtype;
   };
@@ -126,7 +126,7 @@ struct Instruction {
 Instruction Select(VirtualRegisterNum cond, VirtualRegisterNum op1, VirtualRegisterNum op2, VirtualRegisterNum dst);
 Instruction Ret(VirtualRegisterNum result);
 Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size, const std::vector<VirtualRegisterNum>& args);
-Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype, VirtualRegisterNum dst);
+Instruction AllocTensor(VirtualRegisterNum shape_register, const std::vector<int64_t>& shape, DLDataType dtype, VirtualRegisterNum dst);
 Instruction AllocDatatype(size_t tag, size_t num_fields, const std::vector<VirtualRegisterNum>& fields, VirtualRegisterNum dst);
 Instruction AllocClosure(size_t func_index, size_t num_freevar, const std::vector<VirtualRegisterNum>& free_vars, VirtualRegisterNum dst);
 Instruction GetField(VirtualRegisterNum object, size_t field_index, VirtualRegisterNum dst);

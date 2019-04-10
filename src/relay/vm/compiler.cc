@@ -29,6 +29,7 @@ using TagMap = std::unordered_map<tvm::relay::Constructor, size_t, NodeHash, Nod
 using TagNameMap = std::unordered_map<size_t, tvm::relay::Constructor>;
 using GlobalMap = std::unordered_map<GlobalVar, size_t, NodeHash, NodeEqual>;
 using ConstMap = std::unordered_map<Constant, size_t, NodeHash, NodeEqual>;
+using ConstTensorShapeMap = std::unordered_map<TensorType, std::pair<size_t, NDArray>, NodeHash, NodeEqual>;
 
 struct VMCompilerContext {
   Module module;
@@ -37,6 +38,7 @@ struct VMCompilerContext {
   TagMap tag_map;
   GlobalMap global_map;
   ConstMap const_map;
+  ConstTensorShapeMap const_tensor_shape_map;
   std::vector<LoweredFunc> lowered_funcs;
 };
 
@@ -45,6 +47,8 @@ struct ConstantPool : ExprVisitor {
   std::set<GlobalVar> visited;
   Module module;
   ConstMap const_map;
+  ConstTensorShapeMap const_tensor_shape_map;
+
   size_t index;
 
   ConstantPool(const Module& mod) :
@@ -59,6 +63,13 @@ struct ConstantPool : ExprVisitor {
     }
   }
 
+  void AddConstantTensorShape(TensorType expr, NDArray value) {
+    auto it = this->const_tensor_shape_map.find(expr);
+    if (it == this->const_tensor_shape_map.end()) {
+      this->const_tensor_shape_map.insert({ expr, std::make_pair(index++, value) });
+    }
+  }
+
   void VisitExpr_(const ConstantNode* const_node) {
     auto konst = GetRef<Constant>(const_node);
     auto it = this->const_map.find(konst);
@@ -66,12 +77,56 @@ struct ConstantPool : ExprVisitor {
       this->const_map.insert({ konst, index++ });
     }
   }
+
+  NDArray GetTensorConstant(const TensorTypeNode* ttype) {
+      std::vector<int64_t> shapes;
+      for (auto sh : ttype->shape) {
+        shapes.push_back(Downcast<tvm::Integer>(sh)->value);
+      }
+      int64_t s = shapes.size();
+      DLContext cpu_ctx;
+      cpu_ctx.device_type = kDLCPU;
+      cpu_ctx.device_id = 0;      
+      auto shape_tensor = NDArray::Empty({s}, Type2TVMType(Int(64)), cpu_ctx);
+      int64_t* dims = static_cast<int64_t*>(shape_tensor->data);
+      using ::tvm::ir::IntImm;
+      for (size_t i = 0; i < shapes.size(); ++i) {
+        dims[i] = shapes[i];
+      }
+      return shape_tensor;
+  }
+
+  void VisitExpr_(const CallNode* call_node) {
+    for (auto arg : call_node->args) {
+        this->VisitExpr(arg);
+    }
+
+    Expr op = call_node->op;
+    if (auto func_node = op.as<FunctionNode>()) {
+      auto ret_type = call_node->checked_type();
+      if (const TensorTypeNode* ttype = ret_type.as<TensorTypeNode>()) {
+        auto shape = GetTensorConstant(ttype);
+        auto tensor_type = GetRef<TensorType>(ttype);
+        AddConstantTensorShape(tensor_type, shape);
+      } else if (const TupleTypeNode* ttype = ret_type.as<TupleTypeNode>()) {
+        for (size_t i = 0; i < ttype->fields.size(); ++i) {
+          auto f = ttype->fields[i];
+          auto f_type = f.as<TensorTypeNode>();
+          auto shape = GetTensorConstant(f_type);
+          auto tensor_type = GetRef<TensorType>(f_type);
+          AddConstantTensorShape(tensor_type, shape);
+        }
+      }
+    }
+  }
 };
 
-ConstMap LayoutConstantPool(const Module& module) {
+std::tuple<ConstMap, ConstTensorShapeMap> LayoutConstantPool(const Module& module) {
   auto cp = ConstantPool(module);
-  cp.VisitExpr(module->entry_func);
-  return cp.const_map;
+  for (auto& func : module->functions) {
+    cp.VisitExpr(func.first);
+  }
+  return std::make_tuple(cp.const_map, cp.const_tensor_shape_map);
 }
 
 
@@ -242,7 +297,16 @@ struct VMCompiler : ExprFunctor<void(const Expr& expr)> {
       }
       DataType dtype = ttype->dtype;
       TVMType dltype = Type2TVMType(dtype);
-      return AllocTensor(shapes, dltype, NewRegister());
+
+      auto tensor_type = GetRef<TensorType>(ttype);
+      auto it = this->context->const_tensor_shape_map.find(tensor_type);
+      if (it == this->context->const_tensor_shape_map.end()) {
+        RELAY_LOG(INFO) << "Can not find constant shape for " << tensor_type;
+      } else {
+        Emit(LoadConst(it->second.first, NewRegister()));
+      }
+
+      return AllocTensor(last_register, shapes, dltype, NewRegister());
     }
 
     void EmitInvokePrimitive(const Function& func, std::vector<size_t> args_registers, const Type& ret_type) {
@@ -492,15 +556,22 @@ VirtualMachine CompileModule(const Module& mod_ref) {
   PopulateGlobalMap(&context.global_map, mod);
 
   // Next we populate constant map.
-  context.const_map = LayoutConstantPool(mod);
+  
+  auto constant_analysis_result = LayoutConstantPool(mod);
+  context.const_map = std::get<0>(constant_analysis_result);
+  context.const_tensor_shape_map = std::get<1>(constant_analysis_result);
 
   // Next we get ready by allocating space for
   // the global state.
   vm.functions.resize(mod->functions.size());
-  vm.constants.resize(context.const_map.size());
+  vm.constants.resize(context.const_map.size() + context.const_tensor_shape_map.size());
 
   for (auto pair : context.const_map) {
     vm.constants[pair.second] = TensorObj(pair.first->data);
+  }
+
+  for (auto pair : context.const_tensor_shape_map) {
+    vm.constants[pair.second.first] = TensorObj(pair.second.second);
   }
 
   for (auto named_func : mod->functions) {

@@ -124,16 +124,12 @@ Instruction InvokePacked(size_t packed_index, size_t arity, size_t output_size, 
   return instr;
 }
 
-Instruction AllocTensor(const std::vector<int64_t>& shape, DLDataType dtype, size_t dst) {
+Instruction AllocTensor(VirtualRegisterNum shape_register, const std::vector<int64_t>& shape, DLDataType dtype, size_t dst) {
   Instruction instr;
   instr.op = Opcode::AllocTensor;
   instr.dst = dst;
-  instr.tensor_info.shape = new int64_t[shape.size()];
+  instr.tensor_info.shape_register = shape_register;
   instr.tensor_info.ndim = shape.size();
-  std::memcpy(
-      reinterpret_cast<void*>(instr.tensor_info.shape),
-      reinterpret_cast<const void*>(shape.data()),
-      shape.size() * sizeof(int64_t));
   instr.tensor_info.dtype = dtype;
   return instr;
 }
@@ -269,12 +265,7 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     case Opcode::AllocTensor: {
       os << "alloc_tensor ";
       os << instr.dst << " ";
-      os << "(";
-
-      for (size_t i = 0; i < instr.tensor_info.ndim; i++) {
-        os << instr.tensor_info.shape[i] << ", ";
-      }
-      os << ") ";
+      os << instr.tensor_info.shape_register << " ";
       os << TVMType2Type(instr.tensor_info.dtype);
       break;
     }
@@ -547,9 +538,17 @@ void VirtualMachine::Run() {
         goto main_loop;
       }
       case Opcode::AllocTensor: {
+        DLContext cpu_ctx;
+        cpu_ctx.device_type = kDLCPU;
+        cpu_ctx.device_id = 0;
+
+        auto shape_tensor_obj = ReadRegister(instr.tensor_info.shape_register);
+        NDArray shape_tensor = ToNDArray(shape_tensor_obj).CopyTo(cpu_ctx);
+
+        int64_t* dims = static_cast<int64_t*>(shape_tensor->data);
         const auto& ti = instr.tensor_info;
         auto shape = std::vector<int64_t>(ti.ndim);
-        shape.assign(ti.shape, ti.shape + ti.ndim);
+        shape.assign(dims, dims + ti.ndim);
         auto allocator = MemoryManager::Global()->GetAllocator(ctxs[0]);
         auto data = NDArray::Empty(shape, ti.dtype, ctxs[0], allocator);
         auto obj = TensorObj(data);
