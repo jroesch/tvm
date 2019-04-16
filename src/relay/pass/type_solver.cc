@@ -168,6 +168,15 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
       return ulhs;
     }
 
+    if (ulhs.same_as(Any())) {
+      // TODO: add assert here
+      return urhs;
+    }
+    if (urhs.same_as(Any())) {
+      // TODO: add assert here
+      return ulhs;
+    }
+
     auto left_index0 = ulhs.as<tvm::Variable>();
     auto right_index0 = urhs.as<tvm::IntImm>();
     if (left_index0 && right_index0) {
