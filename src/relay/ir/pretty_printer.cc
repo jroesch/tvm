@@ -663,7 +663,7 @@ class PrettyPrinter :
     if (value.defined()) {
       Doc printed_attr;
       if (value == Any()) {
-        printed_attr << "Any";
+        printed_attr << "?";
       } else if (meta) {
         printed_attr = meta_.GetMetaNode(value);
       } else {

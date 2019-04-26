@@ -214,18 +214,23 @@ bool ConcatenateRel(const Array<Type>& types,
   // Calculate shape
   std::vector<IndexExpr>&& oshape = AsVector(first->shape);
   IndexExpr &concat_dim = oshape[axis];
-  for (size_t i = 1; i < tensor_tuple->fields.size(); i++) {
-    const auto& e = Downcast<TensorType>(tensor_tuple->fields[i]);
-    // Any where we accumulate we need to treat as lattic
-    // with top element as Any
-    if (Any().same_as(e->shape[axis])) {
-      concat_dim = Any();
-      break;
-    } else {
-      concat_dim += e->shape[axis];
-    }
+  bool has_any = false;
+  if (concat_dim.same_as(Any())) {
+    has_any = true;
   }
-  reporter->Assign(types[1], TensorTypeNode::make(oshape, dtype));
+  for (int i = 1; i < static_cast<int>(tensor_tuple->fields.size()); ++i) {
+    const auto& e = Downcast<TensorType>(tensor_tuple->fields[i]);
+    if (e->shape[axis].same_as(Any())) {
+      has_any = true;
+      break;
+    }
+    concat_dim += e->shape[axis];
+  }
+  if (has_any) {
+    concat_dim = Any();
+  }
+  auto rtype = TensorTypeNode::make(oshape, dtype);
+  reporter->Assign(types[1], rtype);
   return true;
 }
 
@@ -524,6 +529,8 @@ bool ReshapeRel(const Array<Type>& types,
     newshape = param->newshape;
   }
   Array<IndexExpr> oshape;
+  std::unordered_set<size_t> used_input_dims;
+  std::unordered_set<size_t> used_output_dims;
   size_t src_idx = 0;
   int infer_idx = -1;
 
@@ -536,6 +543,8 @@ bool ReshapeRel(const Array<Type>& types,
     } else if (svalue == 0) {
       // keep same
       CHECK_LT(src_idx, data_shape.size());
+      used_input_dims.insert(src_idx);
+      used_output_dims.insert(oshape.size());
       oshape.push_back(data_shape[src_idx++]);
     } else if (svalue == -1) {
       // inference based on rest
@@ -547,31 +556,49 @@ bool ReshapeRel(const Array<Type>& types,
     } else if (svalue == -2) {
       // copy all remaining dims from source
       while (src_idx < data_shape.size()) {
+        used_input_dims.insert(src_idx);
+        used_output_dims.insert(oshape.size());
         oshape.push_back(data_shape[src_idx++]);
       }
     } else if (svalue == -3) {
       // merge two dims from source
       CHECK_LT(src_idx + 1, data_shape.size());
+      used_input_dims.insert(src_idx);
       IndexExpr d1 = data_shape[src_idx++];
+      used_input_dims.insert(src_idx);
       IndexExpr d2 = data_shape[src_idx++];
+      used_output_dims.insert(oshape.size());
       oshape.push_back(d1 * d2);
     } else if (svalue == -4) {
       // split the source dim s into two dims
       // read the left dim and then the right dim (either can be -1)
       CHECK_LT(i + 2, newshape.size());
       CHECK_LT(src_idx, data_shape.size());
+      used_input_dims.insert(src_idx);
       IndexExpr d0 = data_shape[src_idx++];
       Integer d1 = newshape[++i];
       Integer d2 = newshape[++i];
       if (d1->value == -1) {
         CHECK(d2->value != -1)
             << "Split dims cannot both be -1.";
-        oshape.push_back(d0 / d2);
+        used_output_dims.insert(oshape.size());
+        if (d0.same_as(Any())) {
+          oshape.push_back(Any());
+        } else {
+          oshape.push_back(d0 / d2);
+        }
+        used_output_dims.insert(oshape.size());
         oshape.push_back(d2);
       } else {
+        used_output_dims.insert(oshape.size());
         oshape.push_back(d1);
+        used_output_dims.insert(oshape.size());
         if (d2->value == -1) {
-          oshape.push_back(d0 / d1);
+          if (d0.same_as(Any())) {
+            oshape.push_back(Any());
+          } else {
+            oshape.push_back(d0 / d1);
+          }
         } else {
           oshape.push_back(d2);
         }
@@ -580,9 +607,30 @@ bool ReshapeRel(const Array<Type>& types,
   }
 
   if (infer_idx >= 0) {
-    IndexExpr new_size = arith::ComputeReduce<tvm::ir::Mul>(oshape, 1);
-    IndexExpr old_size = arith::ComputeReduce<tvm::ir::Mul>(data_shape, 1);
-    oshape.Set(infer_idx, old_size / new_size);
+    IndexExpr infer_dim = 1;
+    for (size_t i = 0; i < data_shape.size(); ++i) {
+      if (used_input_dims.count(i) != 0) {
+        continue;
+      }
+      if (data_shape[i].same_as(Any())) {
+        infer_dim = Any();
+        break;
+      }
+      infer_dim *= data_shape[i];
+    }
+    if (!infer_dim.same_as(Any())) {
+      for (size_t i = 0; i < oshape.size(); ++i) {
+        if (used_output_dims.count(i) != 0) {
+          continue;
+        }
+        if (oshape[i].same_as(Any())) {
+          infer_dim = Any();
+          break;
+        }
+        infer_dim /= oshape[i];
+      }
+    }
+    oshape.Set(infer_idx, infer_dim);
   }
 
   if (param->reverse) {
@@ -1003,8 +1051,12 @@ and type as the input array.
 // arange operator
 TVM_REGISTER_NODE_TYPE(ArangeAttrs);
 
-int32_t ToScalar(const runtime::NDArray& array) {
-  return reinterpret_cast<int32_t*>(array->data)[0];
+double ToScalar(const runtime::NDArray& array) {
+  if (array->dtype.code == kDLInt || array->dtype.code == kDLUInt) {
+    return reinterpret_cast<int32_t*>(array->data)[0];
+  } else {
+    return reinterpret_cast<float*>(array->data)[0];
+  }
 }
 
 bool ArangeRel(const Array<Type>& types,
@@ -1022,10 +1074,10 @@ bool ArangeRel(const Array<Type>& types,
   if ((cstart = param->start.as<ConstantNode>()) &&
       (cstop = param->stop.as<ConstantNode>()) &&
       (cstep = param->step.as<ConstantNode>())) {
-    int32_t start = ToScalar(cstart->data);
-    int32_t stop = ToScalar(cstop->data);
-    int32_t step = ToScalar(cstep->data);
-    int32_t num_elem = std::ceil(stop - start) / step;
+    double start = ToScalar(cstart->data);
+    double stop = ToScalar(cstop->data);
+    double step = ToScalar(cstep->data);
+    int32_t num_elem = static_cast<int32_t>(std::ceil((stop - start) / step));
     CHECK_GT(num_elem, 0)
         << "Invalid arange attributes (start, stop, step): " << param->start
         << ", " << param->stop << ", " << param->step;

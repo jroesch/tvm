@@ -159,6 +159,16 @@ Type ConcreteBroadcast(const TensorType& t1,
       oshape.push_back(s2);
     } else if (EqualConstInt(s2, 1)) {
       oshape.push_back(s1);
+    } else if (s1.same_as(Any())) {
+      LOG(WARNING) << "Assert any == 1 || any == " << s2 << " in broadcast of "
+                   << t1 << " and " << t2;
+      // TODO: Assert Any!!! s1 == 1 || s1 == s2
+      oshape.push_back(s2);
+    } else if (s2.same_as(Any())) {
+      LOG(WARNING) << "Assert any == 1 || any == " << s1 << " in broadcast of "
+                   << t1 << " and " << t2;
+      // TODO: Assert Any!!! s2 == 1 || s2 == s1
+      oshape.push_back(s1);
     } else {
       RELAY_ERROR(
           "Incompatible broadcast type "

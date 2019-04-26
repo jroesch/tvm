@@ -82,6 +82,25 @@ TVM_REGISTER_API("tvm.relay.type_relation.TupleGetItem")
 .set_body_typed<bool(const Array<Type>&, int, const Attrs&, const TypeReporter&)>(
     TupleGetItemRel);
 
+// Necessary deferred relation for MakeTuple
+bool MakeTupleRel(const Array<Type>& types,
+                  int num_inputs,
+                  const Attrs& attrs,
+                  const TypeReporter& reporter) {
+  CHECK_EQ(types.size(), num_inputs + 1);
+  Array<Type> fields;
+  for (int i = 0; i < num_inputs; ++i) {
+    fields.push_back(types[i]);
+  }
+  reporter->Assign(types[num_inputs], TupleTypeNode::make(fields));
+  return true;
+}
+
+TVM_REGISTER_API("tvm.relay.type_relation.MakeTuple")
+.set_body_typed<bool(const Array<Type>&, int, const Attrs&, const TypeReporter&)>(
+    MakeTupleRel);
+
+
 struct ResolvedTypeInfo {
   explicit ResolvedTypeInfo(Type checked_type, Array<Type> type_args)
       : checked_type(checked_type), type_args(type_args) {}
@@ -210,11 +229,19 @@ class TypeInferencer : private ExprFunctor<Type(const Expr&)>,
   }
 
   Type VisitExpr_(const TupleNode* op) final {
+    if (!make_tuple_rel_.defined()) {
+      make_tuple_rel_ = TypeRelationFn(
+        EnvFunc::Get("tvm.relay.type_relation.MakeTuple").node_);
+    }
     Array<Type> types;
     for (Expr field : op->fields) {
       types.push_back(GetType(field));
     }
-    return TupleTypeNode::make(types);
+    Type rtype = IncompleteTypeNode::make(Kind::kType);
+    types.push_back(rtype);
+    solver_.AddConstraint(TypeRelationNode::make(
+        make_tuple_rel_, types, op->fields.size(), {}), GetRef<Tuple>(op));
+    return rtype;
   }
 
   Type VisitExpr_(const TupleGetItemNode* op) final {
