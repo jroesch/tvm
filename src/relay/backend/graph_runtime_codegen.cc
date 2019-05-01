@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -427,7 +427,12 @@ class GraphRuntimeCodegen
         target = targets_[call_dev_name];
       }
     }
-    CCacheKey key = (*pf0)(func, target);
+    Array<Shape> input_shapes;
+    for (auto arg : op->args) {
+      auto ty = arg->checked_type().as<TensorTypeNode>();
+      input_shapes.push_back(ty->shape);
+    }
+    CCacheKey key = (*pf0)(func, input_shapes, target);
     CachedFunc lowerd_func = (*pf1)(compile_engine_, key);
     if (!lowered_funcs_.count(target->target_name)) {
       lowered_funcs_[target->target_name] = {};
