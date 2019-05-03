@@ -88,7 +88,9 @@ class TypeSolver {
    * \param rhs The right operand
    * \param location The location at which the unification problem arose.
    */
-  Type Unify(const Type& lhs, const Type& rhs, const NodeRef& location, bool arg_type=false);
+  Type Unify(const Type& lhs, const Type& rhs, const NodeRef& location);
+
+  Type UnifyArg(const Type& lhs, const Type& rhs, const NodeRef& location);
 
   /*!
    * \brief Report an error at the provided location.

@@ -384,6 +384,8 @@ class TypeReporterNode : public Node {
    *  But it is possible for the solver to resolve src by dst as well.
    */
   TVM_DLL virtual void Assign(const Type& dst, const Type& src) = 0;
+
+  TVM_DLL virtual void AssignArg(const Type& dst, const Type& src) = 0;
   /*!
    * \brief assert shape expression comparison.
    * \note Use assert only if any of the condition input is symbolic.

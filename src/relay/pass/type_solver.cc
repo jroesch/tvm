@@ -87,6 +87,10 @@ class TypeSolver::Reporter : public TypeReporterNode {
     solver_->Unify(dst, src, location);
   }
 
+  void AssignArg(const Type& arg_dst, const Type& src) final {
+    solver_->UnifyArg(arg_dst, src, location);
+  }
+
   bool Assert(const IndexExpr& cond) final {
     if (const uint64_t* pdiff = as_const_uint(cond)) {
       return pdiff[0];
@@ -148,13 +152,11 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
  public:
   explicit Unifier(TypeSolver* solver) : solver_(solver) {}
 
-  Type Unify(const Type& src, const Type& dst, bool arg_type=false) {
+  Type Unify(const Type& dst, const Type& src) {
     // Known limitation
     // - handle shape pattern matching
     TypeNode* lhs = solver_->GetTypeNode(dst);
     TypeNode* rhs = solver_->GetTypeNode(src);
-    lhs->arg_type |= arg_type;
-    rhs->arg_type |= arg_type;
 
     // do occur check so we don't create self-referencing structure
     if (lhs->FindRoot() == rhs->FindRoot()) {
@@ -178,9 +180,38 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
         << "Unable to unify parent types: "
         << lhs->resolved_type << " and " << rhs->resolved_type;
       TypeNode* top = solver_->GetTypeNode(resolved);
-      top->arg_type = arg_type;
       solver_->MergeFromTo(lhs, top);
       solver_->MergeFromTo(rhs, top);
+      return resolved;
+    }
+  }
+
+  Type UnifyArg(const Type& arg_dst, const Type& src) {
+    // Known limitation
+    // - handle shape pattern matching
+    TypeNode* lhs = solver_->GetTypeNode(arg_dst);
+    TypeNode* rhs = solver_->GetTypeNode(src);
+    lhs->arg_type = true;
+
+    // do occur check so we don't create self-referencing structure
+    if (lhs->FindRoot() == rhs->FindRoot()) {
+      return lhs->resolved_type;
+    }
+    if (lhs->resolved_type.as<IncompleteTypeNode>()) {
+      CHECK(!CheckOccurs(lhs, rhs->resolved_type))
+        << "Incomplete type " << lhs->resolved_type << " occurs in "
+        << rhs->resolved_type << ", cannot unify";
+      lhs->resolved_type = rhs->resolved_type;
+      return lhs->resolved_type;
+    } else {
+      CHECK(!rhs->resolved_type.as<IncompleteTypeNode>());
+      Type resolved = this->VisitType(lhs->resolved_type, rhs->resolved_type);
+      CHECK(resolved.defined())
+        << "Unable to unify parent types: "
+        << lhs->resolved_type << " and " << rhs->resolved_type;
+      TypeNode* top = solver_->GetTypeNode(resolved);
+      top->arg_type = true;
+      solver_->MergeFromTo(lhs, top);
       return resolved;
     }
   }
@@ -551,19 +582,31 @@ void TypeSolver::MergeFromTo(TypeNode* src, TypeNode* dst) {
 }
 
 // Add equality constraint
-Type TypeSolver::Unify(const Type& dst, const Type& src, const NodeRef& node, bool arg_type) {
+Type TypeSolver::Unify(const Type& dst, const Type& src, const NodeRef& node) {
   // NB(@jroesch): we should probably pass location into the unifier to do better
   // error reporting as well.
-  // LOG(INFO) << "unify: " << dst << " <- " << src;
   Unifier unifier(this);
-  Type ret = unifier.Unify(dst, src, arg_type);
-  // LOG(INFO) << "resolved: " << ret;
+  Type ret = unifier.Unify(dst, src);
   if (!ret.defined()) {
     LOG(FATAL) << "failed to unify " << dst << " <-> " << src << " at "
                << AsText(node, false);
   }
   if (LiftedAny(ret, dst)) {
     std::cout << "Lifted to any: " << ret << " <- " << dst << "\n";
+    lifted_any_ = true;
+  }
+  return ret;
+}
+
+Type TypeSolver::UnifyArg(const Type& arg_dst, const Type& src, const NodeRef& node) {
+  Unifier unifier(this);
+  Type ret = unifier.UnifyArg(arg_dst, src);
+  if (!ret.defined()) {
+    LOG(FATAL) << "failed to unify arg " << arg_dst << " <-> " << src << " at "
+               << AsText(node, false);
+  }
+  if (LiftedAny(ret, arg_dst)) {
+    std::cout << "Lifted to any: " << ret << " <- " << arg_dst << "\n";
     lifted_any_ = true;
   }
   return ret;

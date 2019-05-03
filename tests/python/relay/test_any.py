@@ -67,7 +67,8 @@ def test_dyn_concat():
     import pdb; pdb.set_trace()
     """
     i = relay.var("i", shape=(), dtype='int32')
-    st = relay.var("st", type_annotation=relay.TypeOf(init))
+    # st = relay.var("st", type_annotation=relay.TypeOf(init))
+    st = relay.var("st", shape=(1,), dtype='float32')
     update = _body(i, st)
     dim = relay.take(relay.op.shape_of(iter), indices=i, axis=0)
     def _cond(i, st):
