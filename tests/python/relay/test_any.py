@@ -60,6 +60,7 @@ def test_dyn_concat():
         i = relay.op.reshape(i.astype('float32'), (1,))
         return relay.op.concatenate([st, i], axis=0)
 
+    """
     res = foreach(iter, init, _body, state_type=relay.TensorType([relay.Any()]))
     tres = relay.ir_pass.infer_type(res)
     print("type check")
@@ -88,7 +89,6 @@ def test_dyn_concat():
     ret = relay.Call(wl, [relay.const(0, 'int32'), init])
     mod[mod.entry_func] = relay.Function([], ret)
     print(relay.ir_pass.infer_type(mod[mod.entry_func], mod=mod))
-    """"
 
     ex = relay.create_executor("debug", mod=mod, ctx=tvm.cpu(), target="llvm")
     result = ex.evaluate(mod.entry_func)()
