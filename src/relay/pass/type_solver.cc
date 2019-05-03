@@ -30,6 +30,54 @@
 namespace tvm {
 namespace relay {
 
+bool HasAny(const Type& ty) {
+  if (ty.as<IncompleteTypeNode>()) {
+    return false;
+  }
+  if (auto tty = ty.as<TensorTypeNode>()) {
+    for (auto dim : tty->shape) {
+      if (dim.same_as(Any())) {
+        return true;
+      }
+    }
+    return false;
+  }
+  auto tuple_ty = ty.as<TupleTypeNode>();
+  CHECK(tuple_ty);
+  for (auto field : tuple_ty->fields) {
+    if (HasAny(field)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool LiftedAny(const Type& dst, const Type& src) {
+  if (src.as<IncompleteTypeNode>()) {
+    return HasAny(dst);
+  }
+  if (auto src_ty = src.as<TensorTypeNode>()) {
+    auto dst_ty = dst.as<TensorTypeNode>();
+    CHECK(dst_ty);
+    for (size_t i = 0; i < src_ty->shape.size(); ++i) {
+      if (dst_ty->shape[i].same_as(Any()) && !src_ty->shape[i].same_as(Any())) {
+        return true;
+      }
+    }
+    return false;
+  }
+  auto src_ty = src.as<TupleTypeNode>();
+  auto dst_ty = dst.as<TupleTypeNode>();
+  CHECK(src_ty);
+  CHECK(dst_ty);
+  for (size_t i = 0; i < src_ty->fields.size(); ++i) {
+    if (LiftedAny(dst_ty->fields[i], src_ty->fields[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
 class TypeSolver::Reporter : public TypeReporterNode {
  public:
   explicit Reporter(TypeSolver* solver)
@@ -99,8 +147,6 @@ class TypeSolver::OccursChecker : public TypeVisitor {
 class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
  public:
   explicit Unifier(TypeSolver* solver) : solver_(solver) {}
-
-  bool lifted_any() const { return lifted_any_; }
 
   Type Unify(const Type& src, const Type& dst, bool arg_type=false) {
     // Known limitation
@@ -178,7 +224,6 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
       return ulhs;
     }
     if (ulhs.same_as(Any()) || urhs.same_as(Any())) {
-      lifted_any_ = true;
       return Any();
     }
 
@@ -233,7 +278,6 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
         CHECK(tn1->arg_type || tn2->arg_type)
             << "Cannot resolve " << tt1 << " and " << tt2;
         shape.push_back(Any());
-        lifted_any_ = true;
       }
     }
 
@@ -320,7 +364,6 @@ class TypeSolver::Unifier : public TypeFunctor<Type(const Type&, const Type&)> {
 
  private:
   TypeSolver* solver_;
-  bool lifted_any_{false};
 };
 
 class TypeSolver::Resolver : public TypeMutator {
@@ -511,13 +554,15 @@ void TypeSolver::MergeFromTo(TypeNode* src, TypeNode* dst) {
 Type TypeSolver::Unify(const Type& dst, const Type& src, const NodeRef& node, bool arg_type) {
   // NB(@jroesch): we should probably pass location into the unifier to do better
   // error reporting as well.
+  // LOG(INFO) << "unify: " << dst << " <- " << src;
   Unifier unifier(this);
   Type ret = unifier.Unify(dst, src, arg_type);
+  // LOG(INFO) << "resolved: " << ret;
   if (!ret.defined()) {
     LOG(FATAL) << "failed to unify " << dst << " <-> " << src << " at "
                << AsText(node, false);
   }
-  if (unifier.lifted_any()) {
+  if (LiftedAny(ret, dst)) {
     std::cout << "Lifted to any: " << ret << " <- " << dst << "\n";
     lifted_any_ = true;
   }
