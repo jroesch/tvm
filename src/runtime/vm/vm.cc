@@ -529,7 +529,8 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     }
     case Opcode::AllocTensor: {
       os << "alloc_tensor $" << instr.dst << " $"
-         << instr.alloc_tensor.storage << " ["
+         << instr.alloc_tensor.storage << " $"
+         << instr.alloc_tensor.offset << " ["
          << StrJoin<int64_t>(instr.alloc_tensor.shape, 0,
                              instr.alloc_tensor.ndim)
          << "] ";
@@ -539,6 +540,7 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     case Opcode::AllocTensorReg: {
       os << "alloc_tensor_reg $" << instr.dst << " $"
          << instr.alloc_tensor_reg.storage << " $"
+         << instr.alloc_tensor_reg.offset << " $"
          << instr.alloc_tensor_reg.shape_register << " ";
       DLDatatypePrint(os, instr.alloc_tensor_reg.dtype);
       break;
@@ -973,8 +975,9 @@ void VirtualMachine::RunLoop() {
         }
 
         auto storage_obj = ReadRegister(instr.alloc_tensor.storage);
+        auto offset = LoadScalarInt(instr.alloc_tensor.offset);
         auto storage = Downcast<Storage>(storage_obj);
-        auto obj = storage->AllocNDArray(0, shape, instr.alloc_tensor.dtype);
+        auto obj = storage->AllocNDArray(offset, shape, instr.alloc_tensor.dtype);
 
         WriteRegister(instr.dst, obj);
         pc_++;
@@ -997,7 +1000,8 @@ void VirtualMachine::RunLoop() {
 
         auto storage_obj = ReadRegister(instr.alloc_tensor_reg.storage);
         auto storage = Downcast<Storage>(storage_obj);
-        auto obj = storage->AllocNDArray(0, shape, instr.alloc_tensor_reg.dtype);
+        auto offset = LoadScalarInt(instr.alloc_tensor.offset);
+        auto obj = storage->AllocNDArray(offset, shape, instr.alloc_tensor_reg.dtype);
 
         WriteRegister(instr.dst, obj);
         pc_++;
