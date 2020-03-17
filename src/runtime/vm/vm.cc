@@ -312,12 +312,14 @@ Instruction Instruction::InvokePacked(Index packed_index,
 
 Instruction Instruction::AllocTensor(
   RegName storage,
+  RegName offset,
   const std::vector<int64_t>& shape,
   DLDataType dtype, Index dst) {
   Instruction instr;
   instr.op = Opcode::AllocTensor;
   instr.dst = dst;
   instr.alloc_tensor.storage = storage;
+  instr.alloc_tensor.offset = offset;
   instr.alloc_tensor.ndim = shape.size();
   instr.alloc_tensor.shape = new int64_t[shape.size()];
   for (size_t i = 0; i < shape.size(); ++i) {
@@ -329,12 +331,14 @@ Instruction Instruction::AllocTensor(
 
 Instruction Instruction::AllocTensorReg(
   RegName storage,
+  RegName offset,
   RegName shape_register,
   DLDataType dtype, Index dst) {
   Instruction instr;
   instr.op = Opcode::AllocTensorReg;
   instr.dst = dst;
   instr.alloc_tensor_reg.storage = storage;
+  instr.alloc_tensor_reg.offset = offset;
   instr.alloc_tensor_reg.shape_register = shape_register;
   instr.alloc_tensor_reg.dtype = dtype;
   return instr;

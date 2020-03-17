@@ -54,8 +54,14 @@ Pass InlinePrimitives();
 
 Pass ManifestAlloc(Target target_host) {
   auto f = tvm::runtime::Registry::Get("relay.transform.ManifestAlloc");
-  CHECK(f != nullptr) << "could not load memory allocation pass";
+  CHECK(f != nullptr) << "unable to load allocation manifestation pass";
   return (*f)(target_host);
+}
+
+Pass MemoryPlan() {
+  auto f = tvm::runtime::Registry::Get("relay.transform.MemoryPlan");
+  CHECK(f != nullptr) << "unable to load the memory planning pass";
+  return (*f)();
 }
 
 }  // namespace transform
@@ -529,7 +535,7 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
           EmitInvokeTVMOp(Downcast<Function>(args[0]), args[1], args[2]);
       }).Match("memory.alloc_tensor",
         [this](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
-          CHECK_EQ(args.size(), 2);
+          CHECK_EQ(args.size(), 3);
 
           // Get the attributes.
           auto alloc_attrs = attrs.as<AllocTensorAttrs>();
@@ -541,8 +547,11 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
           this->VisitExpr(args[0]);
           auto storage_register = last_register_;
 
+          this->VisitExpr(args[1]);
+          auto offset_register = last_register_;
+
           // If the shape is constant then we will emit a static tensor allocation instruction.
-          auto const_shape = args[1].as<ConstantNode>();
+          auto const_shape = args[2].as<ConstantNode>();
 
           if (const_shape) {
             NDArray shape = const_shape->data;
@@ -558,12 +567,13 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
             }
 
             // Add context field.
-            Emit(Instruction::AllocTensor(storage_register, raw_shape, dtype, NewRegister()));
+            Emit(Instruction::AllocTensor(storage_register, offset_register, raw_shape, dtype, NewRegister()));
           } else {
             this->VisitExpr(args[1]);
             auto shape_register = last_register_;
             Emit(Instruction::AllocTensorReg(
               storage_register,
+              offset_register,
               shape_register,
               dtype,
               NewRegister()));
@@ -940,6 +950,8 @@ IRModule VMCompiler::OptimizeModule(const IRModule& mod, const TargetsMap& targe
 
   // Manifest the allocations needed for the shape functions.
   pass_seqs.push_back(transform::ManifestAlloc(this->target_host_));
+  // Perform memory planning in order to coalesce/reduce allocations.
+  pass_seqs.push_back(transform::MemoryPlan());
 
   transform::Sequential seq(pass_seqs);
   transform::PassContext pass_ctx = PassContext::Current();
