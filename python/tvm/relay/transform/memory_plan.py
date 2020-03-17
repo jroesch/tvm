@@ -20,7 +20,7 @@ A pass for manifesting explicit memory allocations.
 """
 import attr
 import numpy as np
-from typing import Optional
+from typing import Optional, Dict
 
 from ..expr_functor import ExprMutator
 from ..scope_builder import ScopeBuilder
@@ -40,8 +40,9 @@ class Region:
     size: expr.Expr
     alignment: Optional[expr.Expr]
     dtype: Optional[str]
+    offsets: Dict[expr.Var, expr.Expr] = {}
 
-    def grow(self, size: expr.Expr, alignment: expr.Expr, dtype: str) -> None:
+    def grow(self, old_storage: expr.Var, size: expr.Expr, alignment: expr.Expr, dtype: str) -> None:
         if self.dtype:
             assert self.dtype == dtype, "must have matching dtypes in a region"
         else:
@@ -52,10 +53,10 @@ class Region:
         else:
             self.alignment = alignment
 
-        self.size = self.size + size
+        # Record the offset at which we allocate the storage.
+        self.offsets[old_storage] = self.size
 
-    def next_offset(self) -> None:
-        return self.size + expr.const(1, dtype="int64")
+        self.size = self.size + size
 
     def to_expr(self) -> expr.Expr:
         return op.memory.alloc_storage(self.size, self.alignment, self.dtype)
@@ -136,14 +137,14 @@ class StorageCoalesce(ExprMutator):
         size, alignment = call.args
         dtype = call.attrs.dtype
         region = self.current_region()
-        region.grow(size, alignment, dtype)
+        region.grow(lhs, size, alignment, dtype)
         return lhs, region.var
 
     def process_alloc_tensor(self, lhs, call):
         region = self.current_region()
-        offset = region.next_offset()
-        _storage, old_offset, shape = call.args
-        assert np.asscalar(old_offset.data.asnumpy()) == 0, "no offsets should yet be allocated"
+        storage, old_offset, shape = call.args
+        offset = region.offsets[storage]
+        assert old_offset.data.asnumpy().item() == 0, "no offsets should yet be allocated"
         return lhs, expr.Call(call.op, [region.var, offset, shape], call.attrs, call.type_args)
 
 
@@ -181,6 +182,7 @@ class MemoryPlan:
         func = eval_const(mod, func)
         ea = MemoryPlanPass()
         func = ea.visit(func)
+        print(func)
         return func
 
 

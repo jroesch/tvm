@@ -44,7 +44,7 @@ def check_memory_plan(func, check_fn):
     py_res = check_fn(*[arg.asnumpy() for arg in args])
 
     # First check that the two VM results agree.
-    np.testing_assert_allclose(
+    np.testing.assert_allclose(
         no_plan_result.asnumpy(),
         plan_result.asnumpy())
 
@@ -91,15 +91,18 @@ def test_add_sub():
     func = relay.Function([x, y], z)
     check_memory_plan(func, check_add_sub)
 
+def check_no_fuse(x, y, w):
+    z = x + y
+    return np.matmul(z, np.transpose(w))
+
 def test_no_fuse():
-    x = relay.var('x', shape=(10,))
-    y = relay.var('y', shape=(10,))
-    w = relay.var('w', shape=(10, 10))
-    z = x + x
-    z = z - y
+    x = relay.var('x', shape=(5, 1))
+    y = relay.var('y', shape=(5, 1))
+    w = relay.var('w', shape=(5, 1))
+    z = x + y
     out = relay.op.nn.dense(z, w)
     func = relay.Function([x, y, w], out)
-    check_memory_plan(func, check_add_sub)
+    check_memory_plan(func, check_no_fuse)
 
 if __name__ == "__main__":
     test_tyck_alloc_tensor()
