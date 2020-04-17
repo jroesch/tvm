@@ -147,7 +147,7 @@ class StorageCoalesce(ExprMutator):
     def visit_function(self, fn):
         """Transform the function body to use region allocation scheme."""
         func = fn
-        if func.attrs and int(func.attrs.Primitive) == 1:
+        if func.attrs and getattr(func.attrs, "Primitive", 0) == 1:
             return super().visit_function(func)
         else:
             self.enter_scope()
@@ -214,6 +214,7 @@ class MemoryPlan:
     def transform_function(self, func, mod, _):
         mod.import_from_std("core.rly")
         sc = StorageCoalesce()
+        print(func)
         func = sc.visit(func)
         return func
 
