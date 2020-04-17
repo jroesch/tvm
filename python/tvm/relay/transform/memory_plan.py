@@ -26,7 +26,7 @@ from .. import op, expr
 from ..function import Function
 from ... import register_func, ir, cpu
 from ..._ffi.runtime_ctypes import TVMContext
-from . import FoldConstant, InferType, function_pass
+from . import function_pass
 
 
 def is_primitive(call):
@@ -136,6 +136,7 @@ class StorageCoalesce(ExprMutator):
         self.regions.append(region)
 
     def exit_scope(self, body: expr.Expr) -> expr.Expr:
+        """When leaving a scope build a region allocation for the scope."""
         region = self.regions.pop()
         if len(region.offsets) == 0:
             return body
@@ -154,7 +155,7 @@ class StorageCoalesce(ExprMutator):
         """Transform the function body to use region allocation scheme."""
         func = fn
         if func.attrs and getattr(func.attrs, "Primitive", 0) == 1:
-            return super().visit_function(func)
+            return func
         else:
             self.enter_scope()
             body = self.visit(func.body)
@@ -191,7 +192,9 @@ class StorageCoalesce(ExprMutator):
             else:
                 return lhs, rhs
 
-        return iterative_let(let, _each_binding, mk_let)
+        result = iterative_let(let, _each_binding, mk_let)
+        assert result
+        return result
 
     def process_alloc_storage(self, lhs, call):
         size, alignment = call.args
@@ -210,7 +213,7 @@ class StorageCoalesce(ExprMutator):
         ), "no offsets should yet be allocated"
         return (
             lhs,
-            expr.Call(call.op, [region.var, offset, shape], call.attrs, call.type_args),
+            expr.Call(call.op, [region.var, offset, shape], call.attrs),
         )
 
 @function_pass(opt_level=0)
@@ -220,8 +223,9 @@ class MemoryPlan:
     def transform_function(self, func, mod, _):
         mod.import_from_std("core.rly")
         sc = StorageCoalesce()
+        before = func
         func = sc.visit(func)
-        return func
+        return before
 
 
 register_func("relay.transform.MemoryPlan", MemoryPlan)
