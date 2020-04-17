@@ -102,7 +102,7 @@ TVM_REGISTER_GLOBAL("relay.op.memory._make.alloc_tensor")
             attrs->const_shape = Downcast<Constant>(shape);
           }
           static const Op& op = Op::Get("memory.alloc_tensor");
-          return Call(op, {storage, shape}, Attrs(attrs), {});
+          return Call(op, {storage, offset, shape}, Attrs(attrs), {});
         });
 
 std::vector<int64_t> FromConstShape(Constant konst) {

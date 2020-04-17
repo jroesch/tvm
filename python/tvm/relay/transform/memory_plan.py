@@ -24,7 +24,8 @@ import attr
 from ..expr_functor import ExprMutator
 from .. import op, expr
 from ..function import Function
-from ... import register_func, ir
+from ... import register_func, ir, cpu
+from ..._ffi.runtime_ctypes import TVMContext
 from . import FoldConstant, InferType, function_pass
 
 
@@ -49,11 +50,13 @@ class Region:
     size: expr.Expr
     alignment: Optional[expr.Expr]
     dtype: Optional[str]
+    ctx: TVMContext
     offsets: Dict[expr.Var, expr.Expr] = {}
 
     def grow(
             self, old_storage: expr.Var,
             size: expr.Expr, alignment: expr.Expr,
+            ctx: TVMContext,
             dtype: str) -> None:
         """Grow the region by a given allocation as well as track the old storage
            for later rewriting the program to use the allocated region.
@@ -70,13 +73,23 @@ class Region:
         else:
             self.alignment = alignment
 
+        if self.ctx:
+            assert (self.ctx.device_type == ctx.device_type and
+                    self.ctx.device_id == ctx.device_id), "must have matching context"
+        else:
+            assert ctx
+            self.ctx = ctx
+
         # Record the offset at which we allocate the storage.
         self.offsets[old_storage] = self.size
 
         self.size = self.size + size
 
     def to_expr(self) -> expr.Expr:
-        return op.memory.alloc_storage(self.size, self.alignment, self.dtype)
+        if self.ctx is None:
+            self.ctx = cpu(0)
+
+        return op.memory.alloc_storage(self.size, self.alignment, self.ctx, self.dtype)
 
 
 def iterative_let(let, each_binding, kont):
@@ -116,14 +129,17 @@ class StorageCoalesce(ExprMutator):
     def enter_scope(self):
         zero = expr.const(0, dtype="int64")
         region_var = expr.var(f"region{len(self.regions)}")
-        region = Region(region_var, zero, None, None)
+        region = Region(region_var, zero, None, None, None)
         self.regions.append(region)
 
     def exit_scope(self, body: expr.Expr) -> expr.Expr:
         region = self.regions.pop()
-        storage_expr = region.to_expr()
-        assert storage_expr, "can not be None"
-        return expr.Let(region.var, storage_expr, body)
+        if len(region.offsets) == 0:
+            return body
+        else:
+            storage_expr = region.to_expr()
+            assert storage_expr, "can not be None"
+            return expr.Let(region.var, storage_expr, body)
 
     def current_region(self) -> Region:
         return self.regions[-1]
@@ -174,8 +190,9 @@ class StorageCoalesce(ExprMutator):
     def process_alloc_storage(self, lhs, call):
         size, alignment = call.args
         dtype = call.attrs.dtype
+        ctx = TVMContext(call.attrs.device_type, call.attrs.device_id)
         region = self.current_region()
-        region.grow(lhs, size, alignment, dtype)
+        region.grow(lhs, size, alignment, ctx, dtype)
         return lhs, region.var
 
     def process_alloc_tensor(self, lhs, call):
@@ -190,14 +207,6 @@ class StorageCoalesce(ExprMutator):
             expr.Call(call.op, [region.var, offset, shape], call.attrs, call.type_args),
         )
 
-
-def eval_const(mod, func):
-    mod["tmp"] = func
-    mod = InferType()(mod)
-    mod = FoldConstant()(mod)
-    return mod["tmp"]
-
-
 @function_pass(opt_level=0)
 class MemoryPlan:
     """An explicit pass wrapper around ManifestAlloc."""
@@ -206,7 +215,6 @@ class MemoryPlan:
         mod.import_from_std("core.rly")
         sc = StorageCoalesce()
         func = sc.visit(func)
-        func = eval_const(mod, func)
         return func
 
 

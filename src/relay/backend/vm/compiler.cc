@@ -885,6 +885,25 @@ void VMCompiler::Lower(IRModule mod,
   }
 }
 
+transform::Sequential MemoryOpt(tvm::Target host_target) {
+  Array<Pass> pass_seqs;
+  // Manifest the allocations.
+  pass_seqs.push_back(transform::ManifestAlloc(host_target));
+  // Compute away possibly introduced constant computation.
+  pass_seqs.push_back(transform::FoldConstant());
+  // Fuse the shape functions.
+  pass_seqs.push_back(transform::FuseOps());
+
+  // Manifest the allocations needed for the shape functions.
+  pass_seqs.push_back(transform::ManifestAlloc(host_target));
+  // Perform memory planning in order to coalesce/reduce allocations.
+  pass_seqs.push_back(transform::MemoryPlan());
+  // Compute away possibly introduced constant computation.
+  pass_seqs.push_back(transform::FoldConstant());
+
+  return transform::Sequential(pass_seqs);
+}
+
 IRModule VMCompiler::OptimizeModule(const IRModule& mod, const TargetsMap& targets) {
   Array<Pass> pass_seqs;
   Array<runtime::String> entry_functions{"main"};
@@ -938,13 +957,6 @@ IRModule VMCompiler::OptimizeModule(const IRModule& mod, const TargetsMap& targe
   pass_seqs.push_back(transform::LambdaLift());
   pass_seqs.push_back(transform::InlinePrimitives());
 
-  // Manifest the allocations.
-  pass_seqs.push_back(transform::ManifestAlloc(this->target_host_));
-  // Compute away possibly introduced constant computation.
-  pass_seqs.push_back(transform::FoldConstant());
-  // Fuse the shape functions.
-  pass_seqs.push_back(transform::FuseOps());
-
   // Inline the functions that are lifted to the module scope. We perform this
   // pass after all other optimization passes but before the memory allocation
   // pass. This is because memory allocation pass will insert `invoke_tvm_op`
@@ -952,10 +964,7 @@ IRModule VMCompiler::OptimizeModule(const IRModule& mod, const TargetsMap& targe
   // external codegen.
   pass_seqs.push_back(transform::Inline());
 
-  // Manifest the allocations needed for the shape functions.
-  pass_seqs.push_back(transform::ManifestAlloc(this->target_host_));
-  // Perform memory planning in order to coalesce/reduce allocations.
-  pass_seqs.push_back(transform::MemoryPlan());
+  pass_seqs.push_back(MemoryOpt(this->target_host_));
 
   transform::Sequential seq(pass_seqs);
   transform::PassContext pass_ctx = PassContext::Current();

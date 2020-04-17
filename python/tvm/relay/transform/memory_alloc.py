@@ -181,7 +181,7 @@ class ManifestAllocPass(ExprMutator):
         outs = []
         sh_ty_storage = zip(out_shapes, out_types, storages)
         for i, (out_shape, out_type, storage) in enumerate(sh_ty_storage):
-            alloc = self.alloc_tensor(
+            alloc = alloc_tensor(
                 storage,
                 out_shape,
                 out_type.dtype,
