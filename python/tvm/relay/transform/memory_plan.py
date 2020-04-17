@@ -97,6 +97,18 @@ def mk_let(bindings, body):
 
 
 class StorageCoalesce(ExprMutator):
+    """
+    A pass for coalescing allocations into region/arena allocations.
+
+    After this pass each allocation comes from the same backing storage,
+    but will never overlap even in time, i.e. the allocations are just
+    packed into a contiguous block of memory.
+
+    A secondary part of memory planning will perform liveness analysis to
+    overlap these in time, i.e when an early tensor dies we will attempt
+    to reuse its slot.
+    """
+
     def __init__(self):
         super().__init__()
         self.regions = []
@@ -116,8 +128,9 @@ class StorageCoalesce(ExprMutator):
     def current_region(self) -> Region:
         return self.regions[-1]
 
-    def visit_function(self, func):
+    def visit_function(self, fn):
         """Transform the function body to use region allocation scheme."""
+        func = fn
         if func.attrs and int(func.attrs.Primitive) == 1:
             return super().visit_function(func)
         else:
@@ -190,7 +203,6 @@ class MemoryPlan:
     """An explicit pass wrapper around ManifestAlloc."""
 
     def transform_function(self, func, mod, _):
-        # TODO(@jroesch): Is there a way to do one shot initialization, no need to import every time?
         mod.import_from_std("core.rly")
         sc = StorageCoalesce()
         func = sc.visit(func)
