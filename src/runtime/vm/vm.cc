@@ -544,7 +544,7 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     case Opcode::AllocTensorReg: {
       os << "alloc_tensor_reg $" << instr.dst << " $"
          << instr.alloc_tensor_reg.storage << " $"
-         << instr.alloc_tensor_reg.offset << " $"
+         << instr.alloc_tensor_reg.offset << " "
          << instr.alloc_tensor_reg.shape_register << " ";
       DLDatatypePrint(os, instr.alloc_tensor_reg.dtype);
       break;
