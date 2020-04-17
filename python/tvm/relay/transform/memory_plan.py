@@ -220,7 +220,6 @@ class MemoryPlan:
     def transform_function(self, func, mod, _):
         mod.import_from_std("core.rly")
         sc = StorageCoalesce()
-        print(func)
         func = sc.visit(func)
         return func
 
