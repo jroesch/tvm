@@ -148,23 +148,11 @@ class StorageCoalesce(ExprMutator):
         return lhs, expr.Call(call.op, [region.var, offset, shape], call.attrs, call.type_args)
 
 
-class MemoryPlanPass(ExprMutator):
-    """A pass for coalescing allocations made by the Relay VM."""
-    # def visit_let(self, let):
-    #     import pdb; pdb.set_trace()
-    # pass restore after rebase
-
-
 def eval_const(mod, func):
     mod["tmp"] = func
+    mod = InferType()(mod)
     mod = FoldConstant()(mod)
     return mod["tmp"]
-
-def infer_type(mod, func):
-    mod["tmp"] = func
-    mod = FoldConstant()(mod)
-    return mod["tmp"]
-
 
 @function_pass(opt_level=0)
 class MemoryPlan:
@@ -178,11 +166,7 @@ class MemoryPlan:
         mod.import_from_std("core.rly")
         sc = StorageCoalesce()
         func = sc.visit(func)
-        func = infer_type(mod, func)
         func = eval_const(mod, func)
-        ea = MemoryPlanPass()
-        func = ea.visit(func)
-        print(func)
         return func
 
 
