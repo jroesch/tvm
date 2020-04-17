@@ -59,20 +59,6 @@ struct AllocStorageAttrs : public tvm::AttrsNode<AllocStorageAttrs> {
 };
 
 /*!
- * \brief Options for allocating storage.
- */
-struct AllocStorageAttrs : public tvm::AttrsNode<AllocStorageAttrs> {
-  DataType dtype;
-
-  TVM_DECLARE_ATTRS(AllocStorageAttrs, "relay.attrs.AllocStorageAttrs") {
-    TVM_ATTR_FIELD(dtype)
-      .describe(
-         "The dtype of the tensor to allocate.")
-      .set_default(DataType::Float(32, 1));
-  }
-};
-
-/*!
  * \brief Options for allocating tensors.
  */
 struct AllocTensorAttrs : public tvm::AttrsNode<AllocTensorAttrs> {

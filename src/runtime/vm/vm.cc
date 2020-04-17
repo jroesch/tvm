@@ -177,12 +177,8 @@ Instruction& Instruction::operator=(const Instruction& instr) {
       this->result = instr.result;
       return *this;
     case Opcode::AllocTensor:
-<<<<<<< HEAD
-      this->alloc_tensor.storage = instr.alloc_tensor.storage;
-=======
       this->alloc_tensor.storage = this->alloc_tensor.storage;
       this->alloc_tensor.offset = instr.alloc_tensor.offset;
->>>>>>> Basic tests all pass, fix offset to data buffer.
       this->alloc_tensor.ndim = instr.alloc_tensor.ndim;
       this->alloc_tensor.shape = Duplicate<int64_t>(instr.alloc_tensor.shape,
                                                     instr.alloc_tensor.ndim);
