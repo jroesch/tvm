@@ -533,7 +533,7 @@ void InstructionPrint(std::ostream& os, const Instruction& instr) {
     }
     case Opcode::AllocTensor: {
       os << "alloc_tensor $" << instr.dst << " $"
-         << instr.alloc_tensor.storage << " $"
+         << instr.alloc_tensor.storage << " "
          << instr.alloc_tensor.offset << " ["
          << StrJoin<int64_t>(instr.alloc_tensor.shape, 0,
                              instr.alloc_tensor.ndim)
