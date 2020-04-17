@@ -18,14 +18,13 @@
 """
 A pass for manifesting explicit memory allocations.
 """
-import attr
-import numpy as np
 from typing import Optional, Dict
+import attr
 
 from ..expr_functor import ExprMutator
-from ..scope_builder import ScopeBuilder
 from .. import op, ty, expr
-from ... import DataType, register_func, IRModule, ir
+from ..function import Function
+from ... import register_func, ir
 from .. import analysis
 from . import FoldConstant, InferType, function_pass
 from ..backend import compile_engine
@@ -49,8 +48,7 @@ class Region:
     offsets: Dict[expr.Var, expr.Expr] = {}
 
     def grow(
-        self, old_storage: expr.Var, size: expr.Expr, alignment: expr.Expr, dtype: str
-    ) -> None:
+        self, old_storage: expr.Var, size: expr.Expr, alignment: expr.Expr, dtype: str) -> None:
         if self.dtype:
             assert self.dtype == dtype, "must have matching dtypes in a region"
         else:
@@ -109,19 +107,19 @@ class StorageCoalesce(ExprMutator):
     def current_region(self) -> Region:
         return self.regions[-1]
 
-    def visit_function(self, function):
-        if function.attrs and int(function.attrs.Primitive) == 1:
-            return super().visit_function(function)
+    def visit_function(self, func):
+        if func.attrs and int(func.attrs.Primitive) == 1:
+            return super().visit_function(func)
         else:
             self.enter_scope()
-            body = self.visit(function.body)
+            body = self.visit(func.body)
             body = self.exit_scope(body)
-            return expr.Function(
-                function.params,
+            return Function(
+                func.params,
                 body,
-                function.ret_type,
-                function.type_params,
-                function.attrs,
+                func.ret_type,
+                func.type_params,
+                func.attrs,
             )
 
     def visit_if(self, ite):
@@ -183,7 +181,6 @@ class MemoryPlan:
 
     def __init__(self):
         super().__init__()
-        pass
 
     def transform_function(self, func, mod, _):
         # TODO(@jroesch): Is there a way to do one shot initialization, no need to import every time?

@@ -28,7 +28,7 @@ from .. import ty, expr
 from ..backend import compile_engine
 from ..op.memory import flatten_tuple_type, from_tuple_type, to_tuple_type
 from ...import cpu
-from ..op.memory import alloc_storage, alloc_tensor
+from ..op.memory import alloc_storage
 
 def alloc_tensor(storage, shape, dtype='float32', assert_shape=None):
     offset = expr.const(0, dtype="int64")
