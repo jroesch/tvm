@@ -25,7 +25,7 @@ from typing import Optional, Dict
 from ..expr_functor import ExprMutator
 from ..scope_builder import ScopeBuilder
 from .. import op, ty, expr
-from ... import DataType, register_func, IRModule
+from ... import DataType, register_func, IRModule, ir
 from .. import analysis
 from . import FoldConstant, InferType, function_pass
 from ..backend import compile_engine
@@ -49,7 +49,7 @@ class Region:
             self.dtype = dtype
 
         if self.alignment:
-            assert analysis.alpha_equal(self.alignment, alignment), "must have matching alignments in a region"
+            assert ir.structural_equal(self.alignment, alignment), "must have matching alignments in a region"
         else:
             self.alignment = alignment
 
