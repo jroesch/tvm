@@ -567,7 +567,11 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
             }
 
             // Add context field.
-            Emit(Instruction::AllocTensor(storage_register, offset_register, raw_shape, dtype, NewRegister()));
+            Emit(Instruction::AllocTensor(
+              storage_register,
+              offset_register,
+              raw_shape,
+              dtype, NewRegister()));
           } else {
             this->VisitExpr(args[1]);
             auto shape_register = last_register_;
