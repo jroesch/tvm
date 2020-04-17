@@ -22,12 +22,10 @@ from typing import Optional, Dict
 import attr
 
 from ..expr_functor import ExprMutator
-from .. import op, ty, expr
+from .. import op, expr
 from ..function import Function
 from ... import register_func, ir
-from .. import analysis
 from . import FoldConstant, InferType, function_pass
-from ..backend import compile_engine
 
 
 def is_primitive(call):
@@ -41,6 +39,12 @@ def is_primitive(call):
 
 @attr.s(auto_attribs=True)
 class Region:
+    """
+    Represents a control-free allocation region.
+
+    The below pass groups sets of allocations into regions,
+    then replaces the region with a single allocation.
+    """
     var: expr.Var
     size: expr.Expr
     alignment: Optional[expr.Expr]
@@ -48,7 +52,12 @@ class Region:
     offsets: Dict[expr.Var, expr.Expr] = {}
 
     def grow(
-        self, old_storage: expr.Var, size: expr.Expr, alignment: expr.Expr, dtype: str) -> None:
+            self, old_storage: expr.Var,
+            size: expr.Expr, alignment: expr.Expr,
+            dtype: str) -> None:
+        """Grow the region by a given allocation as well as track the old storage
+           for later rewriting the program to use the allocated region.
+        """
         if self.dtype:
             assert self.dtype == dtype, "must have matching dtypes in a region"
         else:
@@ -108,6 +117,7 @@ class StorageCoalesce(ExprMutator):
         return self.regions[-1]
 
     def visit_function(self, func):
+        """Transform the function body to use region allocation scheme."""
         if func.attrs and int(func.attrs.Primitive) == 1:
             return super().visit_function(func)
         else:
@@ -136,11 +146,11 @@ class StorageCoalesce(ExprMutator):
     def visit_let(self, let):
         def _each_binding(lhs, rhs):
             if isinstance(rhs, expr.Call) and rhs.op == op.op.get(
-                "memory.alloc_storage"
+                    "memory.alloc_storage"
             ):
                 return self.process_alloc_storage(lhs, rhs)
             elif isinstance(rhs, expr.Call) and rhs.op == op.op.get(
-                "memory.alloc_tensor"
+                    "memory.alloc_tensor"
             ):
                 return self.process_alloc_tensor(lhs, rhs)
             else:
@@ -178,9 +188,6 @@ def eval_const(mod, func):
 @function_pass(opt_level=0)
 class MemoryPlan:
     """An explicit pass wrapper around ManifestAlloc."""
-
-    def __init__(self):
-        super().__init__()
 
     def transform_function(self, func, mod, _):
         # TODO(@jroesch): Is there a way to do one shot initialization, no need to import every time?
