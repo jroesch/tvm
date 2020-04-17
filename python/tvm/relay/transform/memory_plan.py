@@ -30,9 +30,15 @@ from .. import analysis
 from . import FoldConstant, InferType, function_pass
 from ..backend import compile_engine
 
+
 def is_primitive(call):
-    return hasattr(call, 'op') and hasattr(call.op, 'attrs') and \
-           hasattr(call.op.attrs, 'Primitive') and int(call.op.attrs.Primitive) == 1
+    return (
+        hasattr(call, "op")
+        and hasattr(call.op, "attrs")
+        and hasattr(call.op.attrs, "Primitive")
+        and int(call.op.attrs.Primitive) == 1
+    )
+
 
 @attr.s(auto_attribs=True)
 class Region:
@@ -42,14 +48,18 @@ class Region:
     dtype: Optional[str]
     offsets: Dict[expr.Var, expr.Expr] = {}
 
-    def grow(self, old_storage: expr.Var, size: expr.Expr, alignment: expr.Expr, dtype: str) -> None:
+    def grow(
+        self, old_storage: expr.Var, size: expr.Expr, alignment: expr.Expr, dtype: str
+    ) -> None:
         if self.dtype:
             assert self.dtype == dtype, "must have matching dtypes in a region"
         else:
             self.dtype = dtype
 
         if self.alignment:
-            assert ir.structural_equal(self.alignment, alignment), "must have matching alignments in a region"
+            assert ir.structural_equal(
+                self.alignment, alignment
+            ), "must have matching alignments in a region"
         else:
             self.alignment = alignment
 
@@ -61,6 +71,7 @@ class Region:
     def to_expr(self) -> expr.Expr:
         return op.memory.alloc_storage(self.size, self.alignment, self.dtype)
 
+
 def iterative_let(let, each_binding, kont):
     bindings = []
     while isinstance(let, expr.Let):
@@ -71,10 +82,12 @@ def iterative_let(let, each_binding, kont):
 
     return kont(bindings, let)
 
+
 def mk_let(bindings, body):
     for var, value in reversed(bindings):
         body = expr.Let(var, value, body)
     return body
+
 
 class StorageCoalesce(ExprMutator):
     def __init__(self):
@@ -108,8 +121,8 @@ class StorageCoalesce(ExprMutator):
                 body,
                 function.ret_type,
                 function.type_params,
-                function.attrs)
-
+                function.attrs,
+            )
 
     def visit_if(self, ite):
         self.enter_scope()
@@ -124,9 +137,13 @@ class StorageCoalesce(ExprMutator):
 
     def visit_let(self, let):
         def _each_binding(lhs, rhs):
-            if isinstance(rhs, expr.Call) and rhs.op == op.op.get("memory.alloc_storage"):
+            if isinstance(rhs, expr.Call) and rhs.op == op.op.get(
+                "memory.alloc_storage"
+            ):
                 return self.process_alloc_storage(lhs, rhs)
-            elif isinstance(rhs, expr.Call) and rhs.op == op.op.get("memory.alloc_tensor"):
+            elif isinstance(rhs, expr.Call) and rhs.op == op.op.get(
+                "memory.alloc_tensor"
+            ):
                 return self.process_alloc_tensor(lhs, rhs)
             else:
                 return lhs, rhs
@@ -144,8 +161,13 @@ class StorageCoalesce(ExprMutator):
         region = self.current_region()
         storage, old_offset, shape = call.args
         offset = region.offsets[storage]
-        assert old_offset.data.asnumpy().item() == 0, "no offsets should yet be allocated"
-        return lhs, expr.Call(call.op, [region.var, offset, shape], call.attrs, call.type_args)
+        assert (
+            old_offset.data.asnumpy().item() == 0
+        ), "no offsets should yet be allocated"
+        return (
+            lhs,
+            expr.Call(call.op, [region.var, offset, shape], call.attrs, call.type_args),
+        )
 
 
 def eval_const(mod, func):
@@ -154,9 +176,11 @@ def eval_const(mod, func):
     mod = FoldConstant()(mod)
     return mod["tmp"]
 
+
 @function_pass(opt_level=0)
 class MemoryPlan:
     """An explicit pass wrapper around ManifestAlloc."""
+
     def __init__(self):
         super().__init__()
         pass
