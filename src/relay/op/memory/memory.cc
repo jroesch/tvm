@@ -92,7 +92,8 @@ RELAY_REGISTER_OP("memory.alloc_storage")
 
 TVM_REGISTER_GLOBAL("relay.op.memory._make.alloc_tensor")
     .set_body_typed(
-        [](Expr storage, Expr offset, tvm::relay::Expr shape, DataType dtype, Array<IndexExpr> assert_shape) {
+        [](Expr storage, Expr offset, tvm::relay::Expr shape,
+           DataType dtype, Array<IndexExpr> assert_shape) {
           auto attrs = make_object<AllocTensorAttrs>();
           attrs->dtype = dtype;
           if (assert_shape.defined()) {
