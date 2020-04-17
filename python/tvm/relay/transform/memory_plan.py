@@ -105,6 +105,9 @@ def iterative_let(let, each_binding, kont):
 
 def mk_let(bindings, body):
     for var, value in reversed(bindings):
+        assert var
+        assert value
+        assert body
         body = expr.Let(var, value, body)
     return body
 
@@ -139,6 +142,9 @@ class StorageCoalesce(ExprMutator):
         else:
             storage_expr = region.to_expr()
             assert storage_expr, "can not be None"
+            assert region.var
+            assert storage_expr
+            assert body
             return expr.Let(region.var, storage_expr, body)
 
     def current_region(self) -> Region:
