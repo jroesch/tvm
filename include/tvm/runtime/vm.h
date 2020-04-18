@@ -270,6 +270,7 @@ struct Instruction {
   /*!
    * \brief Construct an allocate tensor instruction with constant shape.
    * \param storage The storage to allocate out of.
+   * \param offset The offset into the storage to allocate from.
    * \param shape The shape of the tensor.
    * \param dtype The dtype of the tensor.
    * \param dst The destination register.

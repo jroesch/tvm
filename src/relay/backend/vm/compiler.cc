@@ -906,8 +906,6 @@ transform::Sequential MemoryOpt(tvm::Target host_target) {
 
   // Perform memory planning in order to coalesce/reduce allocations.
   pass_seqs.push_back(transform::MemoryPlan());
-  // Compute away possibly introduced constant computation.
-  pass_seqs.push_back(transform::FoldConstant());
 
   return transform::Sequential(pass_seqs);
 }
@@ -965,8 +963,7 @@ IRModule VMCompiler::OptimizeModule(const IRModule& mod, const TargetsMap& targe
   pass_seqs.push_back(transform::LambdaLift());
   pass_seqs.push_back(transform::InlinePrimitives());
 
-
-
+  // Memory optimization
   pass_seqs.push_back(MemoryOpt(this->target_host_));
 
   transform::Sequential seq(pass_seqs);
