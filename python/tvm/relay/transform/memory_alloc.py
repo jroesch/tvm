@@ -174,7 +174,7 @@ class ManifestAllocPass(ExprMutator):
             size = self.compute_storage_in_relay(
                 out_shape, out_type.dtype)
             alignment = self.compute_alignment(out_type.dtype)
-            sto = scope.let("storage_{i}".format(i=i), self.alloc_storage(
+            sto = scope.let("storage_{i}".format(i=i), alloc_storage(
                 size, alignment, self.default_context, out_type.dtype))
             storages.append(sto)
 
