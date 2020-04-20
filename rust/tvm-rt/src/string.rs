@@ -69,12 +69,13 @@ impl String {
 #[cfg(test)]
 mod tests {
     use super::String;
-    use super::{debug_print, IsObject, Object, ObjectPtr, ObjectRef};
+    use crate::{debug_print, IsObject, Object, ObjectPtr, ObjectRef};
 
     #[test]
     fn test_string_debug() {
         let s = String::new("foo".to_string()).unwrap();
         assert!(debug_print(&s.upcast())
+            .expect("debug_print failed")
             .into_string()
             .expect("is cstring")
             .contains("foo"))
