@@ -16,7 +16,7 @@ pub struct Object {
 }
 
 unsafe extern "C" fn delete<T: IsObject>(object: *mut Object) {
-    let typed_object: *mut T = std::mem::transmute(object);
+    let typed_object: *mut T = object as *mut T;
     T::typed_delete(typed_object);
 }
 
@@ -55,8 +55,7 @@ impl Object {
         } else {
             let mut index = 0;
             unsafe {
-                let index_ptr = std::mem::transmute(&mut index);
-                if TVMObjectTypeKey2Index(cstring.as_ptr(), index_ptr) != 0 {
+                if TVMObjectTypeKey2Index(cstring.as_ptr(), &mut index) != 0 {
                     panic!(crate::get_last_error())
                 }
             }
@@ -109,20 +108,18 @@ impl ObjectPtr<Object> {
 
 impl<T> Clone for ObjectPtr<T> {
     fn clone(&self) -> Self {
+        let raw_ptr = self.ptr.as_ptr() as *mut std::ffi::c_void;
         unsafe {
-            let raw_ptr = std::mem::transmute(self.ptr);
             assert_eq!(TVMObjectRetain(raw_ptr), 0);
-            ObjectPtr { ptr: self.ptr }
         }
+        ObjectPtr { ptr: self.ptr }
     }
 }
 
 impl<T> Drop for ObjectPtr<T> {
     fn drop(&mut self) {
-        unsafe {
-            let raw_ptr = std::mem::transmute(self.ptr);
-            assert_eq!(TVMObjectFree(raw_ptr), 0)
-        }
+        let ptr = self.ptr.as_ptr() as *mut std::ffi::c_void;
+        unsafe { assert_eq!(TVMObjectFree(ptr), 0) }
     }
 }
 
@@ -203,8 +200,8 @@ impl TryFrom<TVMRetValue> for ObjectRef {
         match ret_val {
             TVMRetValue::ObjectHandle(handle) =>
             // I think we can type the lower-level bindings even further.
-            unsafe {
-                let handle = std::mem::transmute(handle);
+            {
+                let handle = handle as *mut Object;
                 Ok(ObjectRef(ObjectPtr::from_raw(handle)))
             }
             _ => Err(anyhow::anyhow!("unable to convert the result to an Object")),
@@ -220,7 +217,7 @@ impl<'a> From<&ObjectRef> for TVMArgValue<'a> {
             .map(|p| p.ptr.as_ptr())
             .unwrap_or(std::ptr::null_mut());
         // Should be able to hide this unsafety in raw bindings.
-        let void_ptr = unsafe { std::mem::transmute(raw_object_ptr) };
+        let void_ptr = raw_object_ptr as *mut std::ffi::c_void;
         TVMArgValue::ObjectHandle(void_ptr)
     }
 }
@@ -233,7 +230,7 @@ impl From<ObjectRef> for TVMArgValue<'static> {
             .map(|p| p.ptr.as_ptr())
             .unwrap_or(std::ptr::null_mut());
         // Should be able to hide this unsafety in raw bindings.
-        let void_ptr = unsafe { std::mem::transmute(raw_object_ptr) };
+        let void_ptr = raw_object_ptr as *mut std::ffi::c_void;
         TVMArgValue::ObjectHandle(void_ptr)
     }
 }
