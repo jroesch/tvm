@@ -17,10 +17,12 @@
  * under the License.
  */
 
+use tvm_macros::Object;
+
+use super::{RelayExpr, Expr};
 use crate::runtime::array::Array;
 use crate::runtime::{IsObject, Object, ObjectPtr, ObjectRef, String as TString};
 use crate::DataType;
-use tvm_macros::Object;
 
 #[repr(C)]
 #[derive(Object)]
@@ -38,48 +40,6 @@ impl Id {
             name_hint: name_hint,
         };
         Id(Some(ObjectPtr::new(node)))
-    }
-}
-
-#[repr(C)]
-#[derive(Object)]
-#[ref_name = "BaseExpr"]
-#[type_key = "Expr"]
-pub struct BaseExprNode {
-    pub base: Object,
-}
-
-#[repr(C)]
-pub struct PrimExprNode {
-    pub base: BaseExprNode,
-    pub datatype: DataType,
-}
-
-impl BaseExprNode {
-    fn base<T: IsObject>() -> BaseExprNode {
-        BaseExprNode {
-            base: Object::base_object::<T>(),
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Object)]
-#[ref_name = "Expr"]
-#[type_key = "relay.Expr"]
-pub struct RelayExpr {
-    pub base: BaseExprNode,
-    pub span: ObjectRef,
-    pub checked_type: ObjectRef,
-}
-
-impl RelayExpr {
-    fn base<T: IsObject>() -> RelayExpr {
-        RelayExpr {
-            base: BaseExprNode::base::<T>(),
-            span: ObjectRef::null(),
-            checked_type: ObjectRef::null(),
-        }
     }
 }
 

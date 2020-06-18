@@ -244,6 +244,27 @@ impl<T: IsObject> ObjectPtr<T> {
         }
     }
 
+    pub fn upcast2<U: IsObject>(&self) -> Result<ObjectPtr<U>, Error> {
+        let target_index = Object::get_type_index::<U>();
+        let object_index = self.as_object().type_index;
+
+        let is_derived = if target_index == object_index {
+            true
+        } else {
+            // NB: we can invert the child and the parent here since we are trying to
+            // check for an upcast.
+            derived_from(target_index, object_index)
+        };
+
+        if is_derived {
+            let ptr = self.ptr.cast();
+            inc_ref(ptr);
+            Ok(ObjectPtr { ptr })
+        } else {
+            Err(Error::downcast(U::TYPE_KEY.into(), "TODOget_type_key"))
+        }
+    }
+
     pub fn downcast<U: IsObject>(&self) -> Result<ObjectPtr<U>, Error> {
         let child_index = Object::get_type_index::<U>();
         let object_index = self.as_object().type_index;

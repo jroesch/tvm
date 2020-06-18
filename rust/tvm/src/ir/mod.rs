@@ -17,11 +17,14 @@
  * under the License.
  */
 
+use tvm_macros::Object;
+
 use crate::runtime::String as TString;
-use crate::runtime::{self, external, IsObjectRef, Object, ObjectRef};
+use crate::runtime::{self, external, IsObjectRef, IsObject, Object, ObjectRef};
 use crate::DataType;
 
 pub mod relay;
+pub mod tir;
 
 // TODO: figure out how to type the last argument runtime::TypedPackedFunc<String(ObjectRef)> annotate)
 external! {
@@ -38,13 +41,55 @@ pub fn as_text<T: IsObjectRef>(object: T) -> String {
 }
 
 #[repr(C)]
-pub struct PrimExprNode {
+#[derive(Object)]
+#[ref_name = "BaseExpr"]
+#[type_key = "Expr"]
+pub struct BaseExprNode {
     pub base: Object,
-    pub dtype: DataType,
+}
+
+impl BaseExprNode {
+    fn base<T: IsObject>() -> BaseExprNode {
+        BaseExprNode {
+            base: Object::base_object::<T>(),
+        }
+    }
 }
 
 #[repr(C)]
-pub struct IntImmNode {
-    pub base: PrimExprNode,
-    pub value: i64,
+#[derive(Object)]
+#[ref_name = "PrimExpr"]
+#[type_key = "PrimExpr"]
+pub struct PrimExprNode {
+    pub base: BaseExprNode,
+    pub datatype: DataType,
 }
+
+impl PrimExprNode {
+    pub fn base<T: IsObject>(datatype: DataType) -> PrimExprNode {
+        PrimExprNode {
+            base: BaseExprNode::base::<T>(),
+            datatype
+        }
+    }
+}
+
+ #[repr(C)]
+ #[derive(Object)]
+ #[ref_name = "Expr"]
+ #[type_key = "relay.Expr"]
+ pub struct RelayExpr {
+     pub base: BaseExprNode,
+     pub span: ObjectRef,
+     pub checked_type: ObjectRef,
+ }
+
+ impl RelayExpr {
+    pub fn base<T: IsObject>() -> RelayExpr {
+        RelayExpr {
+            base: BaseExprNode::base::<T>(),
+            span: ObjectRef::null(),
+            checked_type: ObjectRef::null(),
+        }
+     }
+ }

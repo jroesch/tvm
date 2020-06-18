@@ -47,7 +47,6 @@ namespace tir {
 using IntImmNode = tvm::IntImmNode;
 using FloatImmNode = tvm::FloatImmNode;
 
-/*! \brief String constants, only used in asserts. */
 class StringImmNode : public PrimExprNode {
  public:
   /*! \brief The constant value content. */
