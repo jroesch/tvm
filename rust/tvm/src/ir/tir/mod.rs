@@ -82,7 +82,8 @@ impl Add {
         let dt = DataType::new(0, 32, 1);
         let int_imm = IntImm::new(1337, dt);
         let text = as_text(int_imm);
-        panic!(text)
+        assert!(text.contains("1337"));
+        Ok(())
     }
 
      #[test]
@@ -92,8 +93,8 @@ impl Add {
         let rhs = IntImm::new(1337, dt.clone());
         let add = Add::new(lhs.to_prim_expr(), rhs.to_prim_expr(), dt);
         let text = as_text(add.clone());
-        panic!("{}", text);
-        //assert!(text.contains("relay.Id"));
-        // Ok(())
+        assert!(text.contains("1337"));
+        assert!(text.contains("+"));
+        Ok(())
      }
  }
