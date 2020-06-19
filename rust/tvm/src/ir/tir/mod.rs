@@ -23,53 +23,34 @@ use super::{PrimExpr, PrimExprNode};
 use crate::runtime::{Object, ObjectPtr, ObjectRef};
 use crate::DataType;
 
-#[repr(C)]
-#[derive(Object)]
-#[ref_name = "IntImm"]
-#[type_key = "IntImm"]
-pub struct IntImmNode {
-    pub base: PrimExprNode,
-    pub value: i64,
-}
+macro_rules! define_node {
+    ($name:ident, $node:ident, $ref:literal, $typekey:literal = $($id:ident : $t:ty),*) => {
+        #[repr(C)]
+        #[derive(Object)]
+        #[ref_name = $ref]
+        #[type_key = $typekey]
+        pub struct $node {
+            pub base: PrimExprNode,
+            $(pub $id : $t),*
+        }
 
-impl IntImm {
-    pub fn new(value: i64, datatype: DataType) -> IntImm {
-        let node = IntImmNode {
-            base: PrimExprNode::base::<IntImmNode>(datatype),
-            value: value
-        };
-        IntImm(Some(ObjectPtr::new(node)))
-    }
+        impl $name {
+            pub fn new($($id : $t,)* datatype: DataType) -> $name {
+                let base = PrimExprNode::base::<$node>(datatype);
+                let node = $node { base, $($id),* };
+                $name(Some(ObjectPtr::new(node)))
+            }
 
-    pub fn to_prim_expr(self) -> PrimExpr {
-        unsafe { PrimExpr(std::mem::transmute(self.0)) }
-    }
-}
-
-#[repr(C)]
-#[derive(Object)]
-#[ref_name = "Add"]
-#[type_key = "tir.Add"]
-pub struct AddNode {
-    pub base: PrimExprNode,
-    pub a: PrimExpr,
-    pub b: PrimExpr,
-}
-
-impl Add {
-    pub fn new(a: PrimExpr, b: PrimExpr, datatype: DataType) -> Add {
-        let node = AddNode {
-            base: PrimExprNode::base::<AddNode>(datatype),
-            a, b
-        };
-        Add(Some(ObjectPtr::new(node)))
-    }
-
-    // TODO(@jroesch): Remove we with subtyping traits.
-    pub fn to_prim_expr(self) -> PrimExpr {
-        unsafe { PrimExpr(std::mem::transmute(self.0)) }
+            // TODO(@jroesch): Remove we with subtyping traits.
+            pub fn to_prim_expr(self) -> PrimExpr {
+                unsafe { PrimExpr(std::mem::transmute(self.0)) }
+            }
+        }
     }
 }
+
+define_node!(IntImm, IntImmNode, "IntImm", "IntImm" = value: i64);
+define_node!(Add, AddNode, "Add", "tir.Add" = a: PrimExpr, b: PrimExpr);
 
  #[cfg(test)]
  mod tests {
