@@ -22,7 +22,6 @@ use tvm_macros::Object;
 use super::{RelayExpr, Expr};
 use crate::runtime::array::Array;
 use crate::runtime::{IsObject, Object, ObjectPtr, ObjectRef, String as TString};
-use crate::DataType;
 
 #[repr(C)]
 #[derive(Object)]
