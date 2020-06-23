@@ -20,7 +20,7 @@
 use tvm_macros::Object;
 
 use super::{PrimExpr, PrimExprNode};
-use crate::runtime::{Object, ObjectPtr, ObjectRef};
+use crate::runtime::{Object, ObjectPtr, ObjectRef, String as TVMString};
 use crate::DataType;
 
 macro_rules! define_node {
@@ -49,8 +49,27 @@ macro_rules! define_node {
     }
 }
 
+define_node!(Var, VarNode, "Var", "tir.Var" = name_hint: TVMString);
+
 define_node!(IntImm, IntImmNode, "IntImm", "IntImm" = value: i64);
+
 define_node!(Add, AddNode, "Add", "tir.Add" = a: PrimExpr, b: PrimExpr);
+define_node!(Sub, SubNode, "Sub", "tir.Sub" = a: PrimExpr, b: PrimExpr);
+define_node!(Mul, MulNode, "Mul", "tir.Mul" = a: PrimExpr, b: PrimExpr);
+
+define_node!(Div, DivNode, "Div", "tir.Div" = a: PrimExpr, b: PrimExpr);
+define_node!(Mod, ModNode, "Mod", "tir.Mod" = a: PrimExpr, b: PrimExpr);
+define_node!(FloorDiv, FloorDivNode, "FloorDiv", "tir.FloorDiv" = a: PrimExpr, b: PrimExpr);
+define_node!(FloorMod, FloorModNode, "FloorMod", "tir.FloorMod" = a: PrimExpr, b: PrimExpr);
+
+define_node!(Min, MinNode, "Min", "tir.Min" = a: PrimExpr, b: PrimExpr);
+define_node!(Max, MaxNode, "Max", "tir.Max" = a: PrimExpr, b: PrimExpr);
+
+// the new datatype is in the base expr
+define_node!(Cast, CastNode, "Cast", "tir.Cast" = value: PrimExpr);
+
+// renamed base to start to avoid name clash
+define_node!(Ramp, RampNode, "Ramp", "tir.Ramp" = start: PrimExpr, stride: PrimExpr, lanes: i32);
 
  #[cfg(test)]
  mod tests {
