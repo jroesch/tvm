@@ -15,24 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-Frontends for constructing Relay programs.
-
-Contains the model importers currently defined
-for Relay.
+JIT interface implementing packed functions that
+import and compile frontend models
 """
-
-from __future__ import absolute_import
-
-from .mxnet import from_mxnet
-from .mxnet_qnn_op_utils import quantize_conv_bias_mkldnn_from_var
-from .keras import from_keras
-from .onnx import from_onnx
-from .tflite import from_tflite
-from .coreml import from_coreml
-from .caffe2 import from_caffe2
-from .tensorflow import from_tensorflow
-from .darknet import from_darknet
-from .pytorch import from_pytorch
-from .caffe import from_caffe
-from .change_datatype import ChangeDatatype
-from . import jit
+from .onnx import *

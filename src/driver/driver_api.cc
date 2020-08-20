@@ -35,6 +35,7 @@
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/container.h>
+#include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/target/codegen.h>
 #include <tvm/te/operation.h>
@@ -340,45 +341,25 @@ runtime::Module build(const IRModule& funcs, const Target& target, const Target&
 
 tvm::runtime::Module TVMCompile(const std::string& onnx_txt, const std::string& target, const std::string& target_host, int opt_level)
 {
-    auto tensor_type = tvm::relay::TensorType({1, 6}, tvm::runtime::DataType::Float(32));
-    auto X1 = tvm::relay::Var("X1", tensor_type);
-    auto mul_op = tvm::relay::Op::Get("multiply");
-    auto mul1 = tvm::relay::Call(mul_op, {X1, X1}, tvm::Attrs(), {});
-    auto mul2 = tvm::relay::Call(mul_op, {X1, mul1}, tvm::Attrs(), {});
-    auto mul3 = tvm::relay::Call(mul_op, {X1, mul2}, tvm::Attrs(), {});
-    auto Y4 = tvm::relay::Call(mul_op, {X1, mul3}, tvm::Attrs(), {});
-    auto func = tvm::relay::Function(tvm::relay::FreeVars(Y4), Y4, tvm::relay::Type(), {});
+  const tvm::PackedFunc* compile = tvm::runtime::Registry::Get("tvm_onnx_import_and_compile");
+  tvm::runtime::Module mod = (*compile)(TVMByteArray{onnx_txt.data(), onnx_txt.size()}, target, target_host, opt_level);
+  return mod;
 
-    auto reg = tvm::runtime::Registry::Get("ir.RegisterOpAttr");
-    if (!reg)
-        LOG(FATAL) << "no _Register";
-
-    auto fs = tvm::runtime::Registry::Get("jit.strategy");
-    if (!fs)
-        LOG(FATAL) << "No jit strategy registered.";
-
-    auto fgeneric = tvm::GenericFunc::Get("jit.strategy_generic").set_default(*fs);
-    (*reg)("multiply", "FTVMStrategy", fgeneric, 10);
-    (*reg)("multiply", "TShapeDataDependant", false, 10);
-   
-    auto pfb = tvm::runtime::Registry::Get("relay.build_module._BuildModule");
-    tvm::runtime::Module build_mod = (*pfb)();
-    auto build_f = build_mod.GetFunction("build", false);
-    auto mod_f = build_mod.GetFunction("get_module", false);
-    auto relay_mod = tvm::IRModule::FromExpr(func);
-    tvm::Map<tvm::Integer, tvm::Target> targets;
-    // tvm::Target tgt = tvm::Target::Create(target);
-    tvm::Target tgt = tvm::Target::Create("llvm");
-    targets.Set(0, tgt);
-    // tvm::Target host = (target == target_host) ? tgt : tvm::Target::Create(target_host);
-    build_f(relay_mod, targets, tgt);
-    tvm::runtime::Module mod = mod_f();
-    return mod;
 }
 
-void TVMRun(tvm::runtime::Module& mod, const std::string& name, tvm::runtime::TVMArgs& args, tvm::runtime::TVMRetValue* ret)
+void TVMRun(tvm::runtime::Module& mod, std::vector<DLTensor> inputs, std::vector<DLTensor> outputs, tvm::runtime::TVMRetValue* ret)
 {
-    mod.GetFunction(name).CallPacked(args, ret);
-    // process return value, refe to TVMFuncCall in c_runtime_api.cc
-    
+  tvm::PackedFunc set_input = mod.GetFunction("set_input_zero_copy", false);
+  for (size_t i = 0; i < inputs.size(); i++)
+  {
+    set_input(i, &inputs[i]);
+  }
+
+  mod.GetFunction("run", false)();
+
+  tvm::PackedFunc get_output = mod.GetFunction("get_output", false);
+  for (size_t i = 0; i < outputs.size(); i++)
+  {
+    get_output(i, &outputs[i]);
+  }
 }

@@ -14,25 +14,22 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-Frontends for constructing Relay programs.
+import onnx
+import tvm
+import tvm.relay
 
-Contains the model importers currently defined
-for Relay.
-"""
+@tvm.register_func("tvm_onnx_import_and_compile")
+def onnx_compile(model_string, target, target_host, opt_level):
+    model = onnx.load_model_from_string(bytes(model_string))
 
-from __future__ import absolute_import
+    # input shape from data
+    input_shape = {model.graph.input[0].name: (6,)}
 
-from .mxnet import from_mxnet
-from .mxnet_qnn_op_utils import quantize_conv_bias_mkldnn_from_var
-from .keras import from_keras
-from .onnx import from_onnx
-from .tflite import from_tflite
-from .coreml import from_coreml
-from .caffe2 import from_caffe2
-from .tensorflow import from_tensorflow
-from .darknet import from_darknet
-from .pytorch import from_pytorch
-from .caffe import from_caffe
-from .change_datatype import ChangeDatatype
-from . import jit
+    irmod, params = tvm.relay.frontend.from_onnx(model, input_shape, opset=11)
+    with tvm.relay.build_config(opt_level=opt_level):
+        graph, lib, params = tvm.relay.build(irmod, target_host=target_host, target=target, params=params)
+
+    ctx = tvm.context(target, 0)
+    m = tvm.contrib.graph_runtime.create(graph, lib, ctx)
+    m.set_input(**params)
+    return m.module
