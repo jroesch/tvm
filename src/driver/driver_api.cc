@@ -338,16 +338,25 @@ runtime::Module build(const IRModule& funcs, const Target& target, const Target&
 
 }  // namespace tvm
 
-
-tvm::runtime::Module TVMCompile(const std::string& onnx_txt, const std::string& target, const std::string& target_host, int opt_level)
+tvm::runtime::Module TVMCompile(const std::string& onnx_txt, const std::string& target, const std::string& target_host, int opt_level, const std::vector<std::vector<int64_t>>& input_shapes)
 {
-  const tvm::PackedFunc* compile = tvm::runtime::Registry::Get("tvm_onnx_import_and_compile");
-  tvm::runtime::Module mod = (*compile)(TVMByteArray{onnx_txt.data(), onnx_txt.size()}, target, target_host, opt_level);
-  return mod;
+  tvm::Array<tvm::Array<tvm::Integer>> shapes;
+  for (size_t i = 0; i < input_shapes.size(); i++)
+  {
+    tvm::Array<tvm::Integer> shape;
+    for (auto& dim : input_shapes[i])
+    {
+      shape.push_back(tvm::Integer(dim));
+    }
+    shapes.push_back(shape);
+  }
 
+  const tvm::PackedFunc* compile = tvm::runtime::Registry::Get("tvm_onnx_import_and_compile");
+  tvm::runtime::Module mod = (*compile)(TVMByteArray{onnx_txt.data(), onnx_txt.size()}, target, target_host, opt_level, shapes);
+  return mod;
 }
 
-void TVMRun(tvm::runtime::Module& mod, std::vector<DLTensor> inputs, std::vector<DLTensor> outputs, tvm::runtime::TVMRetValue* ret)
+void TVMRun(tvm::runtime::Module& mod, std::vector<DLTensor>& inputs, std::vector<DLTensor>& outputs, tvm::runtime::TVMRetValue* ret)
 {
   tvm::PackedFunc set_input = mod.GetFunction("set_input_zero_copy", false);
   for (size_t i = 0; i < inputs.size(); i++)

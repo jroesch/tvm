@@ -19,13 +19,12 @@ import tvm
 import tvm.relay
 
 @tvm.register_func("tvm_onnx_import_and_compile")
-def onnx_compile(model_string, target, target_host, opt_level):
+def onnx_compile(model_string, target, target_host, opt_level, input_shapes):
     model = onnx.load_model_from_string(bytes(model_string))
 
-    # input shape from data
-    input_shape = {model.graph.input[0].name: (6,)}
+    input_shapes = {name : shape for (name, shape) in zip([i.name for i in model.graph.input], input_shapes)}
 
-    irmod, params = tvm.relay.frontend.from_onnx(model, input_shape, opset=11)
+    irmod, params = tvm.relay.frontend.from_onnx(model, input_shapes, opset=11)
     with tvm.relay.build_config(opt_level=opt_level):
         graph, lib, params = tvm.relay.build(irmod, target_host=target_host, target=target, params=params)
 
