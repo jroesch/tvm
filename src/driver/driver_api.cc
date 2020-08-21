@@ -23,13 +23,25 @@
  */
 #include <dmlc/thread_local.h>
 #include <tvm/driver/driver_api.h>
+#include <tvm/driver/jit_interface.h>
+#include <tvm/ir/module.h>
 #include <tvm/ir/transform.h>
+#include <tvm/relay/analysis.h>
+#include <tvm/relay/expr.h>
+#include <tvm/relay/op_attr_types.h>
+#include <tvm/relay/op_strategy.h>
+#include <tvm/relay/transform.h>
+#include <tvm/relay/type.h>
+#include <tvm/runtime/module.h>
+#include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/container.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/target/codegen.h>
 #include <tvm/te/operation.h>
 #include <tvm/tir/analysis.h>
 #include <tvm/tir/transform.h>
+#include <topi/generic/injective.h>
+#include <tvm/target/generic_func.h>
 
 #include <algorithm>
 #include <mutex>
@@ -324,3 +336,49 @@ runtime::Module build(const IRModule& funcs, const Target& target, const Target&
 }
 
 }  // namespace tvm
+
+
+tvm::runtime::Module TVMCompile(const std::string& onnx_txt, const std::string& target, const std::string& target_host, int opt_level)
+{
+    auto tensor_type = tvm::relay::TensorType({1, 6}, tvm::runtime::DataType::Float(32));
+    auto X1 = tvm::relay::Var("X1", tensor_type);
+    auto mul_op = tvm::relay::Op::Get("multiply");
+    auto mul1 = tvm::relay::Call(mul_op, {X1, X1}, tvm::Attrs(), {});
+    auto mul2 = tvm::relay::Call(mul_op, {X1, mul1}, tvm::Attrs(), {});
+    auto mul3 = tvm::relay::Call(mul_op, {X1, mul2}, tvm::Attrs(), {});
+    auto Y4 = tvm::relay::Call(mul_op, {X1, mul3}, tvm::Attrs(), {});
+    auto func = tvm::relay::Function(tvm::relay::FreeVars(Y4), Y4, tvm::relay::Type(), {});
+
+    auto reg = tvm::runtime::Registry::Get("ir.RegisterOpAttr");
+    if (!reg)
+        LOG(FATAL) << "no _Register";
+
+    auto fs = tvm::runtime::Registry::Get("jit.strategy");
+    if (!fs)
+        LOG(FATAL) << "No jit strategy registered.";
+
+    auto fgeneric = tvm::GenericFunc::Get("jit.strategy_generic").set_default(*fs);
+    (*reg)("multiply", "FTVMStrategy", fgeneric, 10);
+    (*reg)("multiply", "TShapeDataDependant", false, 10);
+   
+    auto pfb = tvm::runtime::Registry::Get("relay.build_module._BuildModule");
+    tvm::runtime::Module build_mod = (*pfb)();
+    auto build_f = build_mod.GetFunction("build", false);
+    auto mod_f = build_mod.GetFunction("get_module", false);
+    auto relay_mod = tvm::IRModule::FromExpr(func);
+    tvm::Map<tvm::Integer, tvm::Target> targets;
+    // tvm::Target tgt = tvm::Target::Create(target);
+    tvm::Target tgt = tvm::Target::Create("llvm");
+    targets.Set(0, tgt);
+    // tvm::Target host = (target == target_host) ? tgt : tvm::Target::Create(target_host);
+    build_f(relay_mod, targets, tgt);
+    tvm::runtime::Module mod = mod_f();
+    return mod;
+}
+
+void TVMRun(tvm::runtime::Module& mod, const std::string& name, tvm::runtime::TVMArgs& args, tvm::runtime::TVMRetValue* ret)
+{
+    mod.GetFunction(name).CallPacked(args, ret);
+    // process return value, refe to TVMFuncCall in c_runtime_api.cc
+    
+}
