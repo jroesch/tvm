@@ -24,16 +24,7 @@
 #include <dmlc/thread_local.h>
 #include <tvm/driver/driver_api.h>
 #include <tvm/driver/jit_interface.h>
-#include <tvm/ir/module.h>
 #include <tvm/ir/transform.h>
-#include <tvm/relay/analysis.h>
-#include <tvm/relay/expr.h>
-#include <tvm/relay/op_attr_types.h>
-#include <tvm/relay/op_strategy.h>
-#include <tvm/relay/transform.h>
-#include <tvm/relay/type.h>
-#include <tvm/runtime/module.h>
-#include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/container.h>
 #include <tvm/runtime/c_runtime_api.h>
 #include <tvm/runtime/registry.h>
@@ -41,8 +32,7 @@
 #include <tvm/te/operation.h>
 #include <tvm/tir/analysis.h>
 #include <tvm/tir/transform.h>
-#include <topi/generic/injective.h>
-#include <tvm/target/generic_func.h>
+#include <tvm/topi/generic/injective.h>
 
 #include <algorithm>
 #include <mutex>

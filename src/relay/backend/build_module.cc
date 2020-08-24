@@ -28,10 +28,6 @@
 #include <tvm/relay/qnn/transform.h>
 #include <tvm/relay/transform.h>
 #include <tvm/runtime/device_api.h>
-#include <tvm/relay/op_attr_types.h>
-#include <tvm/relay/op_strategy.h>
-#include <topi/broadcast.h>
-#include <topi/generic/injective.h>
 
 #include <memory>
 
@@ -555,47 +551,9 @@ class RelayBuildModule : public runtime::ModuleNode {
 runtime::Module RelayBuildCreate() {
   auto exec = make_object<RelayBuildModule>();
   return runtime::Module(exec);
-}
+} 
 
-#if 1
-TVM_REGISTER_GLOBAL("jit.strategy")
-    .set_body_typed([](const Attrs& attrs, const Array<te::Tensor>& inputs, const Type& out_type,
-                       const Target& target) {
-      FTVMCompute fcompute = [](const Attrs& attrs, const Array<te::Tensor>& inputs,
-                                const Type& out_type) -> Array<te::Tensor> {
-        CHECK_EQ(inputs.size(), 2U);
-        return {topi::multiply(inputs[0], inputs[1])};
-      };
-      FTVMSchedule fschedule = [](const Attrs& attrs, const Array<te::Tensor>& outs,
-                                  const Target& target) {
-        With<Target> target_scope(target);
-        return topi::generic::schedule_injective(target, outs);
-      };
 
-      auto n = make_object<OpStrategyNode>();
-      auto strategy = relay::OpStrategy(std::move(n));
-      strategy.AddImplementation(fcompute, fschedule, "jit.strategy", 10);
-      return strategy;
-});
-
-    
-TVM_REGISTER_GLOBAL("relay.backend.lower_call")
-    .set_body_typed([](const relay::Call& call, const Array<te::Tensor>& inputs,
-                       const Target& target) {
-      static auto fstrategy = Op::GetAttrMap<relay::FTVMStrategy>("FTVMStrategy");
-      Op op = Downcast<Op>(call->op);
-      auto out_type = call->checked_type();
-      OpStrategy strategy = fstrategy[op](call->attrs, inputs, out_type, target);
-      auto impl = strategy->specializations[0]->implementations[0];
-      auto outs = impl.Compute(call->attrs, inputs, out_type);
-      auto f = runtime::Registry::Get("relay.backend._make_LoweredOutput");
-      if (!f) {
-        LOG(FATAL) << "relay.backend._make_LoweredOutput is not registered";
-      }
-      return (*f)(outs, impl);
-});
-#endif    
-    
 TVM_REGISTER_GLOBAL("relay.build_module._BuildModule").set_body([](TVMArgs args, TVMRetValue* rv) {
   *rv = RelayBuildCreate();
 });
