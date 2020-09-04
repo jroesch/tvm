@@ -14,9 +14,27 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import os
 import onnx
 import tvm
 import tvm.relay
+import tvm.autotvm as autotvm
+import timeit
+import numpy as np
+
+@tvm.register_func("tvm_run_with_benchmark")
+def run_with_benchmark(mod):
+    run = mod.get_function('run')
+    def benchmark(name):
+        t = timeit.Timer(lambda: run()).repeat(repeat=5, number=5)
+        ts = np.array(t) * 1000
+        print("{} benchmark results: {:.2f}ms mean, {:.2f}ms median, {:.2f}ms std".format(
+            name, np.mean(ts), np.median(ts), np.std(ts)
+        ))
+    if os.getenv("AUTOTVM_TUNING_LOG"):
+        benchmark("Tuned")
+    else:
+        benchmark("Baseline")
 
 @tvm.register_func("tvm_onnx_import_and_compile")
 def onnx_compile(model_string, target, target_host, opt_level, input_shapes):
@@ -26,7 +44,12 @@ def onnx_compile(model_string, target, target_host, opt_level, input_shapes):
 
     irmod, params = tvm.relay.frontend.from_onnx(model, input_shapes, opset=11)
     with tvm.relay.build_config(opt_level=opt_level):
-        graph, lib, params = tvm.relay.build(irmod, target_host=target_host, target=target, params=params)
+        tuning_logfile = os.getenv("AUTOTVM_TUNING_LOG")
+        if tuning_logfile:
+            with autotvm.apply_history_best(tuning_logfile):
+                graph, lib, params = tvm.relay.build(irmod, target_host=target_host, target=target, params=params)
+        else:
+            graph, lib, params = tvm.relay.build(irmod, target_host=target_host, target=target, params=params)
 
     ctx = tvm.context(target, 0)
     m = tvm.contrib.graph_runtime.create(graph, lib, ctx)

@@ -346,7 +346,17 @@ tvm::runtime::Module TVMCompile(const std::string& onnx_txt, const std::string& 
   return mod;
 }
 
-void TVMRun(tvm::runtime::Module& mod, std::vector<DLTensor>& inputs, std::vector<DLTensor>& outputs, tvm::runtime::TVMRetValue* ret)
+void TVMExtractOutputShapes(tvm::runtime::Module& mod, size_t num_outputs, std::vector<std::vector<int64_t>>& output_shapes)
+{
+  tvm::PackedFunc get_output = mod.GetFunction("get_output", false);
+  for (size_t i = 0; i < num_outputs; i++)
+  {
+    tvm::runtime::NDArray output_array = get_output(i);
+    output_shapes.push_back(output_array.Shape());
+  }
+}
+
+void TVMRun(tvm::runtime::Module& mod, std::vector<DLTensor>& inputs, std::vector<DLTensor>& outputs)
 {
   tvm::PackedFunc set_input = mod.GetFunction("set_input_zero_copy", false);
   for (size_t i = 0; i < inputs.size(); i++)
@@ -354,7 +364,8 @@ void TVMRun(tvm::runtime::Module& mod, std::vector<DLTensor>& inputs, std::vecto
     set_input(i, &inputs[i]);
   }
 
-  mod.GetFunction("run", false)();
+  const tvm::PackedFunc* run = tvm::runtime::Registry::Get("tvm_run_with_benchmark");
+  (*run)(mod);
 
   tvm::PackedFunc get_output = mod.GetFunction("get_output", false);
   for (size_t i = 0; i < outputs.size(); i++)
