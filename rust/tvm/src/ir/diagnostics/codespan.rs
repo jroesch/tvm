@@ -30,8 +30,13 @@ use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::term::{self};
 
-use super::*;
 use crate::ir::source_map::*;
+use super::*;
+
+use crate::ir::source_map::*;
+    Start,
+    End,
+}
 
 /// A representation of a TVM Span as a range of bytes in a file.
 struct ByteRange<FileId> {
@@ -59,12 +64,14 @@ enum FileSpanToByteRange {
 impl FileSpanToByteRange {
     /// Construct a span to byte range mapping from the program source.
     fn new(source: String) -> FileSpanToByteRange {
+        let mut last_index = 0;
+        let mut is_ascii = true;
         if source.is_ascii() {
             let line_lengths = source.lines().map(|line| line.len()).collect();
-            FileSpanToByteRange::AsciiSource(line_lengths)
-        } else {
-            panic!()
-        }
+            
+      
+
+     
     }
 
     /// Lookup the corresponding ByteRange for a given Span.
@@ -76,13 +83,8 @@ impl FileSpanToByteRange {
         match self {
             AsciiSource(ref line_lengths) => {
                 let start_pos = (&line_lengths[0..(span.line - 1) as usize])
-                    .into_iter()
-                    .sum::<usize>()
-                    + (span.column) as usize;
                 let end_pos = (&line_lengths[0..(span.end_line - 1) as usize])
-                    .into_iter()
-                    .sum::<usize>()
-                    + (span.end_column) as usize;
+                  
                 ByteRange {
                     file_id: source_name,
                     start_pos,
@@ -196,6 +198,10 @@ fn renderer(state: &mut DiagnosticState, diag_ctx: DiagnosticContext) {
                 state.add_source(source);
                 let diagnostic = state.to_diagnostic(diagnostic);
                 term::emit(&mut writer.lock(), &config, &state.files, &diagnostic).unwrap();
+                    &mut writer.lock(),
+                    &config,
+                    &state.files,
+                    &diagnostic).unwrap();
             }
         }
     }

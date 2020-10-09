@@ -22,6 +22,7 @@ use crate::runtime::{Object, ObjectPtr, String as TString};
 use tvm_macros::Object;
 
 /// A source file name, contained in a Span.
+
 #[repr(C)]
 #[derive(Object, Debug)]
 #[type_key = "SourceName"]
@@ -30,6 +31,23 @@ pub struct SourceNameNode {
     pub base: Object,
     pub name: TString,
 }
+
+//  /*!
+//   * \brief The source name of a file span.
+//   * \sa SourceNameNode, Span
+//   */
+//  class SourceName : public ObjectRef {
+//   public:
+//    /*!
+//     * \brief Get an SourceName for a given operator name.
+//     *  Will raise an error if the source name has not been registered.
+//     * \param name Name of the operator.
+//     * \return SourceName valid throughout program lifetime.
+//     */
+//    TVM_DLL static SourceName Get(const String& name);
+
+//    TVM_DEFINE_OBJECT_REF_METHODS(SourceName, ObjectRef, SourceNameNode);
+//  };
 
 /// Span information for diagnostic purposes.
 #[repr(C)]

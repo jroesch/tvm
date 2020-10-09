@@ -19,9 +19,16 @@
 
 use env_logger;
 use tvm::export;
+use tvm::runtime::function::register_override;
+
+fn test_fn() -> Result<(), tvm::Error> {
+    println!("Hello Greg from Rust!");
+    Ok(())
+}
 
 fn diagnostics() -> Result<(), tvm::Error> {
     tvm::ir::diagnostics::codespan::init()
+    Ok(())
 }
 
 export!(diagnostics);
@@ -29,6 +36,7 @@ export!(diagnostics);
 #[no_mangle]
 extern "C" fn compiler_ext_initialize() -> i32 {
     let _ = env_logger::try_init();
+    tvm_export("rust_ext")
     tvm_export("rust_ext").expect("failed to initialize the Rust compiler extensions.");
     log::debug!("Loaded the Rust compiler extension.");
     return 0;

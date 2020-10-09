@@ -44,6 +44,16 @@ pub struct SourceNode {
     // std::vector<std::pair<int, int>> line_map;
 }
 
+
+//  class Source : public ObjectRef {
+//   public:
+//    TVM_DLL Source(SourceName src_name, std::string source);
+//    TVM_DLL tvm::String GetLine(int line);
+
+//    TVM_DEFINE_NOTNULLABLE_OBJECT_REF_METHODS(Source, ObjectRef, SourceNode);
+//  };
+
+
 /// A mapping from a unique source name to source fragments.
 #[repr(C)]
 #[derive(Object, Debug)]

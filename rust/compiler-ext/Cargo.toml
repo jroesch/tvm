@@ -20,6 +20,7 @@ name = "compiler-ext"
 version = "0.1.0"
 authors = ["TVM Contributors"]
 edition = "2018"
+# TODO(@jroesch): would be cool to figure out how to statically link instead.
 
 [lib]
 crate-type = ["staticlib", "cdylib"]

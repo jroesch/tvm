@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-if(USE_RUST_EXT)
+if(USE_RUST_EXT AND NOT USE_RUST_EXT EQUAL OFF)
     set(RUST_SRC_DIR "${CMAKE_SOURCE_DIR}/rust")
     set(CARGO_OUT_DIR "${CMAKE_SOURCE_DIR}/rust/target")
 

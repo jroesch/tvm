@@ -34,6 +34,7 @@ use tvm_macros::{external, Object};
 
 pub mod codespan;
 
+// Get the the diagnostic renderer.
 external! {
     #[name("node.ArrayGetItem")]
     fn get_renderer() -> DiagnosticRenderer;
@@ -120,6 +121,9 @@ pub struct DiagnosticBuilder {
     /// The level.
     pub level: DiagnosticLevel,
 
+    /// The source name.
+    pub source_name: SourceName,
+
     /// The span of the diagnostic.
     pub span: Span,
 
@@ -145,6 +149,7 @@ impl DiagnosticBuilder {
 /// For example the terminal renderer will render a sequence
 /// of compiler diagnostics to std::out and std::err in
 /// a human readable form.
+//    */
 #[repr(C)]
 #[derive(Object, Debug)]
 #[ref_name = "DiagnosticRenderer"]
@@ -158,6 +163,10 @@ pub struct DiagnosticRendererNode {
     // memory layout
     // missing field here
 }
+
+//     def render(self, ctx):
+//         """
+//         Render the provided context.
 
 impl DiagnosticRenderer {
     /// Render the provided context.
