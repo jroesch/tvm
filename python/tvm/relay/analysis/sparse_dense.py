@@ -22,8 +22,8 @@ to block sparse model
 """
 from collections import namedtuple
 import numpy as np
-import scipy.sparse as sp
-import tvm
+
+from ... import nd, runtime
 from . import _ffi_api
 
 
@@ -73,6 +73,7 @@ def process_params(expr, params, block_size, sparsity_threshold):
     ret : Namedtuple[weight_name: Array[String], weight_shape: Array[Array[IntImm]]]
         return names of qualified dense weight and the shape in BSR format
     """
+    import scipy.sparse as sp
     memo = SparseAnalysisResult(weight_name=[], weight_shape=[])
     weight_names = _search_dense_op_weight(expr)
     for name in weight_names:
@@ -89,11 +90,11 @@ def process_params(expr, params, block_size, sparsity_threshold):
                 + list(sparse_weight.indices.shape)
                 + list(sparse_weight.indptr.shape)
             )
-            params[name + ".data"] = tvm.nd.array(sparse_weight.data)
-            params[name + ".indices"] = tvm.nd.array(sparse_weight.indices)
-            params[name + ".indptr"] = tvm.nd.array(sparse_weight.indptr)
+            params[name + ".data"] = nd.array(sparse_weight.data)
+            params[name + ".indices"] = nd.array(sparse_weight.indices)
+            params[name + ".indptr"] = nd.array(sparse_weight.indptr)
     ret = SparseAnalysisResult(
-        weight_name=tvm.runtime.convert(memo.weight_name),
-        weight_shape=tvm.runtime.convert(memo.weight_shape),
+        weight_name=runtime.convert(memo.weight_name),
+        weight_shape=runtime.convert(memo.weight_shape),
     )
     return ret

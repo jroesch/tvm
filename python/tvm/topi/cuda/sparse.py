@@ -17,7 +17,6 @@
 
 """Sparse operators"""
 import numpy as np
-import scipy.sparse as sp
 
 import tvm
 from tvm import relay, te
@@ -326,6 +325,7 @@ def schedule_sparse_dense_padded(outs):
 
 def pad_sparse_matrix(matrix, blocksize):
     """Pad rows of sparse matrix matrix so that they are a multiple of blocksize."""
+    import scipy.sparse as sp
     assert isinstance(matrix, sp.bsr_matrix)
     new_entries = np.zeros(matrix.shape[0], dtype=matrix.indptr.dtype)
     bsr = matrix.blocksize[0]
@@ -362,6 +362,7 @@ def _alter_sparse_dense_layout(_attrs, inputs, _tinfos, _out_type):
     sparse_dense implementation for one that operates on a padded matrix. We
     also padd the matrix.
     """
+    import scipy.sparse as sp
     if (
         isinstance(inputs[1], relay.Constant)
         and isinstance(inputs[2], relay.Constant)

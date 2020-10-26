@@ -18,6 +18,7 @@
  */
 
 use pyo3::prelude::*;
+use once_cell::sync::OnceCell;
 
 /// Load the Python interpreter into the address space.
 ///
@@ -29,6 +30,8 @@ use pyo3::prelude::*;
 pub fn load() -> Result<String, ()> {
     let gil = Python::acquire_gil();
     let py = gil.python();
+    // let main_mod = initialize();
+    //let main_mod = main_mod.as_ref(py);
     load_python_tvm_(py).map_err(|e| {
         // We can't display Python exceptions via std::fmt::Display,
         // so print the error here manually.
@@ -36,12 +39,22 @@ pub fn load() -> Result<String, ()> {
     })
 }
 
-// const TVMC_CODE: &'static str = include_str!("tvmc.py");
+pub fn import(mod_to_import: &str) -> PyResult<()> {
+    let gil = Python::acquire_gil();
+    let py = gil.python();
+    import_python(py, mod_to_import)?;
+    Ok(())
+}
+
+fn import_python<'p, 'b: 'p>(py: Python<'p>, to_import: &'b str) -> PyResult<&'p PyModule> {
+    let imported_mod = py.import(to_import)?;
+    Ok(imported_mod)
+}
+
 
 fn load_python_tvm_(py: Python) -> PyResult<String> {
-    let sys = py.import("tvm")?;
-    let version: String = sys.get("__version__")?.extract()?;
-    // py.run(TVMC_CODE, None, None)?;
+    let imported_mod = import_python(py, "tvm")?;
+    let version: String = imported_mod.get("__version__")?.extract()?;
     Ok(version)
 }
 

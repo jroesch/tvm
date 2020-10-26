@@ -23,11 +23,12 @@ import inspect
 import functools
 import warnings
 
+from ...ir import transform as tvm_transform
 import tvm.ir
 from tvm import te
 from tvm.runtime import ndarray as _nd
 
-from tvm import relay
+# from tvm import relay
 from . import _ffi_api
 
 
@@ -82,7 +83,7 @@ def build_config(opt_level=2, required_pass=None, disabled_pass=None, trace=None
 
 
 @tvm._ffi.register_object("relay.FunctionPass")
-class FunctionPass(tvm.ir.transform.Pass):
+class FunctionPass():
     """A pass that works on each tvm.relay.Function in a module. A function
     pass class should be created through `function_pass`.
     """
