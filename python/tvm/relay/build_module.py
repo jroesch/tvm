@@ -24,7 +24,7 @@ import numpy as np
 from tvm.ir import IRModule
 
 from tvm.tir import expr as tvm_expr
-from .. import nd as _nd, autotvm
+from .. import nd as _nd, autotvm, register_func
 from ..target import Target
 from ..contrib import graph_runtime as _graph_rt
 from . import _build_module
@@ -186,6 +186,9 @@ class BuildModule(object):
             ret[key] = value.data
         return ret
 
+@register_func("tvm.relay.build")
+def _rust_build_module(mod, target=None, target_host=None, params=None, mod_name="default"):
+    return build(mod, target, target_host, params, mod_name).module
 
 def build(mod, target=None, target_host=None, params=None, mod_name="default"):
     """Helper function that builds a Relay function to run on TVM graph

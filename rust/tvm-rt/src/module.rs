@@ -30,6 +30,8 @@ use tvm_sys::ffi;
 
 use crate::errors::Error;
 use crate::{errors, function::Function};
+use crate::{String as TString};
+use crate::RetValue;
 
 const ENTRY_FUNC: &str = "__tvm_main__";
 
@@ -49,6 +51,9 @@ crate::external! {
 
     #[name("runtime.ModuleLoadFromFile")]
     fn load_from_file(file_name: CString, format: CString) -> Module;
+
+    #[name("runtime.ModuleSaveToFile")]
+    fn save_to_file(module: ffi::TVMModuleHandle, name: TString, fmt: TString);
 }
 
 impl Module {
@@ -110,6 +115,10 @@ impl Module {
         Ok(module)
     }
 
+    pub fn save_to_file(&self, name: String, fmt: String) -> Result<(), Error> {
+        save_to_file(self.handle(), name.into(), fmt.into())
+    }
+
     /// Checks if a target device is enabled for a module.
     pub fn enabled(&self, target: &str) -> bool {
         let target = CString::new(target).unwrap();
@@ -128,3 +137,10 @@ impl Drop for Module {
         check_call!(ffi::TVMModFree(self.handle));
     }
 }
+
+// impl std::convert::TryFrom<RetValue> for Module {
+//     type Error = Error;
+//     fn try_from(ret_value: RetValue) -> Result<Module, Self::Error> {
+//         Ok(Module::new(ret_value.try_into()?))
+//     }
+// }
