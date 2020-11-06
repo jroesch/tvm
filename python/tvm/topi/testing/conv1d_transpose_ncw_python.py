@@ -17,10 +17,8 @@
 # pylint: disable=unused-variable
 """Transposed 1D convolution in python"""
 import numpy as np
-import scipy
 import tvm.topi.testing
 from tvm.topi.nn.utils import get_pad_tuple1d
-
 
 def conv1d_transpose_ncw_python(a_np, w_np, stride, padding, output_padding):
     """Transposed 1D convolution operator in NCW layout.
@@ -51,6 +49,7 @@ def conv1d_transpose_ncw_python(a_np, w_np, stride, padding, output_padding):
         3-D with shape [batch, out_channel, out_width]
 
     """
+    import scipy
     batch, in_c, in_w = a_np.shape
     _, out_c, filter_w = w_np.shape
     opad = output_padding[0]

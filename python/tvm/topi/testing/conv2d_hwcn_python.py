@@ -17,7 +17,6 @@
 # pylint: disable=invalid-name, line-too-long, unused-variable, too-many-locals
 """Convolution in python"""
 import numpy as np
-import scipy.signal
 from tvm.topi.nn.utils import get_pad_tuple
 
 
@@ -45,6 +44,7 @@ def conv2d_hwcn_python(a_np, w_np, stride, padding):
     b_np : np.ndarray
         4-D with shape [out_height, out_width, out_channel, batch]
     """
+    import scipy.signal
     in_height, in_width, in_channel, batch = a_np.shape
     kernel_h, kernel_w, _, num_filter = w_np.shape
     if isinstance(stride, int):
