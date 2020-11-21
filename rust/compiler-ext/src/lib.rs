@@ -20,6 +20,8 @@
 use env_logger;
 use tvm::export;
 
+pub mod tyck;
+
 fn diagnostics() -> Result<(), tvm::Error> {
     tvm::ir::diagnostics::codespan::init()?;
     Ok(())
@@ -31,6 +33,7 @@ export!(diagnostics);
 extern "C" fn compiler_ext_initialize() -> i32 {
     let _ = env_logger::try_init();
     tvm_export("rust_ext").expect("failed to initialize the Rust compiler extensions.");
+    tyck::tvm_export("rust_ext.tyck").expect("failed to initialize the Rust compiler extensions");
     log::debug!("Loaded the Rust compiler extension.");
     return 0;
 }

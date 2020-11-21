@@ -18,6 +18,7 @@
  */
 
 use crate::ir::relay::Function;
+use crate::ir::module::IRModule;
 use crate::runtime::array::Array;
 use crate::runtime::{
     external,
@@ -29,7 +30,6 @@ use crate::runtime::{Object, ObjectPtr, ObjectRef};
 use tvm_macros::Object;
 
 pub type Pass = ObjectRef;
-pub type IRModule = ObjectRef;
 pub type PassContext = ObjectRef;
 
 #[repr(C)]
@@ -44,7 +44,7 @@ pub struct PassInfoNode {
 }
 
 impl PassInfo {
-    pub fn new(opt_level: i32, name: String, required: Vec<String>) -> Result<PassInfo> {
+    pub fn new<S: Into<TString>>(opt_level: i32, name: S, required: Vec<String>) -> Result<PassInfo> {
         let required = required.into_iter().map(|name| name.into()).collect();
 
         let required = Array::from_vec(required)?;
@@ -63,6 +63,9 @@ impl PassInfo {
 external! {
     #[name("relay._transform.MakeFunctionPass")]
     fn create_func_pass(func: function::Function, pass_info: PassInfo) -> Pass;
+
+    #[name("transform.MakeModulePass")]
+    fn create_module_pass(func: function::Function, pass_info: PassInfo) -> Pass;
 }
 
 pub fn function_pass<F: Fn(Function, IRModule, PassContext) -> Function + 'static>(
@@ -73,41 +76,10 @@ pub fn function_pass<F: Fn(Function, IRModule, PassContext) -> Function + 'stati
     create_func_pass(func, pass_info)
 }
 
-/// A macro for generating the correct TVM symbols for plugin loading.
-///
-/// The expression passed to the macro will be run when TVM loads the
-/// shared library.
-///
-/// This is useful for calling register to register packed functions
-/// to consume via TVM's packed function APIs.
-#[macro_export]
-macro_rules! initialize {
-    ($body:expr) => {
-        #[no_mangle]
-        pub unsafe extern "C" fn initialize(
-            args: *mut tvm_sys::ffi::TVMValue,
-            type_codes: *mut c_int,
-            num_args: c_int,
-            ret: tvm_sys::ffi::TVMRetValueHandle,
-        ) -> c_int {
-            $body
-            return 0;
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! export_pass {
-    ($name:literal,$func:expr) => {
-        #[no_mangle]
-        pub unsafe extern "C" fn initialize(
-            args: *mut tvm_sys::ffi::TVMValue,
-            type_codes: *mut c_int,
-            num_args: c_int,
-            ret: tvm_sys::ffi::TVMRetValueHandle,
-        ) -> c_int {
-            register($func, $name).unwrap();
-            return 0;
-        }
-    };
+pub fn module_pass<F: Fn(IRModule, PassContext) -> IRModule + 'static>(
+    pass_fn: F,
+    pass_info: PassInfo,
+) -> Result<Pass> {
+    let mod_func = pass_fn.to_function();
+    create_module_pass(mod_func, pass_info)
 }

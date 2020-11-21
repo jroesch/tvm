@@ -28,10 +28,15 @@ if(USE_RUST_EXT AND NOT USE_RUST_EXT EQUAL OFF)
         message(FATAL_ERROR "invalid setting for USE_RUST_EXT, STATIC, DYNAMIC or OFF")
     endif()
 
+    file(GLOB_RECURSE COMPILER_EXT_SRCS
+        "${RUST_SRC_DIR}/*.rs"
+    )
+
     add_custom_command(
         OUTPUT "${COMPILER_EXT_PATH}"
         COMMAND cargo build --release
         MAIN_DEPENDENCY "${RUST_SRC_DIR}"
+        DEPENDS "${COMPILER_EXT_SRCS}"
         WORKING_DIRECTORY "${RUST_SRC_DIR}/compiler-ext")
 
     add_custom_target(rust_ext ALL DEPENDS "${COMPILER_EXT_PATH}")
@@ -39,6 +44,7 @@ if(USE_RUST_EXT AND NOT USE_RUST_EXT EQUAL OFF)
     # TODO(@jroesch, @tkonolige): move this to CMake target
     # target_link_libraries(tvm "${COMPILER_EXT_PATH}" PRIVATE)
     list(APPEND TVM_LINKER_LIBS ${COMPILER_EXT_PATH})
+    list(APPEND COMPILER_SRCS src/contrib/rust_extension.cc)
 
     add_definitions(-DRUST_COMPILER_EXT=1)
 endif()

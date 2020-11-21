@@ -21,11 +21,11 @@
  * \file src/contrib/rust_extension.cc
  * \brief Expose Rust extensions initialization.
  */
-#ifdef RUST_COMPILER_EXT
+// #ifdef RUST_COMPILER_EXT
 
 extern "C" {
 int compiler_ext_initialize();
 static int test = compiler_ext_initialize();
 }
 
-#endif
+// #endif

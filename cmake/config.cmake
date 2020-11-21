@@ -269,3 +269,5 @@ set(USE_HEXAGON_SDK /path/to/sdk)
 
 # Whether to use ONNX codegen
 set(USE_TARGET_ONNX OFF)
+
+set(USE_RUST_EXT "DYNAMIC")

@@ -51,9 +51,9 @@ pub use runtime::version;
 #[macro_export]
 macro_rules! export {
     ($($fn_name:expr),*) => {
-        pub fn tvm_export(ns: &str) -> Result<(), tvm::Error> {
+        pub fn tvm_export(ns: &str) -> ::std::result::Result<(), tvm::Error> {
             $(
-                let name = String::from(ns) + ::std::stringify!($fn_name);
+                let name = String::from(ns) + "." + ::std::stringify!($fn_name);
                 tvm::runtime::function::register_override($fn_name, name, true)?;
             )*
             Ok(())
@@ -64,7 +64,7 @@ macro_rules! export {
 #[macro_export]
 macro_rules! export_mod {
     ($ns:expr, $($mod_name:expr),*) => {
-        pub fn tvm_mod_export() -> Result<(), tvm::Error> {
+        pub fn tvm_mod_export() -> ::std::result::Result<(), tvm::Error> {
             $(
                 $mod_name::tvm_export($ns)?;
             )*
