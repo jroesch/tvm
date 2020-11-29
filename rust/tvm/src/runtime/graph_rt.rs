@@ -34,6 +34,16 @@ pub struct GraphRt {
 }
 
 impl GraphRt {
+    /// Create a graph runtime directly from a runtime module.
+    pub fn from_module(module: Module, ctx: Context) -> Result<GraphRt> {
+        let default: Box<dyn Fn(Context) -> Result<Module>> =
+            module.get_function("default", false)?.into();
+
+        Ok(Self {
+            module: default(ctx)?,
+        })
+    }
+
     /// Create a graph runtime from the deprecated graph, lib, ctx triple.
     pub fn create_from_parts(graph: &str, lib: Module, ctx: Context) -> Result<Self> {
         let runtime_create_fn = Function::get("tvm.graph_runtime.create").unwrap();
