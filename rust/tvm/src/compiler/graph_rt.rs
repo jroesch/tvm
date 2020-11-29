@@ -2,14 +2,10 @@ use std::convert::TryInto;
 use std::path::Path;
 use std::io::Read;
 
-use once_cell::sync::Lazy;
 use thiserror::Error;
-use tracing;
 
-use tvm::python;
-use tvm::ir::IRModule;
-use tvm::runtime::{Function, ObjectRef, Module as RtModule, String, NDArray, map::Map};
-use tvm::runtime::IsObjectRef;
+use crate::ir::IRModule;
+use crate::runtime::{Function, ObjectRef, Module as RtModule, String, NDArray, map::Map};
 
 use super::TVM_LOADED;
 
@@ -18,7 +14,7 @@ pub enum Error {
     #[error("{0}")]
     IO(#[from] std::io::Error),
     #[error("{0}")]
-    TVM(#[from] tvm::errors::Error),
+    TVM(#[from] crate::errors::Error),
 }
 
 // Raw API
@@ -33,10 +29,10 @@ fn _compile_module(module: IRModule, target: String, target_host: String, params
 
 #[derive(Debug)]
 pub struct CompilerConfig {
-    target: Option<String>,
-    target_host: Option<String>,
-    params: Map<String, NDArray>,
-    module_name: Option<String>
+    pub target: Option<String>,
+    pub target_host: Option<String>,
+    pub params: Map<String, NDArray>,
+    pub module_name: Option<String>
 }
 
 impl Default for CompilerConfig {
@@ -69,7 +65,9 @@ where P1: AsRef<Path>, P2: AsRef<Path> {
     let mut input_module_text = std::string::String::new();
     input_file.read_to_string(&mut input_module_text)?;
     let input_module = IRModule::parse("name", input_module_text)?;
-    let rt_module = compile_module(config, input_module)?;
+    println!("Before");
+    // let rt_module = compile_module(config, input_module)?;
+    // println!("Pointer {:p}\n", rt_module.handle() );
     // let output_file =
     //     std::fs::File::open(output_module.as_ref())?;
     // panic!()

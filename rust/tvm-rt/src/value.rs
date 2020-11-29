@@ -26,51 +26,6 @@ use std::convert::TryFrom;
 use crate::{ArgValue, Module, RetValue};
 use tvm_sys::{errors::ValueDowncastError, ffi::TVMModuleHandle, try_downcast};
 
-macro_rules! impl_handle_val {
-    ($type:ty, $variant:ident, $inner_type:ty, $ctor:path) => {
-        impl<'a> From<&'a $type> for ArgValue<'a> {
-            fn from(arg: &'a $type) -> Self {
-                ArgValue::$variant(arg.handle() as $inner_type)
-            }
-        }
-
-        impl<'a> From<&'a mut $type> for ArgValue<'a> {
-            fn from(arg: &'a mut $type) -> Self {
-                ArgValue::$variant(arg.handle() as $inner_type)
-            }
-        }
-
-        impl<'a> TryFrom<ArgValue<'a>> for $type {
-            type Error = ValueDowncastError;
-            fn try_from(val: ArgValue<'a>) -> Result<$type, Self::Error> {
-                try_downcast!(val -> $type, |ArgValue::$variant(val)| { $ctor(val) })
-            }
-        }
-
-        impl<'a, 'v> TryFrom<&'a ArgValue<'v>> for $type {
-            type Error = ValueDowncastError;
-            fn try_from(val: &'a ArgValue<'v>) -> Result<$type, Self::Error> {
-                try_downcast!(val -> $type, |ArgValue::$variant(val)| { $ctor(*val) })
-            }
-        }
-
-        impl From<$type> for RetValue {
-            fn from(val: $type) -> RetValue {
-                RetValue::$variant(val.handle() as $inner_type)
-            }
-        }
-
-        impl TryFrom<RetValue> for $type {
-            type Error = ValueDowncastError;
-            fn try_from(val: RetValue) -> Result<$type, Self::Error> {
-                try_downcast!(val -> $type, |RetValue::$variant(val)| { $ctor(val) })
-            }
-        }
-    };
-}
-
-impl_handle_val!(Module, ModuleHandle, TVMModuleHandle, Module::new);
-
 #[cfg(test)]
 mod tests {
     use std::{convert::TryInto, str::FromStr};

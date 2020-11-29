@@ -27,11 +27,12 @@ use std::{
 };
 
 use tvm_sys::ffi;
+use tvm_macros::Object;
+use crate::object::{Object, ObjectPtr, IsObjectRef};
 
 use crate::errors::Error;
 use crate::{errors, function::Function};
 use crate::{String as TString};
-use crate::RetValue;
 
 const ENTRY_FUNC: &str = "__tvm_main__";
 
@@ -39,10 +40,12 @@ const ENTRY_FUNC: &str = "__tvm_main__";
 /// The entry function can be applied to an imported module through [`entry_func`].
 ///
 /// [`entry_func`]:struct.Module.html#method.entry_func
-#[derive(Debug, Clone)]
-pub struct Module {
-    pub(crate) handle: ffi::TVMModuleHandle,
-    entry_func: Option<Function>,
+#[repr(C)]
+#[derive(Object, Debug)]
+#[ref_name = "Module"]
+#[type_key = "runtime.Module"]
+pub struct ModuleNode {
+    base: Object,
 }
 
 crate::external! {
@@ -53,22 +56,16 @@ crate::external! {
     fn load_from_file(file_name: CString, format: CString) -> Module;
 
     #[name("runtime.ModuleSaveToFile")]
-    fn save_to_file(module: ffi::TVMModuleHandle, name: TString, fmt: TString);
+    fn save_to_file(module: Module, name: TString, fmt: TString);
 }
 
 impl Module {
-    pub(crate) fn new(handle: ffi::TVMModuleHandle) -> Self {
-        Self {
-            handle,
-            entry_func: None,
-        }
+    pub(crate) fn from_raw(handle: ffi::TVMModuleHandle) -> Self {
+        Module(ObjectPtr::from_raw(handle as _).map(|p| p.downcast::<ModuleNode>().unwrap()))
     }
 
     pub fn entry(&mut self) -> Option<Function> {
-        if self.entry_func.is_none() {
-            self.entry_func = self.get_function(ENTRY_FUNC, false).ok();
-        }
-        self.entry_func.clone()
+        panic!()
     }
 
     /// Gets a function by name from a registered module.
@@ -77,7 +74,7 @@ impl Module {
         let mut fhandle = ptr::null_mut() as ffi::TVMFunctionHandle;
 
         check_call!(ffi::TVMModGetFunction(
-            self.handle,
+            self.handle(),
             name.as_ptr() as *const c_char,
             query_import as c_int,
             &mut fhandle as *mut _
@@ -92,7 +89,7 @@ impl Module {
 
     /// Imports a dependent module such as `.ptx` for gpu.
     pub fn import_module(&self, dependent_module: Module) {
-        check_call!(ffi::TVMModImport(self.handle, dependent_module.handle))
+        check_call!(ffi::TVMModImport(self.handle(), dependent_module.handle()))
     }
 
     /// Loads a module shared library from path.
@@ -116,7 +113,7 @@ impl Module {
     }
 
     pub fn save_to_file(&self, name: String, fmt: String) -> Result<(), Error> {
-        save_to_file(self.handle(), name.into(), fmt.into())
+        save_to_file(self.clone(), name.into(), fmt.into())
     }
 
     /// Checks if a target device is enabled for a module.
@@ -128,19 +125,6 @@ impl Module {
 
     /// Returns the underlying module handle.
     pub fn handle(&self) -> ffi::TVMModuleHandle {
-        self.handle
+        panic!()
     }
 }
-
-impl Drop for Module {
-    fn drop(&mut self) {
-        check_call!(ffi::TVMModFree(self.handle));
-    }
-}
-
-// impl std::convert::TryFrom<RetValue> for Module {
-//     type Error = Error;
-//     fn try_from(ret_value: RetValue) -> Result<Module, Self::Error> {
-//         Ok(Module::new(ret_value.try_into()?))
-//     }
-// }

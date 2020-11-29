@@ -50,7 +50,7 @@ impl GraphRt {
 
         let runtime_create_fn_ret = runtime_create_fn.invoke(vec![
             graph.into(),
-            (&lib).into(),
+            lib.into(),
             (&ctx.device_type).into(),
             // NOTE you must pass the device id in as i32 because that's what TVM expects
             (ctx.device_id as i32).into(),

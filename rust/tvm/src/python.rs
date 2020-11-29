@@ -18,7 +18,6 @@
  */
 
 use pyo3::prelude::*;
-use once_cell::sync::OnceCell;
 
 /// Load the Python interpreter into the address space.
 ///

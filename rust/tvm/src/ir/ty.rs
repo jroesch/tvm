@@ -245,7 +245,13 @@ impl TensorType {
         };
         ObjectPtr::new(node).into()
     }
+
+    pub fn static_sh(shape: Vec<i32>, dtype: DataType, span: Span) -> TensorType {
+        let sh = Array::from_vec(shape.into_iter().map(Into::into).collect()).unwrap();
+        Self::new(sh, dtype, span)
+    }
 }
+
 // TODO(@jroesch): implement these in future.
 //
 // using TypeCall = tvm::TypeCall;

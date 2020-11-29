@@ -11,7 +11,7 @@ use crate::ir::IRModule;
 use crate::runtime::{Function, ObjectRef, Module as RtModule, String, NDArray, map::Map};
 use crate::runtime::IsObjectRef;
 
-
+pub mod graph_rt;
 
 pub(self) static TVM_LOADED: Lazy<Function> = Lazy::new(|| {
     let ver = python::load().unwrap();

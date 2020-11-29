@@ -16,11 +16,11 @@
 # under the License.
 # pylint: disable=unused-argument,invalid-name
 """The base node types for the Relay language."""
-from ... import _ffi, ir
-from tvm.auto_scheduler.relay_integration import auto_schedule_topi, auto_schedule_impl_suffix
-from ...driver import lower, build
-from ...target import get_native_generic_func, GenericFunc
-from ...runtime import Object
+import tvm._ffi
+import tvm.ir
+from tvm.driver import lower, build
+from tvm.target import get_native_generic_func, GenericFunc
+from tvm.runtime import Object
 from . import _make
 
 
@@ -37,7 +37,7 @@ def get(op_name):
     op : Op
         The op of the corresponding name
     """
-    return ir.Op.get(op_name)
+    return tvm.ir.Op.get(op_name)
 
 
 class OpPattern(object):
@@ -64,7 +64,7 @@ class OpPattern(object):
     OPAQUE = 8
 
 
-@_ffi.register_object("relay.OpImplementation")
+@tvm._ffi.register_object("relay.OpImplementation")
 class OpImplementation(Object):
     """Operator implementation"""
 
@@ -111,12 +111,12 @@ class OpImplementation(Object):
         return _OpImplementationSchedule(self, attrs, outs, target)
 
 
-@_ffi.register_object("relay.OpSpecialization")
+@tvm._ffi.register_object("relay.OpSpecialization")
 class OpSpecialization(Object):
     """Operator specialization"""
 
 
-@_ffi.register_object("relay.OpStrategy")
+@tvm._ffi.register_object("relay.OpStrategy")
 class OpStrategy(Object):
     """Operator strategy"""
 
@@ -183,7 +183,7 @@ def register_compute(op_name, compute=None, level=10):
     level : int
         The priority level
     """
-    return ir.register_op_attr(op_name, "FTVMCompute", compute, level)
+    return tvm.ir.register_op_attr(op_name, "FTVMCompute", compute, level)
 
 
 def register_strategy(op_name, fstrategy=None, level=10):
@@ -204,7 +204,7 @@ def register_strategy(op_name, fstrategy=None, level=10):
     if not isinstance(fstrategy, GenericFunc):
         assert hasattr(fstrategy, "generic_func_node")
         fstrategy = fstrategy.generic_func_node
-    return ir.register_op_attr(op_name, "FTVMStrategy", fstrategy, level)
+    return tvm.ir.register_op_attr(op_name, "FTVMStrategy", fstrategy, level)
 
 
 def register_schedule(op_name, schedule, level=10):
@@ -285,7 +285,7 @@ def register_alter_op_layout(op_name, alter_layout=None, level=10):
     level : int
         The priority level
     """
-    return ir.register_op_attr(op_name, "FTVMAlterOpLayout", alter_layout, level)
+    return tvm.ir.register_op_attr(op_name, "FTVMAlterOpLayout", alter_layout, level)
 
 
 def register_convert_op_layout(op_name, convert_layout=None, level=10):
@@ -302,7 +302,7 @@ def register_convert_op_layout(op_name, convert_layout=None, level=10):
     level : int
         The priority level
     """
-    return ir.register_op_attr(op_name, "FTVMConvertOpLayout", convert_layout, level)
+    return tvm.ir.register_op_attr(op_name, "FTVMConvertOpLayout", convert_layout, level)
 
 
 def register_legalize(op_name, legal_op=None, level=10):
@@ -319,7 +319,7 @@ def register_legalize(op_name, legal_op=None, level=10):
     level : int
         The priority level
     """
-    return ir.register_op_attr(op_name, "FTVMLegalize", legal_op, level)
+    return tvm.ir.register_op_attr(op_name, "FTVMLegalize", legal_op, level)
 
 
 def register_pattern(op_name, pattern, level=10):
@@ -336,7 +336,7 @@ def register_pattern(op_name, pattern, level=10):
     level : int
         The priority level
     """
-    return ir.register_op_attr(op_name, "TOpPattern", pattern, level)
+    return tvm.ir.register_op_attr(op_name, "TOpPattern", pattern, level)
 
 
 def register_gradient(op_name, fgradient=None, level=10):
@@ -353,7 +353,7 @@ def register_gradient(op_name, fgradient=None, level=10):
     level : int
         The priority level
     """
-    return ir.register_op_attr(op_name, "FPrimalGradient", fgradient, level)
+    return tvm.ir.register_op_attr(op_name, "FPrimalGradient", fgradient, level)
 
 
 def register_shape_func(op_name, data_dependant, shape_func=None, level=10):
@@ -375,7 +375,7 @@ def register_shape_func(op_name, data_dependant, shape_func=None, level=10):
         The priority level
     """
     get(op_name).set_attr("TShapeDataDependant", data_dependant, level)
-    return ir.register_op_attr(op_name, "FShapeFunc", shape_func, level)
+    return tvm.ir.register_op_attr(op_name, "FShapeFunc", shape_func, level)
 
 
 def register_external_compiler(op_name, fexternal=None, level=10):
@@ -394,15 +394,15 @@ def register_external_compiler(op_name, fexternal=None, level=10):
     level : int
         The priority level
     """
-    return ir.register_op_attr(op_name, "FTVMExternalCompiler", fexternal, level)
+    return tvm.ir.register_op_attr(op_name, "FTVMExternalCompiler", fexternal, level)
 
 
-_ffi.register_func("relay.op.compiler._lower")
+@tvm._ffi.register_func("relay.op.compiler._lower")
 def _lower(name, schedule, inputs, outputs):
     return lower(schedule, list(inputs) + list(outputs), name=name)
 
 
-_ffi.register_func("relay.op.compiler._build")
+@tvm._ffi.register_func("relay.op.compiler._build")
 def _build(lowered_funcs):
     return build(lowered_funcs, target="llvm")
 
@@ -419,7 +419,7 @@ def debug(expr, debug_func=None):
 
     if debug_func:
         name = "debugger_func{}".format(__DEBUG_COUNTER__)
-        _ffi.register_func(name, debug_func)
+        tvm._ffi.register_func(name, debug_func)
         __DEBUG_COUNTER__ += 1
     else:
         name = ""
@@ -427,4 +427,4 @@ def debug(expr, debug_func=None):
     return _make.debug(expr, name)
 
 
-_ffi._init_api("relay.op", __name__)
+tvm._ffi._init_api("relay.op", __name__)
