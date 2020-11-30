@@ -54,7 +54,7 @@ impl Default for CompilerConfig {
 /// * `module` - The IRModule to compile.
 pub fn compile_module(config: CompilerConfig, module: IRModule) -> Result<RtModule, Error> {
     let target = config.target.unwrap_or("llvm".into());
-    _compile_module(module, target, "llvm".into(), Map::<String, NDArray>::empty(), "foo".into())
+    _compile_module(module, target, "llvm".into(), Map::<String, NDArray>::empty(), "default".into())
 }
 
 /// The interface to the compile subcommand.

@@ -57,13 +57,13 @@ crate::external! {
 
     #[name("runtime.ModuleSaveToFile")]
     fn save_to_file(module: Module, name: TString, fmt: TString);
+
+    // TODO(@jroesch): we need to refactor this
+    #[name("tvm.relay.module_export_library")]
+    fn export_library(module: Module, file_name: TString);
 }
 
 impl Module {
-    pub(crate) fn from_raw(handle: ffi::TVMModuleHandle) -> Self {
-        Module(ObjectPtr::from_raw(handle as _).map(|p| p.downcast::<ModuleNode>().unwrap()))
-    }
-
     pub fn entry(&mut self) -> Option<Function> {
         panic!()
     }
@@ -116,6 +116,10 @@ impl Module {
         save_to_file(self.clone(), name.into(), fmt.into())
     }
 
+    pub fn export_library(&self, name: String) -> Result<(), Error> {
+        export_library(self.clone(), name.into())
+    }
+
     /// Checks if a target device is enabled for a module.
     pub fn enabled(&self, target: &str) -> bool {
         let target = CString::new(target).unwrap();
@@ -124,7 +128,7 @@ impl Module {
     }
 
     /// Returns the underlying module handle.
-    pub fn handle(&self) -> ffi::TVMModuleHandle {
-        panic!()
+    pub unsafe fn handle(&self) -> ffi::TVMModuleHandle {
+        self.0.clone().unwrap().into_raw() as *mut _
     }
 }
