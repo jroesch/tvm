@@ -60,7 +60,8 @@ from . import qnn
 from .scope_builder import ScopeBuilder
 
 # Load Memory Passes
-from .transform import memory_alloc, memory_plan
+from .transform import memory_alloc
+from .transform import memory_plan
 
 # Required to traverse large programs
 setrecursionlimit(10000)

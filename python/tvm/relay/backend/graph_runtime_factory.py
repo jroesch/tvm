@@ -21,7 +21,7 @@ from tvm._ffi.registry import get_global_func
 from tvm.runtime import ndarray
 
 
-class GraphRuntimeFactoryModule:
+class GraphRuntimeFactoryModule(object):
     """Graph runtime factory module.
     This is a module of graph runtime factory
 

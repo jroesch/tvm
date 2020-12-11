@@ -17,7 +17,7 @@
 # pylint: disable=no-else-return, unidiomatic-typecheck, invalid-name, unused-import
 """Regions used in Relay."""
 
-from ...runtime import Object
+from tvm.runtime import Object
 from . import _ffi_api
 
 

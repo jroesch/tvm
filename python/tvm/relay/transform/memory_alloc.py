@@ -20,13 +20,14 @@ A pass for manifesting explicit memory allocations.
 """
 import numpy as np
 
-from ... import DataType, register_func, nd, container, cpu
-from ...ir.transform import PassContext, module_pass
-from . import InferType
+from tvm.ir.transform import PassContext, module_pass
+from tvm.relay.transform import InferType
+from tvm import nd, container
 from ..function import Function
 from ..expr_functor import ExprVisitor, ExprMutator
 from ..scope_builder import ScopeBuilder
 from .. import op
+from ... import DataType, register_func
 from .. import ty, expr
 from ..backend import compile_engine
 from ..op.memory import flatten_tuple_type, from_tuple_type, to_tuple_type

@@ -201,11 +201,7 @@ class BuildModule(object):
 
 @register_func("tvm.relay.build")
 def _rust_build_module(mod, target=None, target_host=None, params=None, mod_name="default"):
-    print(mod)
-    print("\n")
     rt_mod = build(mod, target, target_host, params, mod_name).module
-    print(rt_mod)
-    print(rt_mod["default"])
     return rt_mod
 
 @register_func("tvm.relay.module_export_library")
