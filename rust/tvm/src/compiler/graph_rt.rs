@@ -65,11 +65,5 @@ where P1: AsRef<Path>, P2: AsRef<Path> {
     let mut input_module_text = std::string::String::new();
     input_file.read_to_string(&mut input_module_text)?;
     let input_module = IRModule::parse("name", input_module_text)?;
-    println!("Before");
-    // let rt_module = compile_module(config, input_module)?;
-    // println!("Pointer {:p}\n", rt_module.handle() );
-    // let output_file =
-    //     std::fs::File::open(output_module.as_ref())?;
-    // panic!()
     Ok(())
 }

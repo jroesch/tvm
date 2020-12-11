@@ -29,8 +29,6 @@ use pyo3::prelude::*;
 pub fn load() -> Result<String, ()> {
     let gil = Python::acquire_gil();
     let py = gil.python();
-    // let main_mod = initialize();
-    //let main_mod = main_mod.as_ref(py);
     load_python_tvm_(py).map_err(|e| {
         // We can't display Python exceptions via std::fmt::Display,
         // so print the error here manually.

@@ -34,12 +34,6 @@ use crate::errors::Error;
 use crate::{errors, function::Function};
 use crate::{String as TString};
 
-const ENTRY_FUNC: &str = "__tvm_main__";
-
-/// Wrapper around TVM module handle which contains an entry function.
-/// The entry function can be applied to an imported module through [`entry_func`].
-///
-/// [`entry_func`]:struct.Module.html#method.entry_func
 #[repr(C)]
 #[derive(Object, Debug)]
 #[ref_name = "Module"]
@@ -64,10 +58,6 @@ crate::external! {
 }
 
 impl Module {
-    pub fn entry(&mut self) -> Option<Function> {
-        panic!()
-    }
-
     /// Gets a function by name from a registered module.
     pub fn get_function(&self, name: &str, query_import: bool) -> Result<Function, Error> {
         let name = CString::new(name)?;

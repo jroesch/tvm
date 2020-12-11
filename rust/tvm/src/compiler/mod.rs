@@ -15,7 +15,6 @@ pub mod graph_rt;
 
 pub(self) static TVM_LOADED: Lazy<Function> = Lazy::new(|| {
     let ver = python::load().unwrap();
-    println!("version: {}", ver);
     python::import("tvm.relay").unwrap();
     Function::get("tvm.relay.build").unwrap()
 });
