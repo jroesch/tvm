@@ -67,3 +67,18 @@ where P1: AsRef<Path>, P2: AsRef<Path> {
     let input_module = IRModule::parse("name", input_module_text)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_module_build() -> Result<()> {
+        let mut module = IRModule::empty()?;
+        let x = Var::static_tensor("x".into(), vec![1, 1], DataType::float32());
+        let params = vec![x.clone()];
+        let func = relay::Function::simple(params, x);
+        let module = module.add(GlobalVar::new("main".into(), Span::null()), func)?;
+        
+        let rtmodule = compile_module(Default::default(), module)?
+        Ok(())
+    }
+}
