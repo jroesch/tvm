@@ -42,7 +42,7 @@ fn main() {
         fadd.import_module(Module::load(&concat!(env!("OUT_DIR"), "/test_add.ptx")).unwrap());
     }
 
-    fadd.entry()
+    fadd.get_function("__tvm_main__", false).ok()
         .expect("module must have entry point")
         .invoke(vec![(&arr).into(), (&arr).into(), (&ret).into()])
         .unwrap();

@@ -70,15 +70,24 @@ where P1: AsRef<Path>, P2: AsRef<Path> {
 
 #[cfg(test)]
 mod tests {
+    use crate::ir::IRModule;
+    use crate::ir::relay::*;
+    use crate::DataType;
+    use anyhow::Result;
+    use crate::ir::span::Span;
+    use crate::ir::ty::GlobalTypeVar;
+    use super::compile_module;
+    use tvm_rt::IsObjectRef;
+
     #[test]
     fn test_module_build() -> Result<()> {
         let mut module = IRModule::empty()?;
         let x = Var::static_tensor("x".into(), vec![1, 1], DataType::float32());
         let params = vec![x.clone()];
-        let func = relay::Function::simple(params, x);
+        let func = Function::simple(params, x);
         let module = module.add(GlobalVar::new("main".into(), Span::null()), func)?;
         
-        let rtmodule = compile_module(Default::default(), module)?
+        let rtmodule = compile_module(Default::default(), module)?;
         Ok(())
     }
 }
