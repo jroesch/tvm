@@ -17,11 +17,7 @@
  * under the License.
  */
 
-/*!
- * \file relay/backend/compile_engine.cc
- * \brief Internal compialtion engine.
- */
-#include "compile_engine.h"
+#include "te_compiler.h"
 
 #include <tvm/driver/driver_api.h>
 #include <tvm/ir/type_functor.h>
@@ -32,6 +28,7 @@
 #include <tvm/relay/op.h>
 #include <tvm/relay/op_attr_types.h>
 #include <tvm/runtime/container.h>
+#include <tvm/runtime/device_api.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/te/operation.h>
 #include <tvm/te/schedule.h>
@@ -51,10 +48,13 @@
 
 namespace tvm {
 namespace relay {
+namespace tec {
 
-TVM_REGISTER_OBJECT_TYPE(CompileEngineNode);
+using namespace tvm::relay::transform;
 
-class CompileEngineImpl : public CompileEngineNode {
+TVM_REGISTER_OBJECT_TYPE(TECompilerNode);
+
+class TECompilerImpl : public TECompilerNode {
  public:
   // Lower the function.
   CachedFunc Lower(const CCacheKey& key) { return LowerInternal(key)->cached_func; }
@@ -62,7 +62,9 @@ class CompileEngineImpl : public CompileEngineNode {
   // For now, build one module per function.
   PackedFunc JIT(const CCacheKey& key) final {
     CCacheValue value = LowerInternal(key);
-    if (value->packed_func != nullptr) return value->packed_func;
+    if (value->packed_func != nullptr) {
+      return value->packed_func;
+    }
     auto m = build(value->cached_func->funcs, key->target, Target(nullptr));
     value->packed_func = m.GetFunction(value->cached_func->prim_fn_var->name_hint);
     return value->packed_func;
@@ -70,6 +72,22 @@ class CompileEngineImpl : public CompileEngineNode {
 
   CachedFunc LowerShapeFunc(const CCacheKey& key) final {
     return LowerShapeFuncInternal(key)->cached_func;
+  }
+
+  Map<String, IRModule> GetLoweredFunctions() {
+    Map<String, IRModule> lowered_functions;
+    for (const auto& it : cache_) {
+      auto source_func = it.first;
+      auto lowered_func = it.second;
+      auto target = source_func->target;
+
+      if (!lowered_functions.count(target->str())) {
+        lowered_functions.Set(target->str(), IRModule(Map<GlobalVar, BaseFunc>({})));
+      }
+
+      lowered_functions[target->str()]->Update(lowered_func->cached_func->funcs);
+    }
+    return lowered_functions;
   }
 
   Array<tvm::runtime::Module> LowerExternalFunctions() {
@@ -90,10 +108,10 @@ class CompileEngineImpl : public CompileEngineNode {
                                       << AsText(src_func, false);
 
         std::string sn = symbol_name.value();
-        if (!cached_symbol.count(sn)) {
+        if (cached_symbol.count(sn)) {
           cached_symbol[sn] = code_gen_name;
         } else {
-          ICHECK_NE(cached_symbol[sn], code_gen_name)
+          ICHECK_NE(sn, code_gen_name)
               << "Found duplicated symbol: " << sn << " for: " << code_gen_name;
         }
 
@@ -125,17 +143,6 @@ class CompileEngineImpl : public CompileEngineNode {
     std::lock_guard<std::mutex> lock(mutex_);
     Array<ObjectRef> items;
     for (auto& kv : cache_) {
-      items.push_back(kv.first);
-      items.push_back(kv.second);
-    }
-    return items;
-  }
-
-  // List all items in the shape_func_cache.
-  Array<ObjectRef> ListShapeFuncItems() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    Array<ObjectRef> items;
-    for (auto& kv : shape_func_cache_) {
       items.push_back(kv.first);
       items.push_back(kv.second);
     }
@@ -181,7 +188,6 @@ class CompileEngineImpl : public CompileEngineNode {
       value->cached_func = CachedFunc(target, global_var, {}, {}, te::Schedule(), {}, ir_module);
       return value;
     }
-
     // Enforce use the target.
     With<Target> target_scope(key->target);
 
@@ -198,11 +204,15 @@ class CompileEngineImpl : public CompileEngineNode {
       }
     }
 
+    std::cout << "Input Size: " << cfunc->inputs.size() << std::endl;
+    std::cout << "Output Size: " << cfunc->outputs.size() << std::endl;
     // NOTE: array will copy on write.
     Array<te::Tensor> all_args = Array<te::Tensor>(cfunc->inputs);
     for (te::Tensor arg : cfunc->outputs) {
       all_args.push_back(arg);
     }
+
+    std::cout << "Allargs Size: " << all_args.size() << std::endl;
 
     using tvm::transform::PassContext;
     With<PassContext> fresh_pass_ctx_scope(PassContext::Create());
@@ -252,66 +262,111 @@ class CompileEngineImpl : public CompileEngineNode {
   CCacheKey cur_ccache_key_;
 };
 
-/*! \brief The global compile engine */
-CompileEngine& CompileEngine::Global() {
-  // intentionally allocate raw pointer to avoid
-  // free during destructuion.
-  static CompileEngine* inst = new CompileEngine(make_object<CompileEngineImpl>());
-  return *inst;
+TECompiler::TECompiler() {
+  auto object = make_object<TECompilerImpl>();
+  data_ = object;
 }
 
-TVM_REGISTER_PASS_CONFIG_OPTION("relay.backend.use_auto_scheduler", Bool);
-TVM_REGISTER_PASS_CONFIG_OPTION("relay.backend.disable_compile_engine_cache", Bool);
+class LowerTensorExpr : public ExprMutator {
+ public:
+  LowerTensorExpr(const IRModule& module, const TargetsMap& targets,
+                  const DeviceContextMap& device_ctx_map, TECompiler compiler)
+      : module_(module),
+        targets_(targets),
+        device_context_map_(device_ctx_map),
+        compiler_(compiler) {}
 
-TVM_REGISTER_GLOBAL("relay.backend._make_LoweredOutput")
-    .set_body_typed([](tvm::Array<te::Tensor> outputs, OpImplementation impl) {
-      return LoweredOutput(outputs, impl);
-    });
+  Expr VisitExpr_(const CallNode* call) override {
+    Call expr = GetRef<Call>(call);
+    Function func;
 
-TVM_REGISTER_GLOBAL("relay.backend._make_CCacheKey")
-    .set_body_typed([](Function source_func, Target target) {
-      return CCacheKey(source_func, target);
-    });
+    if (call->op.as<FunctionNode>()) {
+      func = GetRef<Function>(call->op.as<FunctionNode>());
+    } else {
+      return ExprMutator::VisitExpr_(call);
+    }
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineGlobal").set_body_typed([]() {
-  return CompileEngine::Global();
-});
+    if (!func->HasNonzeroAttr(attr::kPrimitive)) {
+      // LOG(FATAL) << "TVM only support calls to primitive functions "
+      //           << "(i.e functions composed of fusable operator invocations)";
+      return ExprMutator::VisitExpr_(call);
+    }
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineClear").set_body_typed([](CompileEngine self) {
-  self->Clear();
-});
+    // Process inputs.
+    Array<Expr> args;
+    for (size_t i = 0; i < expr->args.size(); i++) {
+      args.push_back(VisitExpr(expr->args[i]));
+    }
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineLower")
-    .set_body_typed([](CompileEngine self, CCacheKey key) { return self->Lower(key); });
+    Target target;
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineLowerShapeFunc")
-    .set_body_typed([](CompileEngine self, CCacheKey key) { return self->LowerShapeFunc(key); });
+    if (func->GetAttr<String>(attr::kCompiler).defined()) {
+      target = Target("ext_dev");
+      CCacheKey key = CCacheKey(func, target);
+      CachedFunc ext_func = compiler_->Lower(key);
+      ICHECK(ext_func.defined()) << "External function is not defined.";
+      return Call(ext_func->prim_fn_var, args, {});
+    }
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileLowerExternalFunctions")
-    .set_body_typed([](CompileEngine self) { return self->LowerExternalFunctions(); });
+    ICHECK_GE(device_context_map_.count(expr), 0);
+    auto& device_context = this->device_context_map_[expr];
+    auto call_dev_type = device_context.device_type;
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineJIT")
-    .set_body_typed([](CompileEngine self, CCacheKey key) { return self->JIT(key); });
+    // Non-External Relay Function
+    if (targets_.size() == 1) {
+      // The homogeneous execution case, we should only have one target
+      // so we just grab it.
+      const auto& it = targets_.begin();
+      target = (*it).second;
+    } else {
+      // The heterogeneous execution case we have multiple targets
+      // in this case.
+      //
+      // We need to identify the target and translate.
+      std::string call_dev_name;
+      if (call_dev_type == 0) {
+        call_dev_name = "llvm";
+      } else {
+        call_dev_name = ::tvm::runtime::DeviceName(call_dev_type);
+      }
+      if (targets_.count(call_dev_type) == 0) {
+        LOG(FATAL) << "No target is provided for device " << call_dev_name;
+      }
+      target = targets_[call_dev_type];
+    }
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineListItems").set_body_typed([](CompileEngine self) {
-  CompileEngineImpl* ptr = dynamic_cast<CompileEngineImpl*>(self.operator->());
-  ICHECK(ptr != nullptr);
-  return ptr->ListItems();
-});
+    CCacheKey key = CCacheKey(func, target);
+    CachedFunc lowered_func = compiler_->Lower(key);
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineListShapeFuncItems")
-    .set_body_typed([](CompileEngine self) {
-      CompileEngineImpl* ptr = dynamic_cast<CompileEngineImpl*>(self.operator->());
-      ICHECK(ptr != nullptr);
-      return ptr->ListShapeFuncItems();
-    });
+    return Call(lowered_func->prim_fn_var, args, Attrs());
+  }
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineGetCurrentCCacheKey")
-    .set_body_typed([](CompileEngine self) {
-      CompileEngineImpl* ptr = dynamic_cast<CompileEngineImpl*>(self.operator->());
-      ICHECK(ptr != nullptr);
-      return ptr->GetCurrentCCacheKey();
-    });
+  IRModule module_;
+  TargetsMap targets_;
+  DeviceContextMap device_context_map_;
+  TECompiler compiler_;
+};
 
+LoweredModule LowerTE(const IRModule& module, TargetsMap targets,
+                      DeviceContextMap device_context_map) {
+  TECompiler compiler;
+
+  auto pass = CreateFunctionPass(
+      [=](Function func, IRModule module, PassContext ctx) {
+        LowerTensorExpr lower_te(module, targets, device_context_map, compiler);
+        return Downcast<Function>(lower_te.VisitExpr(func));
+      },
+      0, "LowerTensorExpr", {});
+
+  auto updated_module = pass(module);
+
+  LoweredModule lowered_module;
+  lowered_module.main_module = updated_module;
+  lowered_module.per_target_module = compiler->GetLoweredFunctions();
+  lowered_module.external_mods = compiler->LowerExternalFunctions();
+  return lowered_module;
+}
+
+}  // namespace tec
 }  // namespace relay
 }  // namespace tvm

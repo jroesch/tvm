@@ -972,7 +972,7 @@ void VMCompiler::Lower(IRModule mod, const TargetsMap& targets, const tvm::Targe
   // update primitive function map
   size_t primitive_index = 0;
   for (const auto& cfunc : context_.cached_funcs) {
-    exec_->primitive_map.insert({cfunc->func_name, primitive_index++});
+    exec_->primitive_map.insert({cfunc->prim_fn_var->name_hint, primitive_index++});
   }
 }
 
@@ -1167,8 +1167,9 @@ void VMCompiler::Codegen() {
 
     if (target_str == "ext_dev") {
       // Collect metadata in functions that are handled by external codegen.
-      ICHECK(mod->ContainGlobalVar(cfunc->func_name));
-      Function func = Downcast<Function>(mod->Lookup(cfunc->func_name));
+      auto name = cfunc->prim_fn_var->name_hint;
+      ICHECK(mod->ContainGlobalVar(name));
+      Function func = Downcast<Function>(mod->Lookup(name));
       backend::UpdateConstants(func, &params_);
       continue;
     } else if (funcs.count(target_str) == 0) {

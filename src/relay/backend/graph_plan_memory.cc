@@ -114,7 +114,8 @@ class StorageAllocaBaseVisitor : public ExprVisitor {
   const std::vector<StorageToken*>& GetToken(const Expr& expr) {
     this->VisitExpr(expr);
     auto it = token_map_.find(expr.operator->());
-    ICHECK(it != token_map_.end());
+    ICHECK(it != token_map_.end())
+        << "Expression: `" << PrettyPrint(expr) << "` not found in storage map.";
     return it->second;
   }
   /*!
@@ -166,10 +167,22 @@ class StorageAllocaInit : protected StorageAllocaBaseVisitor {
   }
 
   void VisitExpr_(const CallNode* op) final {
+    // temporary hack for change of style.
+    bool skip_first = false;
+    if (auto op_node = op->op.as<OpNode>()) {
+      if (op_node->name == "prim_fn_call") {
+        skip_first = true;
+      }
+    }
+
     // create token for the call node.
     CreateToken(op, true);
     // for each input, visit argument token.
     for (Expr arg : op->args) {
+      if (skip_first) {
+        skip_first = false;
+        continue;
+      }
       for (StorageToken* tok : GetToken(arg)) {
         tok->ref_counter += 1;
       }
@@ -272,9 +285,22 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
 
   // The call map
   void VisitExpr_(const CallNode* op) final {
+    // temporary hack for change of style.
+    bool skip_first = false;
+    if (auto op_node = op->op.as<OpNode>()) {
+      if (op_node->name == "prim_fn_call") {
+        skip_first = true;
+      }
+    }
+
     std::vector<StorageToken*> args;
     // for each input, visit argument token.
     for (Expr arg : op->args) {
+      if (skip_first) {
+        skip_first = false;
+        continue;
+      }
+
       for (StorageToken* tok : GetToken(arg)) {
         args.push_back(tok);
       }

@@ -43,6 +43,7 @@
 #include "../backend/compile_engine.h"
 #include "../op/memory/memory.h"
 #include "../op/vm/vm.h"
+#include "./pass_utils.h"
 #include "let_list.h"
 #include "pattern_utils.h"
 

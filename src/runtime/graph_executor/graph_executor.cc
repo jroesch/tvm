@@ -372,6 +372,7 @@ void GraphExecutor::SetupOpExecs() {
       uint32_t eid = this->entry_id(e);
       args.push_back(*(data_entry_[eid].operator->()));
     }
+
     for (uint32_t index = 0; index < inode.param.num_outputs; ++index) {
       uint32_t eid = this->entry_id(nid, index);
       args.push_back(*(data_entry_[eid].operator->()));
@@ -433,6 +434,7 @@ GraphExecutor::CreateTVMOp(const TVMOpParam& param, const std::vector<DLTensor>&
   ICHECK(pf != nullptr) << "no such function in module: " << param.func_name;
 
   auto fexec = [arg_ptr, pf]() {
+    std::cout << "Number of args: " << static_cast<int>(arg_ptr->arg_values.size());
     TVMRetValue rv;
     TVMArgs targs(arg_ptr->arg_values.data(), arg_ptr->arg_tcodes.data(),
                   static_cast<int>(arg_ptr->arg_values.size()));
