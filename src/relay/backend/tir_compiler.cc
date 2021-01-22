@@ -637,6 +637,22 @@ class TECompilerImpl : public TECompilerNode {
     return LowerShapeFuncInternal(key)->cached_func;
   }
 
+  Map<String, IRModule> GetLoweredFunctions() {
+    Map<String, IRModule> lowered_functions;
+    for (const auto& it : cache_) {
+      auto source_func = it.first;
+      auto lowered_func = it.second;
+      auto target = source_func->target;
+
+      if (!lowered_functions.count(target->str())) {
+        lowered_functions.Set(target->str(), IRModule(Map<GlobalVar, BaseFunc>({})));
+      }
+
+      lowered_functions[target->str()]->Update(lowered_func->cached_func->funcs);
+    }
+    return lowered_functions;
+  }
+
   Array<tvm::runtime::Module> LowerExternalFunctions() {
     Array<tvm::runtime::Module> ret;
     std::unordered_map<std::string, std::string> cached_symbol;
@@ -847,167 +863,62 @@ class LowerTensorExpr : public ExprMutator {
   LowerTensorExpr(const IRModule& module, const TargetsMap& targets, TECompiler compiler)
     : module_(module), targets_(targets), compiler_(compiler) {}
 
-  // /*!
-  //  * \brief Add node to graph
-  //  *
-  //  * \param node
-  //  * \param expr
-  //  * \return std::vector<_NodeRef>
-  //  */
-  // std::vector<GraphNodeRef> AddNode(GraphObjectPtr node, Expr expr) {
-  //   auto checked_type = expr->checked_type();
-  //   size_t count = storage_device_map_.count(expr);
-  //   ICHECK_GT(count, 0) << "Expr is not existing in storage plan";
-  //   auto storage_device_info = storage_device_map_[expr];
-  //   ICHECK_EQ(storage_device_info.size(), 2);
-  //   // storage
-  //   std::vector<int64_t> storage_info;
-  //   for (auto& v : storage_device_info[0]) {
-  //     storage_info.push_back(v->value);
-  //   }
-  //   node->attrs_["storage_id"] = std::move(storage_info);
-  //   // type
-  //   std::vector<int64_t> device_types;
-  //   for (auto& v : storage_device_info[1]) {
-  //     device_types.push_back(v->value);
-  //   }
-  //   size_t num_unknown_devices = std::count(device_types.begin(), device_types.end(), 0);
-  //   if (num_unknown_devices != 0 && num_unknown_devices != device_types.size()) {
-  //     LOG(FATAL) << "The graph contains not annotated nodes for "
-  //                << "heterogeneous execution. All nodes must be "
-  //                << "annotated.";
-  //   }
-  //   if (num_unknown_devices == 0) {
-  //     node->attrs_["device_index"] = device_types;
-  //   }
-  //   auto node_id = nodes_.size();
-  //   nodes_.push_back(node);
-  //   // Tuple return value, flatten as tuple
-  //   if (const auto* tuple_type = checked_type.as<TupleTypeNode>()) {
-  //     std::vector<GraphNodeRef> ret;
-  //     ShapeVector shape;
-  //     std::vector<std::string> dtype;
-  //     for (size_t i = 0; i < tuple_type->fields.size(); ++i) {
-  //       if (const auto* typ = tuple_type->fields[i].as<TensorTypeNode>()) {
-  //         ret.push_back(GraphNodeRef(node_id, i));
-  //         shape.emplace_back(_ShapeToJSON(typ->shape));
-  //         dtype.emplace_back(DType2String(typ->dtype));
-  //       } else {
-  //         LOG(FATAL) << "type " << checked_type->GetTypeKey() << " not supported";
-  //       }
-  //     }
-  //     ICHECK_EQ(node->Type(), kGraphOpNode);
-  //     auto op_nd = std::dynamic_pointer_cast<GraphOpNode>(node);
-  //     op_nd->attrs_["shape"] = shape;
-  //     op_nd->attrs_["dtype"] = dtype;
-  //     op_nd->num_outputs_ = tuple_type->fields.size();
-  //     return ret;
-  //   }
-  //   // Normal tensor return type
-  //   if (const auto* tensor_type = checked_type.as<TensorTypeNode>()) {
-  //     ShapeVector shape;
-  //     std::vector<std::string> dtype;
-  //     shape.emplace_back(_ShapeToJSON(tensor_type->shape));
-  //     dtype.emplace_back(DType2String(tensor_type->dtype));
-  //     node->attrs_["shape"] = shape;
-  //     node->attrs_["dtype"] = dtype;
-  //   } else {
-  //     LOG(FATAL) << "type " << checked_type->GetTypeKey() << " not supported";
-  //   }
-  //   return {GraphNodeRef(node_id, 0)};
-  // }
+  Expr VisitExpr_(const CallNode* call) override {
+    Call expr = GetRef<Call>(call);
+    Function func;
 
-  // std::vector<GraphNodeRef> GraphAddCallNode(const CallNode* op, const std::string& op_name,
-  //                                            const std::string& func_name) {
-  //   std::vector<GraphNodeRef> inputs;
-  //   for (auto arg : op->args) {
-  //     auto res = VisitExpr(arg);
-  //     for (auto nr : res) {
-  //       inputs.push_back(nr);
-  //     }
-  //   }
-  //   auto node = GraphOpNode::make_node_ptr(op_name, GraphAttrs(), func_name, inputs, GraphAttrs());
-  //   return AddNode(node, GetRef<Expr>(op));
-  // }
+    if (call->op.as<FunctionNode>()) {
+      func = GetRef<Function>(call->op.as<FunctionNode>());
+    } else {
+      return ExprMutator::VisitExpr_(call);
+    }
 
-  Expr VisitExpr_(const CallNode* op) override {
-    // Expr expr = GetRef<Expr>(op);
-    // Function func;
+    if (!func->HasNonzeroAttr(attr::kPrimitive)) {
+      // LOG(FATAL) << "TVM only support calls to primitive functions "
+      //           << "(i.e functions composed of fusable operator invocations)";
+      return ExprMutator::VisitExpr_(call);
+    }
 
-    // if (op->op.as<OpNode>()) {
-    //   LOG(FATAL) << "Operators should be transformed away; try applying"
-    //              << "the fuse_ops transformation to the expression.";
-    // } else if (op->op.as<GlobalVarNode>()) {
-    //   LOG(FATAL) << "Not implemented";
-    // } else if (op->op.as<FunctionNode>()) {
-    //   func = GetRef<Function>(op->op.as<FunctionNode>());
-    // } else {
-    //   LOG(FATAL) << "TVM runtime does not support calls to " << op->op->GetTypeKey();
-    // }
+    Target target;
 
-    // if (!func->HasNonzeroAttr(attr::kPrimitive)) {
-    //   LOG(FATAL) << "TVM only support calls to primitive functions "
-    //              << "(i.e functions composed of fusable operator invocations)";
-    // }
-
-    // Target target;
-    // // Handle external function
-    // if (func->GetAttr<String>(attr::kCompiler).defined()) {
-    //   target = Target("ext_dev");
-    //   CCacheKey key = CCacheKey(func, target);
-    //   CachedFunc ext_func = compile_engine_->Lower(key);
-
-    //   ICHECK(ext_func.defined()) << "External function is not defined.";
-    //   UpdateConstants(func, &params_);
-    //   return GraphAddCallNode(op, ext_func->func_name, ext_func->func_name);
-    // }
+    if (func->GetAttr<String>(attr::kCompiler).defined()) {
+      target = Target("ext_dev");
+      CCacheKey key = CCacheKey(func, target);
+      CachedFunc ext_func = compiler_->Lower(key);
+      ICHECK(ext_func.defined()) << "External function is not defined.";
+      auto inputs = relay::Tuple(expr->args);
+      return PrimFnCall(expr->op, inputs, ext_func->prim_fn_name);
+    }
 
     // ICHECK_GE(storage_device_map_.count(expr), 0);
     // auto& device_type = storage_device_map_[expr][1];
     // auto call_dev_type = device_type[0]->value;
-    // // Normal Relay Function
-    // if (targets_.size() == 1) {
-    //   // homogeneous execution.
-    //   const auto& it = targets_.begin();
-    //   target = (*it).second;
-    // } else {
-    //   // heterogeneous execution.
-    //   std::string call_dev_name;
-    //   if (call_dev_type == 0) {
-    //     call_dev_name = "llvm";
-    //   } else {
-    //     call_dev_name = runtime::DeviceName(call_dev_type);
-    //   }
-    //   if (targets_.count(call_dev_type) == 0) {
-    //     LOG(FATAL) << "No target is provided for device " << call_dev_name;
-    //   }
-    //   target = targets_[call_dev_type];
-    // }
-    // CCacheKey key = CCacheKey(func, target);
-    // CachedFunc lowered_func = compile_engine_->Lower(key);
-    // if (!lowered_funcs_.count(target->str())) {
-    //   lowered_funcs_[target->str()] = IRModule(Map<GlobalVar, BaseFunc>({}));
-    // }
-    // lowered_funcs_[target->str()]->Update(lowered_func->funcs);
-    // return GraphAddCallNode(op, _GetUniqueName(lowered_func->func_name), lowered_func->func_name);
-    LOG(FATAL) << "here";
-  }
+    // Normal Relay Function
+    if (targets_.size() == 1) {
+      // homogeneous execution.
+      const auto& it = targets_.begin();
+      target = (*it).second;
+    } else {
+      // heterogeneous execution.
+      // std::string call_dev_name;
+      // if (call_dev_type == 0) {
+        // call_dev_name = "llvm";
+      // } else {
+        // call_dev_name = runtime::DeviceName(call_dev_type);
+      // }
+      // if (targets_.count(call_dev_type) == 0) {
+        // LOG(FATAL) << "No target is provided for device " << call_dev_name;
+      // }
+      // target = targets_[call_dev_type];
+      LOG(FATAL) << "NYI: heteregenous support, need to pass around expr to device mapping";
+    }
 
-  // /*!
-  //  * \brief Get unique name for func
-  //  *
-  //  * \param name
-  //  * \return std::string
-  //  */
-  // std::string _GetUniqueName(const std::string& name) {
-  //   if (!name_map_.count(name)) {
-  //     name_map_[name] = 1;
-  //     return name;
-  //   }
-  //   auto index = name_map_[name];
-  //   name_map_[name] += 1;
-  //   return _GetUniqueName(name + std::to_string(index));
-  // }
+    CCacheKey key = CCacheKey(func, target);
+    CachedFunc lowered_func = compiler_->Lower(key);
+
+    auto inputs = relay::Tuple(expr->args);
+    return PrimFnCall(expr->op, inputs, lowered_func->prim_fn_name);
+  }
 
   IRModule module_;
   TargetsMap targets_;
@@ -1059,52 +970,6 @@ Call PrimFnCall(Expr func, Expr inputs, GlobalVar prim_fn_name) {
     attrs->prim_fn = prim_fn_name;
     return Call(Op::Get("prim_fn_call"), {func, inputs}, Attrs());
 }
-
-// TVM_REGISTER_PASS_CONFIG_OPTION("relay.backend.use_auto_scheduler", Bool);
-// TVM_REGISTER_PASS_CONFIG_OPTION("relay.backend.disable_compile_engine_cache", Bool);
-
-// TVM_REGISTER_GLOBAL("relay.backend._make_LoweredOutput")
-//     .set_body_typed([](tvm::Array<te::Tensor> outputs, OpImplementation impl) {
-//       return LoweredOutput(outputs, impl);
-//     });
-
-// TVM_REGISTER_GLOBAL("relay.backend._make_CCacheKey")
-//     .set_body_typed([](Function source_func, Target target) {
-//       return CCacheKey(source_func, target);
-//     });
-
-// TVM_REGISTER_GLOBAL("relay.backend._TECompilerGlobal").set_body_typed([]() {
-//   return TECompiler::Global();
-// });
-
-// TVM_REGISTER_GLOBAL("relay.backend._TECompilerClear").set_body_typed([](TECompiler self) {
-//   self->Clear();
-// });
-
-// TVM_REGISTER_GLOBAL("relay.backend._TECompilerLower")
-//     .set_body_typed([](TECompiler self, CCacheKey key) { return self->Lower(key); });
-
-// TVM_REGISTER_GLOBAL("relay.backend._TECompilerLowerShapeFunc")
-//     .set_body_typed([](TECompiler self, CCacheKey key) { return self->LowerShapeFunc(key); });
-
-// TVM_REGISTER_GLOBAL("relay.backend._CompileLowerExternalFunctions")
-//     .set_body_typed([](TECompiler self) { return self->LowerExternalFunctions(); });
-
-// TVM_REGISTER_GLOBAL("relay.backend._TECompilerJIT")
-//     .set_body_typed([](TECompiler self, CCacheKey key) { return self->JIT(key); });
-
-// TVM_REGISTER_GLOBAL("relay.backend._TECompilerListItems").set_body_typed([](TECompiler self) {
-//   TECompilerImpl* ptr = dynamic_cast<TECompilerImpl*>(self.operator->());
-//   ICHECK(ptr != nullptr);
-//   return ptr->ListItems();
-// });
-
-// TVM_REGISTER_GLOBAL("relay.backend._TECompilerGetCurrentCCacheKey")
-//     .set_body_typed([](TECompiler self) {
-//       TECompilerImpl* ptr = dynamic_cast<TECompilerImpl*>(self.operator->());
-//       ICHECK(ptr != nullptr);
-//       return ptr->GetCurrentCCacheKey();
-//     });
 
 }  // namespace tirc
 }  // namespace relay

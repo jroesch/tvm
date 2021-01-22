@@ -79,6 +79,8 @@ struct CachedFuncNode : public Object {
   tvm::Target target;
   /*! \brief Function name */
   std::string func_name;
+  /*! \brief Primitive Function Name */
+  GlobalVar prim_fn_name;
   /* \brief The inputs to the function */
   tvm::Array<te::Tensor> inputs;
   /* \brief The outputs to the function */
