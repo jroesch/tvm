@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "compile_engine.h"
+#include "tir_compiler.h"
 #include "utils.h"
 
 namespace tvm {
@@ -181,23 +182,33 @@ class GraphOpNode : public GraphNode {
   const std::string op_type_name_{"tvm_op"};
 };
 
-/*! \brief Code generator for graph runtime */
+/*! \brief Code generator for the graph runtime, produces a module containing the graph JSON, module,
+ * and parameters.
+ */
 class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<GraphNodeRef>> {
  public:
   GraphRuntimeCodegen(runtime::Module* mod, const TargetsMap& targets) : mod_(mod) {
-    compile_engine_ = CompileEngine::Global();
     targets_ = targets;
   }
 
   LoweredOutput Codegen(relay::Function func) {
+    // Jared: why do we do this? just call C++ API.
     auto pf = GetPackedFunc("relay.backend.GraphPlanMemory");
     storage_device_map_ = (*pf)(func);
+
+    IRModule mod = IRModule::FromExpr(func);
+    // todo map targets down
+    auto lowered_module = tirc::LowerTE(mod, {});
+    auto main_module = lowered_module.main_module;
+    relay::Function main_func = Downcast<relay::Function>(main_module->Lookup("main"));
+
     // First we convert all the parameters into input nodes.
-    for (auto param : func->params) {
+    for (auto param : main_func->params) {
       auto node_ptr = GraphInputNode::make_node_ptr(param->name_hint(), GraphAttrs());
       var_map_[param.get()] = AddNode(node_ptr, param);
     }
-    heads_ = VisitExpr(func->body);
+
+    heads_ = VisitExpr(main_func->body);
     std::ostringstream os;
     dmlc::JSONWriter writer(&os);
     GetJSON(&writer);
@@ -210,15 +221,8 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
           std::make_pair(static_cast<int>(param_storage_ids_[param.first]), param.second)));
     }
 
-    for (auto& kv : lowered_funcs_) {
-      if (ret.lowered_funcs.count(kv.first) == 0) {
-        ret.lowered_funcs.Set(kv.first, IRModule(Map<GlobalVar, BaseFunc>({})));
-      }
-      auto& mod = ret.lowered_funcs[kv.first];
-      mod->Update(kv.second);
-      ret.lowered_funcs.Set(kv.first, mod);
-    }
-    ret.external_mods = compile_engine_->LowerExternalFunctions();
+    ret.lowered_funcs = lowered_module.per_target_module;
+    ret.external_mods = lowered_module.external_mods;
     return ret;
   }
 
@@ -367,47 +371,47 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
                  << "(i.e functions composed of fusable operator invocations)";
     }
 
-    auto pf0 = GetPackedFunc("relay.backend._make_CCacheKey");
-    auto pf1 = GetPackedFunc("relay.backend._CompileEngineLower");
-    Target target;
-    // Handle external function
-    if (func->GetAttr<String>(attr::kCompiler).defined()) {
-      target = Target("ext_dev");
-      CCacheKey key = (*pf0)(func, target);
-      CachedFunc ext_func = (*pf1)(compile_engine_, key);
-      ICHECK(ext_func.defined()) << "External function is not defined.";
-      UpdateConstants(func, &params_);
-      return GraphAddCallNode(op, ext_func->func_name, ext_func->func_name);
-    }
+    LOG(FATAL) << "implement me";
+    // Target target;
+    // // Handle external function
+    // if (func->GetAttr<String>(attr::kCompiler).defined()) {
+    //   target = Target("ext_dev");
+    //   CCacheKey key = CCacheKey(func, target);
+    //   CachedFunc ext_func = compile_engine_->Lower(key);
 
-    ICHECK_GE(storage_device_map_.count(expr), 0);
-    auto& device_type = storage_device_map_[expr][1];
-    auto call_dev_type = device_type[0]->value;
-    // Normal Relay Function
-    if (targets_.size() == 1) {
-      // homogeneous execution.
-      const auto& it = targets_.begin();
-      target = (*it).second;
-    } else {
-      // heterogeneous execution.
-      std::string call_dev_name;
-      if (call_dev_type == 0) {
-        call_dev_name = "llvm";
-      } else {
-        call_dev_name = runtime::DeviceName(call_dev_type);
-      }
-      if (targets_.count(call_dev_type) == 0) {
-        LOG(FATAL) << "No target is provided for device " << call_dev_name;
-      }
-      target = targets_[call_dev_type];
-    }
-    CCacheKey key = (*pf0)(func, target);
-    CachedFunc lowered_func = (*pf1)(compile_engine_, key);
-    if (!lowered_funcs_.count(target->str())) {
-      lowered_funcs_[target->str()] = IRModule(Map<GlobalVar, BaseFunc>({}));
-    }
-    lowered_funcs_[target->str()]->Update(lowered_func->funcs);
-    return GraphAddCallNode(op, _GetUniqueName(lowered_func->func_name), lowered_func->func_name);
+    //   ICHECK(ext_func.defined()) << "External function is not defined.";
+    //   UpdateConstants(func, &params_);
+    //   return GraphAddCallNode(op, ext_func->func_name, ext_func->func_name);
+    // }
+
+    // ICHECK_GE(storage_device_map_.count(expr), 0);
+    // auto& device_type = storage_device_map_[expr][1];
+    // auto call_dev_type = device_type[0]->value;
+    // // Normal Relay Function
+    // if (targets_.size() == 1) {
+    //   // homogeneous execution.
+    //   const auto& it = targets_.begin();
+    //   target = (*it).second;
+    // } else {
+    //   // heterogeneous execution.
+    //   std::string call_dev_name;
+    //   if (call_dev_type == 0) {
+    //     call_dev_name = "llvm";
+    //   } else {
+    //     call_dev_name = runtime::DeviceName(call_dev_type);
+    //   }
+    //   if (targets_.count(call_dev_type) == 0) {
+    //     LOG(FATAL) << "No target is provided for device " << call_dev_name;
+    //   }
+    //   target = targets_[call_dev_type];
+    // }
+    // CCacheKey key = CCacheKey(func, target);
+    // CachedFunc lowered_func = compile_engine_->Lower(key);
+    // if (!lowered_funcs_.count(target->str())) {
+    //   lowered_funcs_[target->str()] = IRModule(Map<GlobalVar, BaseFunc>({}));
+    // }
+    // lowered_funcs_[target->str()]->Update(lowered_func->funcs);
+    // return GraphAddCallNode(op, _GetUniqueName(lowered_func->func_name), lowered_func->func_name);
   }
 
   std::vector<GraphNodeRef> VisitExpr_(const LetNode* op) override {
@@ -553,8 +557,6 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
   std::unordered_map<std::string, IRModule> lowered_funcs_;
   /*! \brief name map */
   std::unordered_map<std::string, size_t> name_map_;
-  /*! \brief compile engine */
-  CompileEngine compile_engine_;
 };
 
 class GraphRuntimeCodegenModule : public runtime::ModuleNode {

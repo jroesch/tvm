@@ -53,11 +53,13 @@ namespace tvm {
 namespace relay {
 namespace tirc {
 
+using namespace tvm::relay::transform;
+
 TVM_REGISTER_NODE_TYPE(LoweredOutputNode);
 TVM_REGISTER_NODE_TYPE(CachedFuncNode);
 TVM_REGISTER_NODE_TYPE(CCacheKeyNode);
 TVM_REGISTER_NODE_TYPE(CCacheValueNode);
-TVM_REGISTER_OBJECT_TYPE(CompileEngineNode);
+TVM_REGISTER_OBJECT_TYPE(TECompilerNode);
 
 LoweredOutput::LoweredOutput(tvm::Array<te::Tensor> outputs, OpImplementation impl) {
   auto n = make_object<LoweredOutputNode>();
@@ -611,7 +613,7 @@ class MakeShapeFunc : public backend::MemoizedExprTranslator<Array<te::Tensor>> 
   Array<te::Tensor> scalars_;
 };
 
-class CompileEngineImpl : public CompileEngineNode {
+class TECompilerImpl : public TECompilerNode {
  public:
   // Lower the function.
   CachedFunc Lower(const CCacheKey& key) { return LowerInternal(key)->cached_func; }
@@ -713,9 +715,9 @@ class CompileEngineImpl : public CompileEngineNode {
     } else {
       value = CCacheValue(make_object<CCacheValueNode>());
       value->use_count = 0;
-      if (!backend::IsCompileEngineCacheDisabled()) {
+      // if (!backend::IsTECompilerCacheDisabled()) {
         cache_[key] = value;
-      }
+      // }
     }
     cur_ccache_key_ = key;
 
@@ -837,60 +839,273 @@ class CompileEngineImpl : public CompileEngineNode {
   CCacheKey cur_ccache_key_;
 };
 
-/*! \brief The global compile engine */
-CompileEngine& CompileEngine::Global() {
-  // intentionally allocate raw pointer to avoid
-  // free during destructuion.
-  static CompileEngine* inst = new CompileEngine(make_object<CompileEngineImpl>());
-  return *inst;
+
+TVM_REGISTER_NODE_TYPE(PrimFnCallAttrs);
+
+class LowerTensorExpr : public ExprMutator {
+ public:
+  LowerTensorExpr(const IRModule& module, const TargetsMap& targets, TECompiler compiler)
+    : module_(module), targets_(targets), compiler_(compiler) {}
+
+  // /*!
+  //  * \brief Add node to graph
+  //  *
+  //  * \param node
+  //  * \param expr
+  //  * \return std::vector<_NodeRef>
+  //  */
+  // std::vector<GraphNodeRef> AddNode(GraphObjectPtr node, Expr expr) {
+  //   auto checked_type = expr->checked_type();
+  //   size_t count = storage_device_map_.count(expr);
+  //   ICHECK_GT(count, 0) << "Expr is not existing in storage plan";
+  //   auto storage_device_info = storage_device_map_[expr];
+  //   ICHECK_EQ(storage_device_info.size(), 2);
+  //   // storage
+  //   std::vector<int64_t> storage_info;
+  //   for (auto& v : storage_device_info[0]) {
+  //     storage_info.push_back(v->value);
+  //   }
+  //   node->attrs_["storage_id"] = std::move(storage_info);
+  //   // type
+  //   std::vector<int64_t> device_types;
+  //   for (auto& v : storage_device_info[1]) {
+  //     device_types.push_back(v->value);
+  //   }
+  //   size_t num_unknown_devices = std::count(device_types.begin(), device_types.end(), 0);
+  //   if (num_unknown_devices != 0 && num_unknown_devices != device_types.size()) {
+  //     LOG(FATAL) << "The graph contains not annotated nodes for "
+  //                << "heterogeneous execution. All nodes must be "
+  //                << "annotated.";
+  //   }
+  //   if (num_unknown_devices == 0) {
+  //     node->attrs_["device_index"] = device_types;
+  //   }
+  //   auto node_id = nodes_.size();
+  //   nodes_.push_back(node);
+  //   // Tuple return value, flatten as tuple
+  //   if (const auto* tuple_type = checked_type.as<TupleTypeNode>()) {
+  //     std::vector<GraphNodeRef> ret;
+  //     ShapeVector shape;
+  //     std::vector<std::string> dtype;
+  //     for (size_t i = 0; i < tuple_type->fields.size(); ++i) {
+  //       if (const auto* typ = tuple_type->fields[i].as<TensorTypeNode>()) {
+  //         ret.push_back(GraphNodeRef(node_id, i));
+  //         shape.emplace_back(_ShapeToJSON(typ->shape));
+  //         dtype.emplace_back(DType2String(typ->dtype));
+  //       } else {
+  //         LOG(FATAL) << "type " << checked_type->GetTypeKey() << " not supported";
+  //       }
+  //     }
+  //     ICHECK_EQ(node->Type(), kGraphOpNode);
+  //     auto op_nd = std::dynamic_pointer_cast<GraphOpNode>(node);
+  //     op_nd->attrs_["shape"] = shape;
+  //     op_nd->attrs_["dtype"] = dtype;
+  //     op_nd->num_outputs_ = tuple_type->fields.size();
+  //     return ret;
+  //   }
+  //   // Normal tensor return type
+  //   if (const auto* tensor_type = checked_type.as<TensorTypeNode>()) {
+  //     ShapeVector shape;
+  //     std::vector<std::string> dtype;
+  //     shape.emplace_back(_ShapeToJSON(tensor_type->shape));
+  //     dtype.emplace_back(DType2String(tensor_type->dtype));
+  //     node->attrs_["shape"] = shape;
+  //     node->attrs_["dtype"] = dtype;
+  //   } else {
+  //     LOG(FATAL) << "type " << checked_type->GetTypeKey() << " not supported";
+  //   }
+  //   return {GraphNodeRef(node_id, 0)};
+  // }
+
+  // std::vector<GraphNodeRef> GraphAddCallNode(const CallNode* op, const std::string& op_name,
+  //                                            const std::string& func_name) {
+  //   std::vector<GraphNodeRef> inputs;
+  //   for (auto arg : op->args) {
+  //     auto res = VisitExpr(arg);
+  //     for (auto nr : res) {
+  //       inputs.push_back(nr);
+  //     }
+  //   }
+  //   auto node = GraphOpNode::make_node_ptr(op_name, GraphAttrs(), func_name, inputs, GraphAttrs());
+  //   return AddNode(node, GetRef<Expr>(op));
+  // }
+
+  Expr VisitExpr_(const CallNode* op) override {
+    // Expr expr = GetRef<Expr>(op);
+    // Function func;
+
+    // if (op->op.as<OpNode>()) {
+    //   LOG(FATAL) << "Operators should be transformed away; try applying"
+    //              << "the fuse_ops transformation to the expression.";
+    // } else if (op->op.as<GlobalVarNode>()) {
+    //   LOG(FATAL) << "Not implemented";
+    // } else if (op->op.as<FunctionNode>()) {
+    //   func = GetRef<Function>(op->op.as<FunctionNode>());
+    // } else {
+    //   LOG(FATAL) << "TVM runtime does not support calls to " << op->op->GetTypeKey();
+    // }
+
+    // if (!func->HasNonzeroAttr(attr::kPrimitive)) {
+    //   LOG(FATAL) << "TVM only support calls to primitive functions "
+    //              << "(i.e functions composed of fusable operator invocations)";
+    // }
+
+    // Target target;
+    // // Handle external function
+    // if (func->GetAttr<String>(attr::kCompiler).defined()) {
+    //   target = Target("ext_dev");
+    //   CCacheKey key = CCacheKey(func, target);
+    //   CachedFunc ext_func = compile_engine_->Lower(key);
+
+    //   ICHECK(ext_func.defined()) << "External function is not defined.";
+    //   UpdateConstants(func, &params_);
+    //   return GraphAddCallNode(op, ext_func->func_name, ext_func->func_name);
+    // }
+
+    // ICHECK_GE(storage_device_map_.count(expr), 0);
+    // auto& device_type = storage_device_map_[expr][1];
+    // auto call_dev_type = device_type[0]->value;
+    // // Normal Relay Function
+    // if (targets_.size() == 1) {
+    //   // homogeneous execution.
+    //   const auto& it = targets_.begin();
+    //   target = (*it).second;
+    // } else {
+    //   // heterogeneous execution.
+    //   std::string call_dev_name;
+    //   if (call_dev_type == 0) {
+    //     call_dev_name = "llvm";
+    //   } else {
+    //     call_dev_name = runtime::DeviceName(call_dev_type);
+    //   }
+    //   if (targets_.count(call_dev_type) == 0) {
+    //     LOG(FATAL) << "No target is provided for device " << call_dev_name;
+    //   }
+    //   target = targets_[call_dev_type];
+    // }
+    // CCacheKey key = CCacheKey(func, target);
+    // CachedFunc lowered_func = compile_engine_->Lower(key);
+    // if (!lowered_funcs_.count(target->str())) {
+    //   lowered_funcs_[target->str()] = IRModule(Map<GlobalVar, BaseFunc>({}));
+    // }
+    // lowered_funcs_[target->str()]->Update(lowered_func->funcs);
+    // return GraphAddCallNode(op, _GetUniqueName(lowered_func->func_name), lowered_func->func_name);
+    LOG(FATAL) << "here";
+  }
+
+  // /*!
+  //  * \brief Get unique name for func
+  //  *
+  //  * \param name
+  //  * \return std::string
+  //  */
+  // std::string _GetUniqueName(const std::string& name) {
+  //   if (!name_map_.count(name)) {
+  //     name_map_[name] = 1;
+  //     return name;
+  //   }
+  //   auto index = name_map_[name];
+  //   name_map_[name] += 1;
+  //   return _GetUniqueName(name + std::to_string(index));
+  // }
+
+  IRModule module_;
+  TargetsMap targets_;
+  TECompiler compiler_;
+};
+
+LoweredModule LowerTE(const IRModule& module, TargetsMap targets) {
+  TECompiler compiler;
+
+  auto pass = CreateFunctionPass([=](Function func, IRModule module, PassContext ctx) {
+    LowerTensorExpr lower_te(module, targets, compiler);
+    return Downcast<Function>(lower_te.VisitExpr(func));
+  }, 0, "LowerTensorExpr", {});
+
+  auto updated_module = pass(module);
+
+  LoweredModule lowered_module;
+  lowered_module.main_module = updated_module;
+  return lowered_module;
 }
 
-TVM_REGISTER_PASS_CONFIG_OPTION("relay.backend.use_auto_scheduler", Bool);
-TVM_REGISTER_PASS_CONFIG_OPTION("relay.backend.disable_compile_engine_cache", Bool);
+bool PrimFnCallRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
+                    const TypeReporter& reporter) {
+  ICHECK_EQ(types.size(), 4u);
+  auto func_type = types[0].as<FuncTypeNode>();
+  ICHECK(func_type != nullptr) << "input must be operator with known type";
+  auto input_type = types[1].as<TupleTypeNode>();
+  auto output_type = types[2].as<TupleTypeNode>();
+  ICHECK(input_type != nullptr)
+      << "internal invariant violated: invoke_tvm_op inputs must be a tuple";
+  ICHECK(output_type != nullptr)
+      << "internal invariant violated: invoke_tvm_op outputs must be a tuple";
+  Type ex_output;
+  if (func_type->ret_type.as<TensorTypeNode>()) {
+    ex_output = TupleType({func_type->ret_type});
+  } else {
+    ICHECK(func_type->ret_type.as<TupleTypeNode>()) << "should be tuple type";
+    ex_output = func_type->ret_type;
+  }
+  auto ex_input = TupleType(func_type->arg_types);
+  reporter->Assign(ex_input, GetRef<Type>(input_type));
+  reporter->Assign(ex_output, GetRef<Type>(output_type));
+  reporter->Assign(types[3], TupleType::Empty());
+  return true;
+}
 
-TVM_REGISTER_GLOBAL("relay.backend._make_LoweredOutput")
-    .set_body_typed([](tvm::Array<te::Tensor> outputs, OpImplementation impl) {
-      return LoweredOutput(outputs, impl);
-    });
+Call PrimFnCall(Expr func, Expr inputs, GlobalVar prim_fn_name) {
+    auto attrs = make_object<PrimFnCallAttrs>();
+    attrs->prim_fn = prim_fn_name;
+    return Call(Op::Get("prim_fn_call"), {func, inputs}, Attrs());
+}
 
-TVM_REGISTER_GLOBAL("relay.backend._make_CCacheKey")
-    .set_body_typed([](Function source_func, Target target) {
-      return CCacheKey(source_func, target);
-    });
+// TVM_REGISTER_PASS_CONFIG_OPTION("relay.backend.use_auto_scheduler", Bool);
+// TVM_REGISTER_PASS_CONFIG_OPTION("relay.backend.disable_compile_engine_cache", Bool);
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineGlobal").set_body_typed([]() {
-  return CompileEngine::Global();
-});
+// TVM_REGISTER_GLOBAL("relay.backend._make_LoweredOutput")
+//     .set_body_typed([](tvm::Array<te::Tensor> outputs, OpImplementation impl) {
+//       return LoweredOutput(outputs, impl);
+//     });
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineClear").set_body_typed([](CompileEngine self) {
-  self->Clear();
-});
+// TVM_REGISTER_GLOBAL("relay.backend._make_CCacheKey")
+//     .set_body_typed([](Function source_func, Target target) {
+//       return CCacheKey(source_func, target);
+//     });
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineLower")
-    .set_body_typed([](CompileEngine self, CCacheKey key) { return self->Lower(key); });
+// TVM_REGISTER_GLOBAL("relay.backend._TECompilerGlobal").set_body_typed([]() {
+//   return TECompiler::Global();
+// });
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineLowerShapeFunc")
-    .set_body_typed([](CompileEngine self, CCacheKey key) { return self->LowerShapeFunc(key); });
+// TVM_REGISTER_GLOBAL("relay.backend._TECompilerClear").set_body_typed([](TECompiler self) {
+//   self->Clear();
+// });
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileLowerExternalFunctions")
-    .set_body_typed([](CompileEngine self) { return self->LowerExternalFunctions(); });
+// TVM_REGISTER_GLOBAL("relay.backend._TECompilerLower")
+//     .set_body_typed([](TECompiler self, CCacheKey key) { return self->Lower(key); });
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineJIT")
-    .set_body_typed([](CompileEngine self, CCacheKey key) { return self->JIT(key); });
+// TVM_REGISTER_GLOBAL("relay.backend._TECompilerLowerShapeFunc")
+//     .set_body_typed([](TECompiler self, CCacheKey key) { return self->LowerShapeFunc(key); });
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineListItems").set_body_typed([](CompileEngine self) {
-  CompileEngineImpl* ptr = dynamic_cast<CompileEngineImpl*>(self.operator->());
-  ICHECK(ptr != nullptr);
-  return ptr->ListItems();
-});
+// TVM_REGISTER_GLOBAL("relay.backend._CompileLowerExternalFunctions")
+//     .set_body_typed([](TECompiler self) { return self->LowerExternalFunctions(); });
 
-TVM_REGISTER_GLOBAL("relay.backend._CompileEngineGetCurrentCCacheKey")
-    .set_body_typed([](CompileEngine self) {
-      CompileEngineImpl* ptr = dynamic_cast<CompileEngineImpl*>(self.operator->());
-      ICHECK(ptr != nullptr);
-      return ptr->GetCurrentCCacheKey();
-    });
+// TVM_REGISTER_GLOBAL("relay.backend._TECompilerJIT")
+//     .set_body_typed([](TECompiler self, CCacheKey key) { return self->JIT(key); });
 
-}  // tirc
+// TVM_REGISTER_GLOBAL("relay.backend._TECompilerListItems").set_body_typed([](TECompiler self) {
+//   TECompilerImpl* ptr = dynamic_cast<TECompilerImpl*>(self.operator->());
+//   ICHECK(ptr != nullptr);
+//   return ptr->ListItems();
+// });
+
+// TVM_REGISTER_GLOBAL("relay.backend._TECompilerGetCurrentCCacheKey")
+//     .set_body_typed([](TECompiler self) {
+//       TECompilerImpl* ptr = dynamic_cast<TECompilerImpl*>(self.operator->());
+//       ICHECK(ptr != nullptr);
+//       return ptr->GetCurrentCCacheKey();
+//     });
+
+}  // namespace tirc
 }  // namespace relay
 }  // namespace tvm

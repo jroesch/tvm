@@ -32,6 +32,9 @@
 #include <tvm/relay/op_strategy.h>
 #include <tvm/relay/transform.h>
 #include <tvm/runtime/module.h>
+#include <tvm/relay/attrs/memory.h>
+#include <tvm/topi/elemwise.h>
+#include "../transforms/infer_layout_utils.h"
 
 #include <functional>
 #include <string>
@@ -190,13 +193,13 @@ class CCacheValue : public ObjectRef {
 };
 
 /*!
- * \brief Backend compilation engine for
- *        low level code generation.
+ * \brief A compiler which lowers primitive Relay functions to tensor expressions
+ * and schdules them into TIR functions.
  */
-class CompileEngineNode : public Object {
+class TECompilerNode : public Object {
  public:
   /*! \brief destructor */
-  virtual ~CompileEngineNode() {}
+  virtual ~TECompilerNode() {}
   /*!
    * \brief Get lowered result.
    * \param key The key to the cached function.
@@ -227,19 +230,19 @@ class CompileEngineNode : public Object {
   // VisitAttrs
   void VisitAttrs(AttrVisitor*) {}
 
-  static constexpr const char* _type_key = "relay.CompileEngine";
-  TVM_DECLARE_FINAL_OBJECT_INFO(CompileEngineNode, Object);
+  static constexpr const char* _type_key = "relay.TECompiler";
+  TVM_DECLARE_FINAL_OBJECT_INFO(TECompilerNode, Object);
 };
 
 /*! \brief cache entry used in compile engine */
-class CompileEngine : public ObjectRef {
+class TECompiler : public ObjectRef {
  public:
-  CompileEngine() {}
-  explicit CompileEngine(ObjectPtr<Object> n) : ObjectRef(n) {}
-  CompileEngineNode* operator->() { return static_cast<CompileEngineNode*>(get_mutable()); }
-  using ContainerType = CompileEngineNode;
+  TECompiler() {}
+  explicit TECompiler(ObjectPtr<Object> n) : ObjectRef(n) {}
+  TECompilerNode* operator->() { return static_cast<TECompilerNode*>(get_mutable()); }
+  using ContainerType = TECompilerNode;
   /*! \brief The global compile engine. */
-  TVM_DLL static CompileEngine& Global();
+  TVM_DLL static TECompiler& Global();
 };
 
 /*!
@@ -250,6 +253,32 @@ class CompileEngine : public ObjectRef {
  *  The funcs field in cache is not yet populated.
  */
 CachedFunc CreateSchedule(const Function& source_func, const Target& target);
+
+struct LoweredModule {
+  IRModule main_module;
+  Map<String, IRModule> per_target_module;
+  Array<tvm::runtime::Module> external_mods;
+};
+
+bool PrimFnCallRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
+                    const TypeReporter& reporter);
+/*!
+ * \brief Options for allocating storage.
+ */
+struct PrimFnCallAttrs : public tvm::AttrsNode<PrimFnCallAttrs> {
+  GlobalVar prim_fn;
+
+  TVM_DECLARE_ATTRS(PrimFnCallAttrs, "relay.attrs.PrimFnCallAttrs") {
+    TVM_ATTR_FIELD(prim_fn)
+        .describe("The primitive function which backs this call.");
+  }
+};
+
+Call PrimFnCall(Expr func, Expr inputs, GlobalVar prim_fn_name);
+
+using TargetsMap = Map<Integer, tvm::Target>;
+
+LoweredModule LowerTE(const IRModule& module, TargetsMap targets);
 
 /*!
  * \brief Check if the type is dynamic.
@@ -281,8 +310,8 @@ inline bool CCacheKeyNode::Equal(const CCacheKeyNode* other) const {
 namespace std {
 // overload hash
 template <>
-struct hash<::tvm::relay::CCacheKey> {
-  size_t operator()(const ::tvm::relay::CCacheKey& key) const {
+struct hash<::tvm::relay::tirc::CCacheKey> {
+  size_t operator()(const ::tvm::relay::tirc::CCacheKey& key) const {
     ICHECK(key.defined());
     return key->Hash();
   }
