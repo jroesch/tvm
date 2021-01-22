@@ -156,6 +156,7 @@ def _build_function_memory_map(function_metadata):
         2.) A global memory requirement if all functions are executed sequentially
     """
     device_max_workspace = dict()
+    print("TOTAL FUNCTION METADATA: ", function_metadata)
     main_func_metadata = function_metadata[MAIN_FUNC_NAME_STR]
     num_targets = len(main_func_metadata.workspace_sizes.items())
     func_entries = []

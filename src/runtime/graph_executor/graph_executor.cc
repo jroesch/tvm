@@ -415,6 +415,7 @@ GraphExecutor::CreateTVMOp(const TVMOpParam& param, const std::vector<DLTensor>&
     }
   }
 
+  std::cout << "Executing: " << param.func_name << std::endl;
   if (param.func_name == "__nop") {
     return {[]() {}, arg_ptr};
   } else if (param.func_name == "__copy") {
@@ -423,6 +424,8 @@ GraphExecutor::CreateTVMOp(const TVMOpParam& param, const std::vector<DLTensor>&
     auto fexec = [arg_ptr]() {
       DLTensor* from = static_cast<DLTensor*>(arg_ptr->arg_values[0].v_handle);
       DLTensor* to = static_cast<DLTensor*>(arg_ptr->arg_values[1].v_handle);
+      std::cout << "from: " << from->device.device_type << "to: " << to->device.device_type
+                << std::endl;
       TVM_CCALL(TVMArrayCopyFromTo(from, to, nullptr));
     };
     return {fexec, arg_ptr};

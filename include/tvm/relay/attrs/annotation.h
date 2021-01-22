@@ -67,6 +67,18 @@ struct CompilerAttrs : public tvm::AttrsNode<CompilerAttrs> {
   }
 };
 
+/*!
+ * \brief Options for the operators used to annotate a compiler.
+ */
+struct TIRCallAttrs : public tvm::AttrsNode<TIRCallAttrs> {
+  /*! \brief A 3rd party compiler for code generation. */
+  Map<String, ObjectRef> metadata;
+
+  TVM_DECLARE_ATTRS(TIRCallAttrs, "relay.attrs.TIRCallAttrs") {
+    TVM_ATTR_FIELD(metadata).describe("Metadata attached to the TIR function call.");
+  }
+};
+
 }  // namespace relay
 }  // namespace tvm
 #endif  // TVM_RELAY_ATTRS_ANNOTATION_H_
