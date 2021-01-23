@@ -38,6 +38,10 @@
 
 namespace tvm {
 namespace relay {
+
+/// TODO(@jroesch, @chris): declare directly elsewhere
+Map<Expr, Array<Array<tvm::Integer>>> GraphPlanMemory(const Function& func);
+
 namespace backend {
 
 class GraphNode;
@@ -182,6 +186,8 @@ class GraphOpNode : public GraphNode {
   const std::string op_type_name_{"tvm_op"};
 };
 
+
+
 /*! \brief Code generator for the graph runtime, produces a module containing the graph JSON, module,
  * and parameters.
  */
@@ -193,14 +199,39 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
 
   LoweredOutput Codegen(relay::Function func) {
     // Jared: why do we do this? just call C++ API.
-    auto pf = GetPackedFunc("relay.backend.GraphPlanMemory");
-    storage_device_map_ = (*pf)(func);
+    // auto pf = GetPackedFunc("relay.backend.GraphPlanMemory");
+    // storage_device_map_ = (*pf)(func);
+    storage_device_map_ = GraphPlanMemory(func);
 
+    // This first phase moves from implicit use of compile engine,
+    // to instead the lower the incoming IRModule, and then performing
+    // the pre-exiting graph runtime code generation phase.
     IRModule mod = IRModule::FromExpr(func);
+
+    // Build a map from each operation to device.
+    tirc::DeviceContextMap device_context_map;
+    for (const auto& it : storage_device_map_) {
+      auto expr = it.first;
+      auto storage_and_device = it.second;
+      ICHECK_EQ(storage_and_device.size(), 2u);
+      auto device_type = storage_and_device[1];
+      TVMContext ctx;
+      ctx.device_id = 0;
+      ctx.device_type = static_cast<DLDeviceType>(device_type[0]->value);
+      device_context_map.insert({ expr, ctx });
+    }
+
     // todo map targets down
-    auto lowered_module = tirc::LowerTE(mod, {});
+    auto lowered_module = tirc::LowerTE(mod, targets_, device_context_map);
+
+
     auto main_module = lowered_module.main_module;
+    main_module = relay::transform::InferType()(main_module);
     relay::Function main_func = Downcast<relay::Function>(main_module->Lookup("main"));
+    std::cout << "MainFunction: " << PrettyPrint(main_func) << std::endl;
+
+    // Now that we have lowered all operators to TIR code, we can proceed with compilation.
+    storage_device_map_ = GraphPlanMemory(main_func);
 
     // First we convert all the parameters into input nodes.
     for (auto param : main_func->params) {
@@ -222,6 +253,7 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
     }
 
     ret.lowered_funcs = lowered_module.per_target_module;
+    std::cout << "Modules: " << ret.lowered_funcs << std::endl;
     ret.external_mods = lowered_module.external_mods;
     return ret;
   }
@@ -342,8 +374,15 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
 
   std::vector<GraphNodeRef> GraphAddCallNode(const CallNode* op, const std::string& op_name,
                                              const std::string& func_name) {
+    // temporary hack for change of style.
+    bool skip_first = true;
+
     std::vector<GraphNodeRef> inputs;
     for (auto arg : op->args) {
+      if (skip_first) {
+        skip_first = false;
+        continue;
+      }
       auto res = VisitExpr(arg);
       for (auto nr : res) {
         inputs.push_back(nr);
@@ -353,65 +392,73 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
     return AddNode(node, GetRef<Expr>(op));
   }
 
-  std::vector<GraphNodeRef> VisitExpr_(const CallNode* op) override {
-    Expr expr = GetRef<Expr>(op);
-    Function func;
-    if (op->op.as<OpNode>()) {
-      LOG(FATAL) << "Operators should be transformed away; try applying"
-                 << "the fuse_ops transformation to the expression.";
-    } else if (op->op.as<GlobalVarNode>()) {
-      LOG(FATAL) << "Not implemented";
-    } else if (op->op.as<FunctionNode>()) {
-      func = GetRef<Function>(op->op.as<FunctionNode>());
-    } else {
-      LOG(FATAL) << "TVM runtime does not support calls to " << op->op->GetTypeKey();
-    }
-    if (!func->HasNonzeroAttr(attr::kPrimitive)) {
-      LOG(FATAL) << "TVM only support calls to primitive functions "
-                 << "(i.e functions composed of fusable operator invocations)";
-    }
-
-    LOG(FATAL) << "implement me";
-    // Target target;
-    // // Handle external function
-    // if (func->GetAttr<String>(attr::kCompiler).defined()) {
-    //   target = Target("ext_dev");
-    //   CCacheKey key = CCacheKey(func, target);
-    //   CachedFunc ext_func = compile_engine_->Lower(key);
-
-    //   ICHECK(ext_func.defined()) << "External function is not defined.";
-    //   UpdateConstants(func, &params_);
-    //   return GraphAddCallNode(op, ext_func->func_name, ext_func->func_name);
-    // }
-
-    // ICHECK_GE(storage_device_map_.count(expr), 0);
-    // auto& device_type = storage_device_map_[expr][1];
-    // auto call_dev_type = device_type[0]->value;
-    // // Normal Relay Function
-    // if (targets_.size() == 1) {
-    //   // homogeneous execution.
-    //   const auto& it = targets_.begin();
-    //   target = (*it).second;
+  std::vector<GraphNodeRef> VisitExpr_(const CallNode* call_node) override {
+    relay::Call call = GetRef<Call>(call_node);
+    // if (op->op.as<OpNode>()) {
+    //   LOG(FATAL) << "Operators should be transformed away; try applying"
+    //              << "the fuse_ops transformation to the expression.";
+    // } else if (op->op.as<GlobalVarNode>()) {
+    //   LOG(FATAL) << "Not implemented";
+    // } else if (op->op.as<FunctionNode>()) {
+    //   func = GetRef<Function>(op->op.as<FunctionNode>());
     // } else {
-    //   // heterogeneous execution.
-    //   std::string call_dev_name;
-    //   if (call_dev_type == 0) {
-    //     call_dev_name = "llvm";
-    //   } else {
-    //     call_dev_name = runtime::DeviceName(call_dev_type);
-    //   }
-    //   if (targets_.count(call_dev_type) == 0) {
-    //     LOG(FATAL) << "No target is provided for device " << call_dev_name;
-    //   }
-    //   target = targets_[call_dev_type];
+    //   LOG(FATAL) << "TVM runtime does not support calls to " << op->op->GetTypeKey();
     // }
-    // CCacheKey key = CCacheKey(func, target);
-    // CachedFunc lowered_func = compile_engine_->Lower(key);
-    // if (!lowered_funcs_.count(target->str())) {
-    //   lowered_funcs_[target->str()] = IRModule(Map<GlobalVar, BaseFunc>({}));
+    // if (!func->HasNonzeroAttr(attr::kPrimitive)) {
+    //   LOG(FATAL) << "TVM only support calls to primitive functions "
+    //              << "(i.e functions composed of fusable operator invocations)";
     // }
-    // lowered_funcs_[target->str()]->Update(lowered_func->funcs);
-    // return GraphAddCallNode(op, _GetUniqueName(lowered_func->func_name), lowered_func->func_name);
+    std::cout << PrettyPrint(call) << std::endl;
+
+    if (auto op_node = call->op.as<OpNode>()) {
+      if (op_node->name != "prim_fn_call") {
+        LOG(FATAL) << "TVM only support calls to primitive functions "
+                   << "(i.e functions composed of fusable operator invocations)";
+      }
+
+      auto func = Downcast<Function>(call->args[0]);
+      auto inputs = Downcast<Tuple>(call->args[1]);
+
+      auto prim_fn_attrs = call->attrs.as<tirc::PrimFnCallAttrs>();
+      ICHECK(prim_fn_attrs != nullptr);
+
+      std::string prim_fn_name = prim_fn_attrs->prim_fn->name_hint;
+
+      Target target;
+
+      // Handle external function
+      if (func->GetAttr<String>(attr::kCompiler).defined()) {
+        UpdateConstants(func, &params_);
+        return GraphAddCallNode(call_node, prim_fn_name, prim_fn_name);
+      }
+
+      ICHECK_GE(storage_device_map_.count(call), 0);
+      auto& device_type = storage_device_map_[call][1];
+      auto call_dev_type = device_type[0]->value;
+      // Normal Relay Function
+      if (targets_.size() == 1) {
+        // homogeneous execution.
+        const auto& it = targets_.begin();
+        target = (*it).second;
+      } else {
+        // heterogeneous execution.
+        std::string call_dev_name;
+        if (call_dev_type == 0) {
+          call_dev_name = "llvm";
+        } else {
+          call_dev_name = runtime::DeviceName(call_dev_type);
+        }
+        if (targets_.count(call_dev_type) == 0) {
+          LOG(FATAL) << "No target is provided for device " << call_dev_name;
+        }
+        target = targets_[call_dev_type];
+      }
+
+      return GraphAddCallNode(call_node, _GetUniqueName(prim_fn_name), prim_fn_name);
+    } else {
+      LOG(FATAL) << "BadCase: " << PrettyPrint(call) << std::endl;
+      return {};
+    }
   }
 
   std::vector<GraphNodeRef> VisitExpr_(const LetNode* op) override {

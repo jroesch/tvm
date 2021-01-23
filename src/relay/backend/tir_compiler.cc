@@ -38,6 +38,7 @@
 #include <tvm/te/schedule.h>
 #include <tvm/te/schedule_pass.h>
 #include <tvm/topi/tags.h>
+#include <tvm/runtime/device_api.h>
 
 #include <functional>
 #include <limits>
@@ -781,6 +782,8 @@ class TECompilerImpl : public TECompilerNode {
       std::unordered_map<te::Tensor, tir::Buffer> binds;
       cache_node->funcs = tvm::lower(cfunc->schedule, all_args, cache_node->func_name, binds);
     }
+    // @jroesch: probably should move this around but for now just borrow from fn name.
+    cache_node->prim_fn_name = relay::GlobalVar(cache_node->func_name);
     value->cached_func = CachedFunc(cache_node);
     return value;
   }
@@ -855,13 +858,17 @@ class TECompilerImpl : public TECompilerNode {
   CCacheKey cur_ccache_key_;
 };
 
+TECompiler::TECompiler() {
+  auto object = make_object<TECompilerImpl>();
+  data_ = object;
+}
 
 TVM_REGISTER_NODE_TYPE(PrimFnCallAttrs);
 
 class LowerTensorExpr : public ExprMutator {
  public:
-  LowerTensorExpr(const IRModule& module, const TargetsMap& targets, TECompiler compiler)
-    : module_(module), targets_(targets), compiler_(compiler) {}
+  LowerTensorExpr(const IRModule& module, const TargetsMap& targets, const DeviceContextMap& device_ctx_map, TECompiler compiler)
+    : module_(module), targets_(targets), device_context_map_(device_ctx_map), compiler_(compiler) {}
 
   Expr VisitExpr_(const CallNode* call) override {
     Call expr = GetRef<Call>(call);
@@ -879,6 +886,20 @@ class LowerTensorExpr : public ExprMutator {
       return ExprMutator::VisitExpr_(call);
     }
 
+    // Process inputs.
+    bool skip_first;
+    Array<Expr> args;
+    for (auto arg : expr->args) {
+      // The first input is a function, not a tensor.
+      if (skip_first) {
+        skip_first = false;
+        args.push_back(arg);
+        continue;
+      }
+
+      args.push_back(VisitExpr(arg));
+    }
+
     Target target;
 
     if (func->GetAttr<String>(attr::kCompiler).defined()) {
@@ -886,50 +907,55 @@ class LowerTensorExpr : public ExprMutator {
       CCacheKey key = CCacheKey(func, target);
       CachedFunc ext_func = compiler_->Lower(key);
       ICHECK(ext_func.defined()) << "External function is not defined.";
-      auto inputs = relay::Tuple(expr->args);
+      auto inputs = relay::Tuple(args);
       return PrimFnCall(expr->op, inputs, ext_func->prim_fn_name);
     }
 
-    // ICHECK_GE(storage_device_map_.count(expr), 0);
-    // auto& device_type = storage_device_map_[expr][1];
-    // auto call_dev_type = device_type[0]->value;
-    // Normal Relay Function
+    ICHECK_GE(device_context_map_.count(expr), 0);
+    auto& device_context = this->device_context_map_[expr];
+    auto call_dev_type = device_context.device_type;
+
+    // Non-External Relay Function
     if (targets_.size() == 1) {
-      // homogeneous execution.
+      // The homogeneous execution case, we should only have one target
+      // so we just grab it.
       const auto& it = targets_.begin();
       target = (*it).second;
     } else {
-      // heterogeneous execution.
-      // std::string call_dev_name;
-      // if (call_dev_type == 0) {
-        // call_dev_name = "llvm";
-      // } else {
-        // call_dev_name = runtime::DeviceName(call_dev_type);
-      // }
-      // if (targets_.count(call_dev_type) == 0) {
-        // LOG(FATAL) << "No target is provided for device " << call_dev_name;
-      // }
-      // target = targets_[call_dev_type];
-      LOG(FATAL) << "NYI: heteregenous support, need to pass around expr to device mapping";
+      // The heterogeneous execution case we have multiple targets
+      // in this case.
+      //
+      // We need to identify the target and translate.
+      std::string call_dev_name;
+      if (call_dev_type == 0) {
+        call_dev_name = "llvm";
+      } else {
+        call_dev_name = ::tvm::runtime::DeviceName(call_dev_type);
+      }
+      if (targets_.count(call_dev_type) == 0) {
+        LOG(FATAL) << "No target is provided for device " << call_dev_name;
+      }
+      target = targets_[call_dev_type];
     }
 
     CCacheKey key = CCacheKey(func, target);
     CachedFunc lowered_func = compiler_->Lower(key);
 
-    auto inputs = relay::Tuple(expr->args);
+    auto inputs = relay::Tuple(args);
     return PrimFnCall(expr->op, inputs, lowered_func->prim_fn_name);
   }
 
   IRModule module_;
   TargetsMap targets_;
+  DeviceContextMap device_context_map_;
   TECompiler compiler_;
 };
 
-LoweredModule LowerTE(const IRModule& module, TargetsMap targets) {
+LoweredModule LowerTE(const IRModule& module, TargetsMap targets, DeviceContextMap device_context_map) {
   TECompiler compiler;
 
   auto pass = CreateFunctionPass([=](Function func, IRModule module, PassContext ctx) {
-    LowerTensorExpr lower_te(module, targets, compiler);
+    LowerTensorExpr lower_te(module, targets, device_context_map, compiler);
     return Downcast<Function>(lower_te.VisitExpr(func));
   }, 0, "LowerTensorExpr", {});
 
@@ -937,39 +963,62 @@ LoweredModule LowerTE(const IRModule& module, TargetsMap targets) {
 
   LoweredModule lowered_module;
   lowered_module.main_module = updated_module;
+  lowered_module.per_target_module = compiler->GetLoweredFunctions();
+  lowered_module.external_mods = compiler->LowerExternalFunctions();
   return lowered_module;
 }
 
 bool PrimFnCallRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
                     const TypeReporter& reporter) {
-  ICHECK_EQ(types.size(), 4u);
+  ICHECK_EQ(types.size(), 3u);
   auto func_type = types[0].as<FuncTypeNode>();
   ICHECK(func_type != nullptr) << "input must be operator with known type";
   auto input_type = types[1].as<TupleTypeNode>();
-  auto output_type = types[2].as<TupleTypeNode>();
   ICHECK(input_type != nullptr)
       << "internal invariant violated: invoke_tvm_op inputs must be a tuple";
-  ICHECK(output_type != nullptr)
-      << "internal invariant violated: invoke_tvm_op outputs must be a tuple";
-  Type ex_output;
-  if (func_type->ret_type.as<TensorTypeNode>()) {
-    ex_output = TupleType({func_type->ret_type});
-  } else {
-    ICHECK(func_type->ret_type.as<TupleTypeNode>()) << "should be tuple type";
-    ex_output = func_type->ret_type;
-  }
+  // Type ex_output;
+  // if (func_type->ret_type.as<TensorTypeNode>()) {
+  //   ex_output = TupleType({func_type->ret_type});
+  // } else {
+  //   ICHECK(func_type->ret_type.as<TupleTypeNode>()) << "should be tuple type";
+  //   ex_output = func_type->ret_type;
+  // }
   auto ex_input = TupleType(func_type->arg_types);
   reporter->Assign(ex_input, GetRef<Type>(input_type));
-  reporter->Assign(ex_output, GetRef<Type>(output_type));
-  reporter->Assign(types[3], TupleType::Empty());
+  reporter->Assign(func_type->ret_type, types[2]);
   return true;
 }
 
 Call PrimFnCall(Expr func, Expr inputs, GlobalVar prim_fn_name) {
     auto attrs = make_object<PrimFnCallAttrs>();
     attrs->prim_fn = prim_fn_name;
-    return Call(Op::Get("prim_fn_call"), {func, inputs}, Attrs());
+    return Call(Op::Get("prim_fn_call"), {func, inputs}, Attrs(attrs));
 }
+
+TVM_REGISTER_GLOBAL("relay.op.prim_fn_call")
+    .set_body_typed([](Expr func, Expr inputs, GlobalVar prim_fn_name) {
+      return PrimFnCall(func, inputs, prim_fn_name);
+    });
+
+
+RELAY_REGISTER_OP("prim_fn_call")
+    .describe(R"code(Invoke an operation compiled by TVM.)code" TVM_ADD_FILELINE)
+    .set_num_inputs(2)
+    .add_argument("op", "Function", "The operation to call")
+    .add_argument("ins", "Tuple", "The input tensors.")
+    .add_type_rel("PrimFnCallRel", PrimFnCallRel)
+    .set_support_level(10)
+    .set_attr<TOpPattern>("TOpPattern", kOpaque)
+    .set_attr<TOpIsStateful>("TOpIsStateful", false)
+    .set_attr<TNonComputational>("TNonComputational", true)
+    .set_attr<FInferCorrectLayout>("FInferCorrectLayout", ElemwiseArbitraryLayout)
+    .set_attr<FTVMCompute>("FTVMCompute",
+                           [](const Attrs& attrs, const Array<te::Tensor>& inputs,
+                              const Type& out_dtype) -> Array<te::Tensor> {
+                             return {topi::identity(inputs[0])};
+                           });
+
+// vm.reshape
 
 }  // namespace tirc
 }  // namespace relay

@@ -208,6 +208,8 @@ class TECompilerNode : public Object {
    * \return The result.
    */
   virtual CachedFunc Lower(const CCacheKey& key) = 0;
+
+  virtual Map<String, IRModule> GetLoweredFunctions() = 0;
   /*!
    * \brief Just in time compile to get a PackedFunc.
    * \param key The key to the cached function.
@@ -239,7 +241,7 @@ class TECompilerNode : public Object {
 /*! \brief cache entry used in compile engine */
 class TECompiler : public ObjectRef {
  public:
-  TECompiler() {}
+  TECompiler();
   explicit TECompiler(ObjectPtr<Object> n) : ObjectRef(n) {}
   TECompilerNode* operator->() { return static_cast<TECompilerNode*>(get_mutable()); }
   using ContainerType = TECompilerNode;
@@ -278,9 +280,11 @@ struct PrimFnCallAttrs : public tvm::AttrsNode<PrimFnCallAttrs> {
 
 Call PrimFnCall(Expr func, Expr inputs, GlobalVar prim_fn_name);
 
-using TargetsMap = Map<Integer, tvm::Target>;
+// TODO(@jroesch, @chrisS) these should be a tvm::Map for uniformity sake, we should a version of context which works in Map
+using TargetsMap = std::unordered_map<int, Target>;;
+using DeviceContextMap = std::unordered_map<Expr, TVMContext, runtime::ObjectPtrHash, runtime::ObjectPtrEqual>;
 
-LoweredModule LowerTE(const IRModule& module, TargetsMap targets);
+LoweredModule LowerTE(const IRModule& module, TargetsMap targets, DeviceContextMap device_context_map);
 
 /*!
  * \brief Check if the type is dynamic.
