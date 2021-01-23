@@ -244,14 +244,17 @@ std::pair<IRModule, IRModule> SplitDevHostFuncs(IRModule mod_mixed, const Target
   }
 
   if (target->kind->device_type == kDLCPU && target_host == target) {
-    ICHECK(mdevice->functions.empty()) << "No device code should be generated when target "
-                                       << "and host_target are both llvm target."
-                                       << "\n";
+    // We need to relax this check for just TIR functions.
+    // ICHECK(mdevice->functions.empty()) << "No device code should be generated when target "
+    //                                   << "and host_target are both llvm target."
+    //                                   << "\n";
   }
 
   return {mhost, mdevice};
 }
 
+// Can we make this take one annotated IRModule?
+//
 // Build for heterogeneous execution.
 runtime::Module build(const Map<Target, IRModule>& inputs, const Target& target_host) {
   auto pass_ctx = transform::PassContext::Current();
@@ -271,6 +274,7 @@ runtime::Module build(const Map<Target, IRModule>& inputs, const Target& target_
     target_host_val = DefaultTargetHost(target_host_val);
   }
 
+  std::cout << "All Modules Before: " << inputs << std::endl;
   IRModule mhost_all = IRModule(Map<GlobalVar, BaseFunc>());
 
   ICHECK(mhost_all.defined()) << "The host module must be defined";
@@ -292,6 +296,8 @@ runtime::Module build(const Map<Target, IRModule>& inputs, const Target& target_
       }
     }
   }
+
+  std::cout << "All Modules: " << mhost_all << std::endl;
 
   runtime::Module mhost = codegen::Build(mhost_all, target_host_val);
   // Import all modules
