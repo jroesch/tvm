@@ -14,15 +14,18 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Support infra of TVM."""
-import ctypes
+"""Feature and support infrastructure of TVM."""
+from decorator import decorator
+
 import tvm._ffi
 from .runtime.module import Module
 from . import get_global_func
 
 
 def libinfo():
-    """Returns a dictionary containing compile-time info, including cmake flags and git commit hash
+    """
+    A dictionary containing the compile-time configuration of TVM, including information such
+    as the CMake flags and TVM source code's git commit hash.
 
     Returns
     -------
