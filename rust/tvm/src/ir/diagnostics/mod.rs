@@ -121,9 +121,6 @@ pub struct DiagnosticBuilder {
     /// The level.
     pub level: DiagnosticLevel,
 
-    /// The source name.
-    pub source_name: SourceName,
-
     /// The span of the diagnostic.
     pub span: Span,
 

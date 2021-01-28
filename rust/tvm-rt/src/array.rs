@@ -20,7 +20,6 @@
 use std::convert::{TryFrom, TryInto};
 use std::iter::{FromIterator, IntoIterator, Iterator};
 use std::marker::PhantomData;
-use std::iter::{IntoIterator, Iterator};
 
 use crate::errors::Error;
 use crate::object::{IsObjectRef, Object, ObjectPtr, ObjectRef};

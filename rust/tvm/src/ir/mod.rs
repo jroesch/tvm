@@ -27,7 +27,6 @@ pub mod op;
 pub mod relay;
 pub mod source_map;
 pub mod span;
-pub mod source_map;
 pub mod tir;
 pub mod ty;
 
