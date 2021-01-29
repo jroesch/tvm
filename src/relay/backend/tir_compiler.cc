@@ -887,17 +887,9 @@ class LowerTensorExpr : public ExprMutator {
     }
 
     // Process inputs.
-    bool skip_first;
     Array<Expr> args;
-    for (auto arg : expr->args) {
-      // The first input is a function, not a tensor.
-      if (skip_first) {
-        skip_first = false;
-        args.push_back(arg);
-        continue;
-      }
-
-      args.push_back(VisitExpr(arg));
+    for (size_t i = 0; i < expr->args.size(); i++) {
+      args.push_back(VisitExpr(expr->args[i]));
     }
 
     Target target;

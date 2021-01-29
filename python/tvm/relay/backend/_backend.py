@@ -80,7 +80,6 @@ def build(mod, target, target_host=None):
     """
     if target_host == "":
         target_host = None
-    import pdb; pdb.set_trace()
     return tvm.driver.build(mod, target=target, target_host=target_host)
 
 
