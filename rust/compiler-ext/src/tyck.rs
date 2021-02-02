@@ -47,9 +47,12 @@ impl<K: Eq + std::hash::Hash, V> Context<K, V> {
         self.inner.first_mut().unwrap().insert(key, value);
     }
 
-    fn lookup(&mut self, key: K) -> Option<V> {
+    fn lookup(&mut self, key: &K) -> Option<&V> {
        for scope in (&self.inner).into_iter().rev() {
-
+           match scope.get(key) {
+               None => continue,
+               Some(ty) => return Some(ty),
+           }
        }
 
        None
@@ -81,11 +84,15 @@ impl TypeInferencer {
 
     fn scoped<F, R>(&mut self, body: F) -> TResult<R>
         where F: FnOnce(&mut Self) -> TResult<R> {
+            self.locals.push();
+            self.local_types.push();
             body(self)
     }
 
     fn declare_param(&mut self, var: relay::Var) -> TResult<()> {
-        panic!()
+        let ty = var.type_annotation.clone();
+        self.locals.insert(var, ty);
+        Ok(())
     }
 
     fn infer_relay_fn(&mut self, func: relay::Function) -> TResult<Type> {
@@ -94,14 +101,32 @@ impl TypeInferencer {
                 infcx.declare_param(param.clone())?;
             }
 
-            panic!()
+            let (body, body_ty) = infcx.infer_type(func.body.clone().upcast())?;
+
+            Ok(body_ty)
         })
     }
 
 
-    fn infer_type(&mut self, e: Expr) -> TResult<Type> {
+    fn infer_type(&mut self, e: Expr) -> TResult<(Expr, Type)> {
         downcast_match!(e; {
-            relay::Var => { panic!("found var") },
+            relay::Var => {
+                let ty = self.locals.lookup(&e).unwrap();
+                Ok((e.upcast(), ty.clone()))
+            },
+            relay::Call => {
+                panic!("call node {:?}", e);
+            },
+            relay::Let => {
+                let var = e.var.clone();
+                let annotated_ty = var.type_annotation.clone();
+                let value = e.value.clone();
+                let body = e.body.clone();
+                let ty = annotated_ty; // todo: unify soon
+                self.locals.insert(var.clone(), ty);
+                let (body, body_ty) = self.infer_type(body)?;
+                Ok((e.clone().upcast(), body_ty))
+            },
             else => { panic!("unsupported case {:?}", e) }
         })
     }
@@ -116,6 +141,7 @@ fn pass_fn(module: IRModule, ctx: PassContext) -> TResult<IRModule> {
 fn infer_type() -> Pass {
     let pass_info = PassInfo::new(0, "RustInferType", vec![]).unwrap();
     let mod_func = move |module, ctx| {
+        // TODO: can return result here
         pass_fn(module, ctx).unwrap()
     };
     module_pass(mod_func, pass_info).unwrap()

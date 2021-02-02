@@ -28,7 +28,7 @@ crate-type = ["staticlib", "cdylib"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tvm = { path = "../tvm" } # default-features = false, features = ["static-linking"] }
+# tvm = { path = "../tvm" } # default-features = false, features = ["static-linking"] }
 tvm = { path = "../tvm", default-features = false, features = ["dynamic-linking"] }
 log = "*"
 env_logger = "*"

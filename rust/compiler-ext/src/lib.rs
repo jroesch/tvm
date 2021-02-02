@@ -20,7 +20,6 @@
 use env_logger;
 use tvm::export;
 
-pub mod incremental;
 pub mod tyck;
 
 fn diagnostics() -> Result<(), tvm::Error> {
