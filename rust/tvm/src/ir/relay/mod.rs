@@ -56,6 +56,20 @@ impl ExprNode {
     }
 }
 
+impl Expr {
+    pub unsafe fn write_checked_type(self, ty: Type) -> Expr {
+        let expr_node = self.0;
+        match self.0 {
+            None => panic!("failed on null expression"),
+            Some(expr_node) => {
+                let expr_ptr: *mut ExprNode = ObjectPtr::get_mut_unchecked(expr_node);
+                (*expr_ptr).checked_type = ty;
+                Expr(Some(expr_node))
+            }
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Object, Debug)]
 #[ref_name = "Id"]

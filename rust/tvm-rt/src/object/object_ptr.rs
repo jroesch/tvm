@@ -209,6 +209,14 @@ impl<T: IsObject> Drop for ObjectPtr<T> {
 }
 
 impl<T: IsObject> ObjectPtr<T> {
+    pub fn new(object: T) -> ObjectPtr<T> {
+        object.as_ref().inc_ref();
+        let object_ptr = Box::new(object);
+        let object_ptr = Box::leak(object_ptr);
+        let ptr = NonNull::from(object_ptr);
+        ObjectPtr { ptr }
+    }
+
     pub fn leak<'a>(object_ptr: ObjectPtr<T>) -> &'a mut T
     where
         T: 'a,
@@ -216,12 +224,10 @@ impl<T: IsObject> ObjectPtr<T> {
         unsafe { &mut *std::mem::ManuallyDrop::new(object_ptr).ptr.as_ptr() }
     }
 
-    pub fn new(object: T) -> ObjectPtr<T> {
-        object.as_ref().inc_ref();
-        let object_ptr = Box::new(object);
-        let object_ptr = Box::leak(object_ptr);
-        let ptr = NonNull::from(object_ptr);
-        ObjectPtr { ptr }
+    pub unsafe fn get_mut_unchecked(this: &mut Self) -> &mut T {
+        // We are careful to *not* create a reference covering the "count" fields, as
+        // this would conflict with accesses to the reference counts (e.g. by `Weak`).
+        this.ptr.as_mut()
     }
 
     pub fn count(&self) -> i32 {
