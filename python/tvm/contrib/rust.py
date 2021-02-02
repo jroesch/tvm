@@ -16,3 +16,6 @@
 # under the License.
 """Support for compiler extensions written in Rust."""
 # pylint: disable=unused-import
+
+def InferType():
+    return tvm.get_global_func("rust_ext.tyck.infer_type")()
