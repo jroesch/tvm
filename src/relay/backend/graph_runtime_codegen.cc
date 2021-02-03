@@ -254,8 +254,6 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
 
     ret.lowered_funcs = lowered_module.per_target_module;
     std::cout << "Modules: " << ret.lowered_funcs << std::endl;
-    auto it = ret.lowered_funcs.begin();
-    (*it).second->Update(main_module);
     ret.external_mods = lowered_module.external_mods;
     return ret;
   }
@@ -410,7 +408,6 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
     //   LOG(FATAL) << "TVM only support calls to primitive functions "
     //              << "(i.e functions composed of fusable operator invocations)";
     // }
-    std::cout << PrettyPrint(call) << std::endl;
 
     if (auto op_node = call->op.as<OpNode>()) {
       if (op_node->name != "prim_fn_call") {
