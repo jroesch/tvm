@@ -25,6 +25,7 @@
  */
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/registry.h>
+#include <tvm/relay/expr.h>
 
 #include <fstream>
 #include <string>
@@ -34,6 +35,10 @@ namespace parser {
 
 IRModule ParseModule(std::string file_name, std::string file_content,
                      Optional<IRModule> init_module = Optional<IRModule>());
+
+relay::Expr ParseExpr(std::string file_name, std::string file_content);
+
+Type ParseType(std::string file_name, std::string file_content);
 
 }  // namespace parser
 }  // namespace tvm

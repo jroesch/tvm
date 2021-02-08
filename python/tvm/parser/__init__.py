@@ -31,7 +31,11 @@ def parse(source, source_name="from_string"):
 
 
 def parse_expr(source):
-    return _ffi_api.ParseExpr("string", source)
+    return _ffi_api.ParseExpr("tvm.parser.parse_expr", source)
+
+
+def parse_type(source):
+    return _ffi_api.ParseType("tvm.parser.parse_type", source)
 
 
 def fromtext(source, source_name="from_string"):

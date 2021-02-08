@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use thiserror::Error;
 
 use tvm::transform::{Pass, PassContext, module_pass, PassInfo};
-use tvm::function::Result;
 use tvm::ir::module::IRModule;
 use tvm::ir::function::BaseFunc;
 use tvm::ir::relay::{self, Expr};
@@ -10,55 +8,18 @@ use tvm::ir::ty::Type;
 use tvm::runtime::object::IsObjectRef;
 use tvm::export;
 
+pub mod context;
+pub mod error;
+
+use self::context::Context;
+use self::error::TypeError;
+
 macro_rules! downcast_match {
     ($id:ident; { $($t:ty => $arm:expr $(,)? )+ , else => $default:expr }) => {
         $( if let Ok($id) = $id.clone().downcast::<$t>() { $arm } else )+
         { $default }
     }
 }
-
-#[derive(Error, Debug)]
-enum TypeError {
-    #[error("TIR functions are currently unsupported")]
-    TIRUnsupported,
-    #[error("an error occurred inside of external TVM code {0}")]
-    TVM(#[from] tvm::errors::Error),
-}
-
-struct Context<K, V> {
-    inner: Vec<HashMap<K, V>>,
-}
-
-impl<K: Eq + std::hash::Hash, V> Context<K, V> {
-    fn new() -> Self {
-        Context { inner: vec![] }
-    }
-
-    fn push(&mut self) {
-        self.inner.push(HashMap::new())
-
-    }
-
-    fn pop(&mut self) -> Option<HashMap<K, V>> {
-        self.inner.pop()
-    }
-
-    fn insert(&mut self, key: K, value: V) -> () {
-        self.inner.first_mut().unwrap().insert(key, value);
-    }
-
-    fn lookup(&mut self, key: &K) -> Option<&V> {
-       for scope in (&self.inner).into_iter().rev() {
-           match scope.get(key) {
-               None => continue,
-               Some(ty) => return Some(ty),
-           }
-       }
-
-       None
-    }
-}
-
 struct TypeInferencer {
     locals: Context<relay::Var, Type>,
     // TODO(@jroesch): refine the type here?
@@ -67,17 +28,31 @@ struct TypeInferencer {
 
 type TResult<T> = std::result::Result<T, TypeError>;
 
+struct WithType<T>(T, Type);
+
+impl<T> WithType<T> {
+    pub fn new(expr: T, ty: Type) -> WithType<T>
+    where
+        T: IsObjectRef,
+        T::Object: AsRef<relay::ExprNode>
+    {
+        let expr: Expr = expr.upcast();
+        let expr = unsafe { expr.write_checked_type(ty.clone()) };
+        WithType(expr.downcast::<T>().unwrap(), ty)
+    }
+}
+
 impl TypeInferencer {
-    fn new(module: IRModule) -> Self {
+    fn new(_module: IRModule) -> Self {
         TypeInferencer {
             locals: Context::new(),
             local_types: Context::new(),
         }
     }
 
-    fn infer_fn(&mut self, func: BaseFunc) -> TResult<Type> {
+    fn infer_fn(&mut self, func: BaseFunc) -> TResult<relay::Function> {
         downcast_match!(func; {
-            relay::Function => self.infer_relay_fn(func),
+            relay::Function => Ok(self.infer_relay_fn(func)?.0),
             else => Err(TypeError::TIRUnsupported)
         })
     }
@@ -95,24 +70,30 @@ impl TypeInferencer {
         Ok(())
     }
 
-    fn infer_relay_fn(&mut self, func: relay::Function) -> TResult<Type> {
+    fn infer_relay_fn(&mut self, func: relay::Function) -> TResult<WithType<relay::Function>> {
         self.scoped(|infcx| {
             for param in func.params.clone() {
                 infcx.declare_param(param.clone())?;
             }
 
-            let (body, body_ty) = infcx.infer_type(func.body.clone().upcast())?;
+            let WithType(body, body_ty) = infcx.infer_type(func.body.clone().upcast())?;
 
-            Ok(body_ty)
+            let func = relay::Function::new(
+                func.params.clone(),
+                body,
+                body_ty.clone(),
+                tvm::runtime::array::Array::from_vec(vec![]).unwrap());
+
+            Ok(WithType::new(func, body_ty))
         })
     }
 
 
-    fn infer_type(&mut self, e: Expr) -> TResult<(Expr, Type)> {
+    fn infer_type(&mut self, e: Expr) -> TResult<WithType<Expr>> {
         downcast_match!(e; {
             relay::Var => {
                 let ty = self.locals.lookup(&e).unwrap();
-                Ok((e.upcast(), ty.clone()))
+                Ok(WithType::new(e.upcast(), ty.clone()))
             },
             relay::Call => {
                 panic!("call node {:?}", e);
@@ -124,17 +105,31 @@ impl TypeInferencer {
                 let body = e.body.clone();
                 let ty = annotated_ty; // todo: unify soon
                 self.locals.insert(var.clone(), ty);
-                let (body, body_ty) = self.infer_type(body)?;
-                Ok((e.clone().upcast(), body_ty))
+                let WithType(body, body_ty) = self.infer_type(body)?;
+                Ok(WithType::new(e.clone().upcast(), body_ty))
             },
             else => { panic!("unsupported case {:?}", e) }
         })
     }
 }
 
-fn pass_fn(module: IRModule, ctx: PassContext) -> TResult<IRModule> {
+fn pass_fn(mut module: IRModule, _ctx: PassContext) -> TResult<IRModule> {
     let mut inferencer = TypeInferencer::new(module.clone());
-    inferencer.infer_fn(module.lookup_str("main")?)?;
+    let mut updates: HashMap<relay::GlobalVar, relay::Function> = HashMap::new();
+    // Jared we should probably figure out how to make this safe?
+    //
+    // You can still do iterative invalidation here afaict.
+    for (global_var, function) in module.functions.clone() {
+        println!("Doing {:?}", global_var.name_hint);
+        let checked_fn = inferencer.infer_fn(function)?;
+        println!("Doing {:?}", checked_fn.clone().upcast::<Expr>().checked_type);
+        updates.insert(global_var, checked_fn);
+    }
+
+    for (global_var, updated_function) in updates {
+        module.add(global_var, updated_function)?;
+    }
+
     Ok(module)
 }
 

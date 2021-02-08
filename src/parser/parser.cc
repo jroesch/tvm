@@ -1877,9 +1877,10 @@ IRModule ParseModule(std::string file_name, std::string file_content,
   // if there were any errors which allow the parser to procede we must render them
   // here.
   parser.diag_ctx.Render();
-  auto infer_type = tvm::relay::transform::InferType();
-  ICHECK(infer_type.defined()) << "The type inferencer must be non-null.";
-  return infer_type(mod);
+  // auto infer_type = tvm::relay::transform::InferType();
+  // ICHECK(infer_type.defined()) << "The type inferencer must be non-null.";
+  // return infer_type(mod);
+  return mod;
 }
 
 Expr ParseExpr(std::string file_name, std::string file_content) {
@@ -1896,6 +1897,20 @@ Expr ParseExpr(std::string file_name, std::string file_content) {
   return expr;
 }
 
+Type ParseType(std::string file_name, std::string file_content) {
+  DLOG(INFO) << "ParseType";
+  auto parser = InitParser(file_name, file_content, Optional<IRModule>());
+  parser.ParseSemVer(false);
+  parser.PushScope();
+  auto type = parser.ParseType();
+  parser.Match(TokenType::kEndOfFile);
+  // NB(@jroesch): it is very important that we render any errors before we procede
+  // if there were any errors which allow the parser to procede we must render them
+  // here.
+  parser.diag_ctx.Render();
+  return type;
+}
+
 TVM_REGISTER_GLOBAL("parser.ParseModule")
     .set_body_typed([](tvm::String file_name, tvm::String file_content) {
       return ParseModule(file_name, file_content);
@@ -1904,6 +1919,11 @@ TVM_REGISTER_GLOBAL("parser.ParseModule")
 TVM_REGISTER_GLOBAL("parser.ParseExpr")
     .set_body_typed([](tvm::String file_name, tvm::String file_content) {
       return ParseExpr(file_name, file_content);
+    });
+
+TVM_REGISTER_GLOBAL("parser.ParseType")
+    .set_body_typed([](tvm::String file_name, tvm::String file_content) {
+      return ParseType(file_name, file_content);
     });
 
 TVM_REGISTER_GLOBAL("relay._transform.AnnotateSpans").set_body_typed([]() {

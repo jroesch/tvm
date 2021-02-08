@@ -36,15 +36,23 @@ from .util import assert_expr_has_type
 
 def test_monomorphic_let():
     assert_expr_has_type(
-        "let %x = 1f; %x",
-        relay.scalar_type("float32"))
+        "let %x: float32 = 1f; %x",
+        "float32")
 
 def test_single_op():
-    ttype = relay.TensorType([], dtype="float32")
     assert_expr_has_type(
         "fn (%x : float32) { let %t1 = log(%x); %t1 }",
-        relay.FuncType([ttype], ttype))
+        "fn (float32) -> float32")
 
+def test_broadcast_typecheck():
+    assert_expr_has_type(
+        """
+        fn (%x: Tensor[(10, 4), float32], %y: Tensor[(5, 10, 1), float32])
+            -> Tensor[(5, 10, 4), float32] {
+            %x + %y
+        }
+        """,
+        "fn (Tensor[(10, 4), float32], Tensor[(5, 10, 1), float32]) -> Tensor[(5, 10, 4), float32]")
 
 # def test_add_broadcast_op():
 #     """
