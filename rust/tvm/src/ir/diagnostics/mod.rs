@@ -138,6 +138,11 @@ impl DiagnosticBuilder {
     }
 }
 
+impl From<DiagnosticBuilder> for Diagnostic {
+    fn from(builder: DiagnosticBuilder) -> Diagnostic {
+        Diagnostic::new(builder.level, builder.span, builder.message.into())
+    }
+}
 /// Display diagnostics in a given display format.
 ///
 /// A diagnostic renderer is responsible for converting the
@@ -213,8 +218,8 @@ impl DiagnosticContext {
     }
 
     /// Emit a diagnostic.
-    pub fn emit(&mut self, diagnostic: Diagnostic) -> Result<()> {
-        emit(self.clone(), diagnostic)
+    pub fn emit<D: Into<Diagnostic>>(&mut self, diagnostic: D) -> Result<()> {
+        emit(self.clone(), diagnostic.into())
     }
 
     /// Render the errors and raise a DiagnosticError exception.
@@ -223,7 +228,7 @@ impl DiagnosticContext {
     }
 
     /// Emit a diagnostic and then immediately attempt to render all errors.
-    pub fn emit_fatal(&mut self, diagnostic: Diagnostic) -> Result<()> {
+    pub fn emit_fatal<D: Into<Diagnostic>>(&mut self, diagnostic: D) -> Result<()> {
         self.emit(diagnostic)?;
         self.render()?;
         Ok(())

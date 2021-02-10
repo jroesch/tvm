@@ -6,6 +6,7 @@ use tvm::ir::function::BaseFunc;
 use tvm::ir::relay::{self, Expr};
 use tvm::ir::ty::Type;
 use tvm::runtime::object::IsObjectRef;
+use tvm::ir::diagnostics::{DiagnosticContext, Diagnostic};
 use tvm::export;
 
 pub mod context;
@@ -21,6 +22,8 @@ macro_rules! downcast_match {
     }
 }
 struct TypeInferencer {
+    module: IRModule,
+    pass_context: PassContext,
     locals: Context<relay::Var, Type>,
     // TODO(@jroesch): refine the type here?
     local_types: Context<Type, Type>,
@@ -42,12 +45,29 @@ impl<T> WithType<T> {
     }
 }
 
+// #[derive(Hash, PartialEq)]
+// struct TypeId(i64);
+
+// enum TypeInformation {
+
+// }
+
+// struct TypeTable {
+//     inner: HashMap<TypeId,
+// }
+
 impl TypeInferencer {
-    fn new(_module: IRModule) -> Self {
+    fn new(module: IRModule, pass_context: PassContext) -> Self {
         TypeInferencer {
+            module,
+            pass_context,
             locals: Context::new(),
             local_types: Context::new(),
         }
+    }
+
+    fn diag_ctx(&self) -> DiagnosticContext {
+        self.pass_context.diag_ctx.clone()
     }
 
     fn infer_fn(&mut self, func: BaseFunc) -> TResult<relay::Function> {
@@ -82,7 +102,8 @@ impl TypeInferencer {
                 func.params.clone(),
                 body,
                 body_ty.clone(),
-                tvm::runtime::array::Array::from_vec(vec![]).unwrap());
+                tvm::runtime::array::Array::from_vec(vec![]).unwrap(),
+                func.base.base.base.span.clone());
 
             Ok(WithType::new(func, body_ty))
         })
@@ -96,7 +117,9 @@ impl TypeInferencer {
                 Ok(WithType::new(e.upcast(), ty.clone()))
             },
             relay::Call => {
-                panic!("call node {:?}", e);
+                self.diag_ctx().emit(
+                    Diagnostic::bug(e.base.base.span.clone()))?;
+                Ok(WithType::new(e.upcast(), Type::null()))
             },
             relay::Let => {
                 let var = e.var.clone();
@@ -108,13 +131,17 @@ impl TypeInferencer {
                 let WithType(body, body_ty) = self.infer_type(body)?;
                 Ok(WithType::new(e.clone().upcast(), body_ty))
             },
-            else => { panic!("unsupported case {:?}", e) }
+            else => {
+                self.diag_ctx().emit(
+                    Diagnostic::bug(e.base.span.clone()))?;
+                Ok(WithType::new(e, Type::null()))
+            }
         })
     }
 }
 
-fn pass_fn(mut module: IRModule, _ctx: PassContext) -> TResult<IRModule> {
-    let mut inferencer = TypeInferencer::new(module.clone());
+fn pass_fn(mut module: IRModule, ctx: PassContext) -> TResult<IRModule> {
+    let mut inferencer = TypeInferencer::new(module.clone(), ctx);
     let mut updates: HashMap<relay::GlobalVar, relay::Function> = HashMap::new();
     // Jared we should probably figure out how to make this safe?
     //

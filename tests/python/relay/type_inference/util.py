@@ -11,23 +11,25 @@ def infer_mod(mod, annotate_spans=True, use_reference=False):
         print("Using Reference Type Checker ...")
         ty_infer = rust.InferType()
     else:
-        ty_infer = transform.InferType()(mod)
+        ty_infer = transform.InferType()
 
-    # if annotate_spans:
-        # mod = relay.transform.AnnotateSpans()(mod)
+
+    if annotate_spans:
+        mod = relay.transform.AnnotateSpans()(mod)
 
     return ty_infer(mod)
 
 def infer_expr(expr, annotate_spans=True, use_reference=False):
     mod = IRModule.from_expr(expr)
     mod = infer_mod(mod, annotate_spans, use_reference)
-    import pdb; pdb.set_trace()
     entry = mod["main"]
     return entry if isinstance(expr, relay.Function) else entry.body
 
 
-def assert_module_type_checks(program: str) -> None:
-    pass
+def assert_module_type_checks(program: str) -> IRModule:
+    mod = parser.parse(program)
+    return infer_mod(mod, annotate_spans=True, use_reference=True)
+
 
 def assert_expr_has_type(expr: str, ty: str) -> None:
     ty = parser.parse_type(ty)

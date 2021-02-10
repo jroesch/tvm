@@ -18,6 +18,7 @@
  */
 
 use crate::ir::relay::ExprNode;
+use crate::ir::span::Span;
 use crate::runtime::{IsObject, IsObjectRef, ObjectRef};
 
 use tvm_macros::Object;
@@ -37,9 +38,9 @@ pub struct BaseFuncNode {
 }
 
 impl BaseFuncNode {
-    pub fn base<T: IsObject>() -> BaseFuncNode {
+    pub fn base<T: IsObject>(span: Span) -> BaseFuncNode {
         BaseFuncNode {
-            base: ExprNode::base::<T>(),
+            base: ExprNode::base::<T>(span),
             attrs: <ObjectRef as IsObjectRef>::null(),
         }
     }

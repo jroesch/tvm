@@ -24,7 +24,8 @@ from tvm import IRModule, te, relay, parser
 from tvm.relay import op, transform, analysis
 from tvm.relay import Any
 
-from .util import assert_expr_has_type
+from .util import assert_expr_has_type, assert_module_type_checks
+
 # def initialize_box_adt(mod):
 #     # initializes simple ADT for tests
 #     box = relay.GlobalTypeVar("box")
@@ -44,7 +45,16 @@ def test_single_op():
         "fn (%x : float32) { let %t1 = log(%x); %t1 }",
         "fn (float32) -> float32")
 
-def test_broadcast_typecheck():
+
+def test_fn_decl():
+    assert_expr_has_type(
+     """fn @f(%x : Tensor[(10, 10), float32]) {
+         log(%x)
+     }
+     """,
+     """fn (%x: Tensor[(10, 10), float32]) -> Tensor[(10, 10), float32]""")
+
+def test_broadcast_op():
     assert_expr_has_type(
         """
         fn (%x: Tensor[(10, 4), float32], %y: Tensor[(5, 10, 1), float32])
@@ -54,96 +64,38 @@ def test_broadcast_typecheck():
         """,
         "fn (Tensor[(10, 4), float32], Tensor[(5, 10, 1), float32]) -> Tensor[(5, 10, 4), float32]")
 
-# def test_add_broadcast_op():
-#     """
-#     Program:
-#         fn (%x: Tensor[(10, 4), float32], %y: Tensor[(5, 10, 1), float32])
-#             -> Tensor[(5, 10, 4), float32] {
-#             %x + %y
-#         }
-#     """
-#     x = relay.var("x", shape=(10, 4))
-#     y = relay.var("y", shape=(5, 10, 1))
-#     z = x + y
-#     func = relay.Function([x, y], z)
-#     t1 = relay.TensorType((10, 4), "float32")
-#     t2 = relay.TensorType((5, 10, 1), "float32")
-#     t3 = relay.TensorType((5, 10, 4), "float32")
-#     expected_ty = relay.FuncType([t1, t2], t3)
-#     assert_has_type(func, expected_ty)
+def let_bind_elemwise_calls():
+    assert_expr_has_type(
+        """
+        fn (%x : Tensor[(10, 10), float32]) {
+           let %t1 = log(x);
+           let %t2 = add(%t1, %x);
+           %t1
+        }""",
+        "fn (Tensor[(10, 10), float32] -> Tensor[(10, 10), float32]")
 
+def test_recursion():
+    assert_module_type_checks(
+        """
+        #[version = "0.0.5"]
+        def @f(%n: int32, %data: float32) -> float32 {
+            if (%n == 0) {
+                %data
+            } else {
+                @f(%n - 1, log(%data))
+            }
+        }
+        """)
 
-# def test_dual_op():
-#     """Program:
-#     fn (%x : Tensor[(10, 10), float32]) {
-#       let %t1 = log(x);
-#       let %t2 = add(%t1, %x);
-#       %t1
-#     }
-#     """
-#     tp = relay.TensorType((10, 10), "float32")
-#     x = relay.var("x", tp)
-#     sb = relay.ScopeBuilder()
-#     t1 = sb.let("t1", relay.log(x))
-#     t2 = sb.let("t2", relay.add(t1, x))
-#     sb.ret(t2)
-#     f = relay.Function([x], sb.get())
-#     fchecked = infer_expr(f)
-#     assert fchecked.checked_type == relay.FuncType([tp], tp)
-
-
-# def test_decl():
-#     """Program:
-#     def @f(%x : Tensor[(10, 10), float32]) {
-#         log(%x)
-#     }
-#     """
-#     tp = relay.TensorType((10, 10))
-#     x = relay.var("x", tp)
-#     f = relay.Function([x], relay.log(x))
-#     fchecked = infer_expr(f)
-#     assert fchecked.checked_type == relay.FuncType([tp], tp)
-
-
-# def test_recursion():
-#     """
-#     Program:
-#        def @f(%n: int32, %data: float32) -> float32 {
-#           if (%n == 0) {
-#               %data
-#           } else {
-#               @f(%n - 1, log(%data))
-#           }
-#        }
-#     """
-#     sb = relay.ScopeBuilder()
-#     f = relay.GlobalVar("f")
-#     ti32 = relay.scalar_type("int32")
-#     tf32 = relay.scalar_type("float32")
-#     n = relay.var("n", ti32)
-#     data = relay.var("data", tf32)
-
-#     with sb.if_scope(relay.equal(n, relay.const(0, ti32))):
-#         sb.ret(data)
-#     with sb.else_scope():
-#         sb.ret(f(relay.subtract(n, relay.const(1, ti32)), relay.log(data)))
-#     mod = tvm.IRModule()
-#     mod[f] = relay.Function([n, data], sb.get())
-#     mod = infer_mod(mod)
-#     assert "@f(%1, %2)" in mod.astext()
-#     assert mod["f"].checked_type == relay.FuncType([ti32, tf32], tf32)
-
-
-# def test_incomplete_call():
-#     tt = relay.scalar_type("int32")
-#     x = relay.var("x", tt)
-#     f = relay.var("f")
-#     func = relay.Function([x, f], relay.Call(f, [x]), tt)
-
-#     ft = infer_expr(func)
-#     f_type = relay.FuncType([tt], tt)
-#     assert ft.checked_type == relay.FuncType([tt, f_type], tt)
-
+def test_incomplete_call():
+    # TODO(@jroesch): is this the right test?
+    assert_module_type_checks(
+        """
+        #[version = "0.0.5"]
+        def @f(%x: int32) {
+            @f(%x)
+        }
+        """)
 
 # def test_higher_order_argument():
 #     a = relay.TypeVar("a")
@@ -371,17 +323,17 @@ def test_broadcast_typecheck():
 
 
 # def test_type_arg_infer():
-#     code = """
-# #[version = "0.0.5"]
-# def @id[A](%x: A) -> A {
-#   %x
-# }
-# def @main(%f: float32) -> float32 {
-#   @id(%f)
-# }
-# """
-#     mod = tvm.parser.fromtext(code)
-#     mod = transform.InferType()(mod)
+#     mod = assert_module_type_checks(
+#         """
+#         #[version = "0.0.5"]
+#         def @id[A](%x: A) -> A {
+#             %x
+#         }
+
+#         def @main(%f: float32) -> float32 {
+#             @id(%f)
+#         }
+#         """)
 #     tvm.ir.assert_structural_equal(mod["main"].body.type_args, [relay.TensorType((), "float32")])
 
 if __name__ == "__main__":

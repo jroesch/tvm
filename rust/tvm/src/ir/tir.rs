@@ -18,7 +18,9 @@
  */
 
 use super::{PrimExpr, PrimExprNode};
+use super::span::Span;
 use crate::runtime::String as TVMString;
+use crate::runtime::IsObjectRef;
 use crate::DataType;
 
 use tvm_macros::Object;
@@ -35,8 +37,8 @@ macro_rules! define_node {
         }
 
         impl $name {
-            pub fn new(datatype: DataType, $($id : $t,)*) -> $name {
-                let base = PrimExprNode::base::<$node>(datatype);
+            pub fn new(datatype: DataType, $($id : $t,)* span: Span) -> $name {
+                let base = PrimExprNode::base::<$node>(datatype, span);
                 let node = $node { base, $($id),* };
                 node.into()
             }
@@ -50,13 +52,12 @@ define_node!(IntImm, "IntImm", "IntImm";
 
 impl From<i32> for IntImm {
     fn from(i: i32) -> IntImm {
-        IntImm::new(DataType::int(32, 1), i as i64)
+        IntImm::new(DataType::int(32, 1), i as i64, Span::null())
     }
 }
 
 impl From<i32> for PrimExpr {
     fn from(i: i32) -> PrimExpr {
-        use crate::runtime::IsObjectRef;
         IntImm::from(i).upcast()
     }
 }

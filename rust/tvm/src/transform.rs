@@ -19,7 +19,9 @@
 
 use crate::ir::relay::Function;
 use crate::ir::module::IRModule;
+use crate::ir::diagnostics::DiagnosticContext;
 use crate::runtime::array::Array;
+use crate::runtime::map::Map;
 use crate::runtime::{
     external,
     function::{self, Result, ToFunction},
@@ -30,7 +32,30 @@ use crate::runtime::{Object, ObjectPtr, ObjectRef};
 use tvm_macros::Object;
 
 pub type Pass = ObjectRef;
-pub type PassContext = ObjectRef;
+
+/// PassContext contains the information that a pass can rely on,
+/// such as analysis results.
+
+#[repr(C)]
+#[derive(Object, Debug)]
+#[ref_name = "PassContext"]
+#[type_key = "transform.PassContext"]
+pub struct PassContextNode {
+    pub base: Object,
+    /// The default optimization level.
+    pub opt_level: i32,
+    /// The list of required passes. */
+    pub required_pass: Array<TString>,
+    /// The list of disabled passes.
+    pub isabled_pass: Array<TString>,
+    /// The diagnostic context.
+    // mutable Optional<DiagnosticContext> diag_ctx;
+    pub diag_ctx: DiagnosticContext,
+    /// Pass specific configuration.
+    pub config: Map<TString, ObjectRef>,
+    // Trace function to be invoked before and after each pass.
+    // trace_func: ObjectRef
+}
 
 #[repr(C)]
 #[derive(Object, Debug)]
