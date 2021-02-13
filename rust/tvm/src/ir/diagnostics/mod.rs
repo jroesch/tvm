@@ -151,7 +151,7 @@ impl From<DiagnosticBuilder> for Diagnostic {
 /// For example the terminal renderer will render a sequence
 /// of compiler diagnostics to std::out and std::err in
 /// a human readable form.
-//    */
+
 #[repr(C)]
 #[derive(Object, Debug)]
 #[ref_name = "DiagnosticRenderer"]

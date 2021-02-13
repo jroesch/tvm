@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use tvm::transform::{Pass, PassContext, module_pass, PassInfo};
 use tvm::ir::module::IRModule;
 use tvm::ir::function::BaseFunc;
+use tvm::ir::Spanned;
 use tvm::ir::relay::{self, Expr};
-use tvm::ir::ty::Type;
-use tvm::runtime::object::IsObjectRef;
+use tvm::ir::ty::{Type, TensorType, FuncType};
+use tvm::runtime::{IsObjectRef};
 use tvm::ir::diagnostics::{DiagnosticContext, Diagnostic};
 use tvm::export;
 
@@ -56,6 +57,47 @@ impl<T> WithType<T> {
 //     inner: HashMap<TypeId,
 // }
 
+use tvm::runtime::Function as TFunction;
+use std::convert::TryInto;
+
+// fn get_ftvm_compute(call: relay::Call, op: Op) -> TFunction {
+//     // let get_op_attr = TFunction::get("ir.OpGetAttr").unwrap();
+//     let get_op_attr = TFunction::get("yolo_altan").unwrap();
+//     let res = get_op_attr.invoke(vec![call.into(), op.into(), "FTVMCompute".into()]).unwrap();
+//     res.try_into().unwrap()
+// }
+
+// TVM_REGISTER_GLOBAL("ir.OpGetAttr").set_body_typed([](Op op, String attr_name) -> TVMRetValue {
+//   auto op_map = Op::GetAttrMap<TVMRetValue>(attr_name);
+//   TVMRetValue rv;
+//   if (op_map.count(op)) {
+//     rv = op_map[op];
+//   }
+//     return rv;
+//     });
+
+
+use tvm::runtime::{Array};
+
+type Shape = Array<tvm::ir::PrimExpr>;
+type DType = tvm::runtime::string::String;
+
+fn get_output_shape(call: relay::Call) -> TResult<Vec<(Shape, DType)>> {
+    let get_output_shape = TFunction::get("tyck.compute_output_shape").unwrap();
+    let res = get_output_shape.invoke(vec![call.into()])?;
+    let ty_infos: tvm::runtime::Array<tvm::runtime::ObjectRef> = res.try_into()?;
+    let outs = ty_infos
+    .into_iter()
+    .map(|ty_info| {
+        let res =
+            ty_info.downcast::<tvm::runtime::Array<tvm::runtime::ObjectRef>>()?;
+        let shape = res.get(0)?;
+        let dtype = res.get(1)?;
+        Ok((shape.downcast()?, dtype.downcast()?))
+    }).collect::<TResult<Vec<(Shape, DType)>>>()?;
+    Ok(outs)
+}
+
 impl TypeInferencer {
     fn new(module: IRModule, pass_context: PassContext) -> Self {
         TypeInferencer {
@@ -82,6 +124,7 @@ impl TypeInferencer {
             self.locals.push();
             self.local_types.push();
             body(self)
+            // pop the scopes
     }
 
     fn declare_param(&mut self, var: relay::Var) -> TResult<()> {
@@ -103,12 +146,11 @@ impl TypeInferencer {
                 body,
                 body_ty.clone(),
                 tvm::runtime::array::Array::from_vec(vec![]).unwrap(),
-                func.base.base.base.span.clone());
+                func.span());
 
             Ok(WithType::new(func, body_ty))
         })
     }
-
 
     fn infer_type(&mut self, e: Expr) -> TResult<WithType<Expr>> {
         downcast_match!(e; {
@@ -117,9 +159,45 @@ impl TypeInferencer {
                 Ok(WithType::new(e.upcast(), ty.clone()))
             },
             relay::Call => {
-                self.diag_ctx().emit(
-                    Diagnostic::bug(e.base.base.span.clone()))?;
-                Ok(WithType::new(e.upcast(), Type::null()))
+                let _op = e.op.clone();
+                downcast_match!(_op; {
+                    relay::Op => {
+                        let out = get_output_shape(e.clone())?;
+                        println!("{:?}", out);
+
+
+                        let args = e.args.clone().into_iter().map(|arg| {
+                            self.infer_type(arg)
+                        }).collect::<TResult<Vec<WithType<Expr>>>>()?;
+
+                        let (args, arg_tys) =
+                            args.into_iter().map(|WithType(arg, arg_ty)| {
+                                (arg, arg_ty)
+                            }).unzip();
+
+                        let args: Vec<Expr> = args;
+                        let arg_tys: Vec<Type> = arg_tys;
+
+                        let output_ty = if out.len() == 1 {
+                            let (sh, dtype) = out[0].clone();
+                            let dtype = dtype.as_str().unwrap();
+                            let dtype = std::str::FromStr::from_str(dtype).unwrap();
+                            TensorType::new(sh, dtype, e.span())
+                        } else {
+                            panic!()
+                        };
+
+                        let fn_ty = FuncType::new(arg_tys,
+                            output_ty.upcast(), vec![], vec![], e.span());
+                        Ok(WithType::new(e.upcast(), fn_ty.upcast()))
+                    },
+                    else => {
+                        self.diag_ctx().emit(
+                            Diagnostic::bug(e.span().clone()))?;
+
+                        Ok(WithType::new(e.upcast(), Type::null()))
+                    }
+                })
             },
             relay::Let => {
                 let var = e.var.clone();

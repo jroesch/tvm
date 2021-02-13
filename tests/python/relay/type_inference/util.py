@@ -36,6 +36,7 @@ def assert_expr_has_type(expr: str, ty: str) -> None:
     expr = parser.parse_expr(expr)
     checked_expr = infer_expr(expr, annotate_spans=True, use_reference=True)
     checked_type = checked_expr.checked_type
+    import pdb; pdb.set_trace()
     print(f"Checked Type: {checked_type}")
     print(f"Expected Type: {ty}")
     assert checked_type == ty, f"Type mismatch `{checked_type}` vs `{ty}`."

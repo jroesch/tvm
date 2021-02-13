@@ -34,6 +34,7 @@ extern "C" fn compiler_ext_initialize() -> i32 {
     let _ = env_logger::try_init();
     tvm_export("rust_ext").expect("failed to initialize the Rust compiler extensions.");
     tyck::tvm_export("rust_ext.tyck").expect("failed to initialize the Rust compiler extensions");
+    // diagnostics().unwrap();
     log::debug!("Loaded the Rust compiler extension.");
     return 0;
 }

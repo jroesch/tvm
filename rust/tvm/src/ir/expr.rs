@@ -35,6 +35,19 @@ pub struct BaseExprNode {
     pub span: Span,
 }
 
+pub trait Spanned {
+    fn span(&self) -> Span;
+}
+
+impl<E> Spanned for E
+where E: IsObjectRef,
+      E::Object: AsRef<<BaseExpr as IsObjectRef>::Object> {
+    fn span(&self) -> Span {
+        let base_expr: BaseExpr = self.clone().upcast::<BaseExpr>();
+        base_expr.span.clone()
+    }
+}
+
 impl BaseExprNode {
     pub fn base<T: IsObject>(span: Span) -> BaseExprNode {
         BaseExprNode {

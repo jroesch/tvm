@@ -109,6 +109,12 @@ impl<T: IsObjectRef> std::fmt::Debug for Array<T> {
     }
 }
 
+impl<T: IsObjectRef> std::default::Default for Array<T> {
+    fn default() -> Self {
+        Array::from_iter(vec![])
+    }
+}
+
 pub struct IntoIter<T: IsObjectRef> {
     array: Array<T>,
     pos: isize,

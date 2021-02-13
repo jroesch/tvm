@@ -17,7 +17,7 @@
  * under the License.
  */
 use crate::runtime::array::Array;
-use crate::runtime::{object::*, IsObjectRef, String as TString};
+use crate::runtime::{object::*, IsObjectRef, String as TString, Function as TFunction, Result};
 
 use super::attrs::Attrs;
 use super::expr::BaseExprNode;
@@ -526,6 +526,45 @@ impl Function {
             Array::from_vec(vec![]).unwrap(),
             Span::null(),
         )
+    }
+}
+
+#[repr(C)]
+#[derive(Object, Debug)]
+#[ref_name = "Op"]
+#[type_key = "Op"]
+pub struct OpNode {
+    base: ExprNode,
+    /// name of the operator.
+    name: TString,
+    /// the type of the operator
+    op_type: Type, // refine to fnty
+    /// detailed description of the operator
+    /// This can be used to generate docstring automatically for the operator.
+    description: TString,
+    /// Information of input arguments to the operator
+    arguments: Array<ObjectRef>, // Array<AttrFieldInfo> arguments;
+    /// The type key of the attribute field
+    /// This can be empty, in which case it defaults to anything.
+    attrs_type_key: TString,
+    /// attribute type index,
+    /// this field varies in each run and is not exposed to frontend.
+    attrs_type_index: u32, // default 0
+    /// number of input arguments to the operator,
+    /// -1 means it is variable length
+    num_inputs: i32, // default -1
+    /// support level of the operator,
+    /// The lower the more priority it contains.
+    /// This is in analogies to BLAS levels.
+    support_level: i32, // default 10
+}
+
+impl Op {
+    pub fn get(op_name: String) -> Result<Self> {
+        use std::convert::TryInto;
+        let get_op = TFunction::get("ir.GetOp").unwrap();
+        let res = get_op.invoke(vec![op_name.into()])?;
+        res.try_into()
     }
 }
 

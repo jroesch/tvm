@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Test that type checker correcly computes types
+"""Test that type checker correctly computes types
    for expressions.
 """
 import pytest
@@ -26,19 +26,24 @@ from tvm.relay import Any
 
 from .util import assert_expr_has_type, assert_module_type_checks
 
-# def initialize_box_adt(mod):
-#     # initializes simple ADT for tests
-#     box = relay.GlobalTypeVar("box")
-#     tv = relay.TypeVar("tv")
-#     constructor = relay.Constructor("constructor", [tv], box)
-#     data = relay.TypeData(box, [tv], [constructor])
-#     mod[box] = data
-#     return box, constructor
+@tvm.register_func("tyck.compute_output_shape")
+def _compute_output_shape(call):
+    func = tvm.get_global_func("ir.OpGetAttr")
+    ftvm_compute = func(call.op, "FTVMCompute")
+    inputs = []
+
+    for arg in call.args:
+        inputs.append(tvm.te.placeholder(arg.type_annotation.shape, arg.type_annotation.dtype))
+
+    outputs = ftvm_compute(call.attrs, inputs, None)
+    outs = [(out.shape, out.dtype) for out in outputs]
+    return outs
 
 def test_monomorphic_let():
     assert_expr_has_type(
         "let %x: float32 = 1f; %x",
         "float32")
+
 
 def test_single_op():
     assert_expr_has_type(
@@ -74,6 +79,53 @@ def let_bind_elemwise_calls():
         }""",
         "fn (Tensor[(10, 10), float32] -> Tensor[(10, 10), float32]")
 
+def test_tuple():
+    assert_expr_has_type(
+        """
+        free_var %x: Tensor[(10,), float32]
+        (%x, %x)
+        """,
+        """(Tensor[(10,), float32], Tensor[(10,), float32])"""
+    )
+
+def test_ref():
+    assert_expr_has_type(
+        """
+        free_var %x: float32;
+        free_var %y: float32;
+        let %r = ref(%x);
+        let %value = ref_read(%r);
+        let %unit = ref_write(%r, %y);
+        (%value, %unit)
+        """,
+        """(float32, ())""")
+
+# def test_free_expr():
+#     x = relay.var("x", "float32")
+#     y = relay.add(x, x)
+#     yy = infer_expr(y, annotate_spans=False)
+#     assert tvm.ir.structural_equal(yy.args[0], x, map_free_vars=True)
+#     assert yy.checked_type == relay.scalar_type("float32")
+#     assert x.vid.same_as(yy.args[0].vid)
+
+
+# def test_type_args():
+#     x = relay.var("x", shape=(10, 10))
+#     y = relay.var("y", shape=(1, 10))
+#     z = relay.add(x, y)
+#     ty_z = infer_expr(z)
+#     ty_args = ty_z.type_args
+#     assert len(ty_args) == 2
+#     assert ty_args[0].dtype == "float32"
+#     assert ty_args[1].dtype == "float32"
+#     sh1 = ty_args[0].shape
+#     sh2 = ty_args[1].shape
+#     assert sh1[0].value == 10
+#     assert sh1[1].value == 10
+#     assert sh2[0].value == 1
+#     assert sh2[1].value == 10
+
+
 def test_recursion():
     assert_module_type_checks(
         """
@@ -96,6 +148,19 @@ def test_incomplete_call():
             @f(%x)
         }
         """)
+
+
+def test_equal():
+    i = relay.var("i", shape=[], dtype="int32")
+    eq = op.equal(i, relay.const(0, dtype="int32"))
+    func = relay.Function([i], eq)
+    ft = infer_expr(func)
+    expected = relay.FuncType([relay.scalar_type("int32")], relay.scalar_type("bool"))
+    assert ft.checked_type == expected
+
+    assert ft.checked_type == relay.FuncType(
+        [relay.scalar_type("int32")], relay.scalar_type("bool")
+    )
 
 # def test_higher_order_argument():
 #     a = relay.TypeVar("a")
@@ -147,49 +212,6 @@ def test_incomplete_call():
 #     assert ft.checked_type == expected
 
 
-# def test_tuple():
-#     tp = relay.TensorType((10,))
-#     x = relay.var("x", tp)
-#     res = relay.Tuple([x, x])
-#     assert infer_expr(res).checked_type == relay.TupleType([tp, tp])
-
-
-# def test_ref():
-#     x = relay.var("x", "float32")
-#     y = relay.var("y", "float32")
-#     r = relay.RefCreate(x)
-#     st = relay.scalar_type("float32")
-#     assert infer_expr(r).checked_type == relay.RefType(st)
-#     g = relay.RefRead(r)
-#     assert infer_expr(g).checked_type == st
-#     w = relay.RefWrite(r, y)
-#     assert infer_expr(w).checked_type == relay.TupleType([])
-
-
-# def test_free_expr():
-#     x = relay.var("x", "float32")
-#     y = relay.add(x, x)
-#     yy = infer_expr(y, annotate_spans=False)
-#     assert tvm.ir.structural_equal(yy.args[0], x, map_free_vars=True)
-#     assert yy.checked_type == relay.scalar_type("float32")
-#     assert x.vid.same_as(yy.args[0].vid)
-
-
-# def test_type_args():
-#     x = relay.var("x", shape=(10, 10))
-#     y = relay.var("y", shape=(1, 10))
-#     z = relay.add(x, y)
-#     ty_z = infer_expr(z)
-#     ty_args = ty_z.type_args
-#     assert len(ty_args) == 2
-#     assert ty_args[0].dtype == "float32"
-#     assert ty_args[1].dtype == "float32"
-#     sh1 = ty_args[0].shape
-#     sh2 = ty_args[1].shape
-#     assert sh1[0].value == 10
-#     assert sh1[1].value == 10
-#     assert sh2[0].value == 1
-#     assert sh2[1].value == 10
 
 
 # def test_global_var_recursion():
@@ -206,18 +228,15 @@ def test_incomplete_call():
 #     assert func_ty == relay.FuncType([tt], tt)
 
 
-# def test_equal():
-#     i = relay.var("i", shape=[], dtype="int32")
-#     eq = op.equal(i, relay.const(0, dtype="int32"))
-#     func = relay.Function([i], eq)
-#     ft = infer_expr(func)
-#     expected = relay.FuncType([relay.scalar_type("int32")], relay.scalar_type("bool"))
-#     assert ft.checked_type == expected
 
-#     assert ft.checked_type == relay.FuncType(
-#         [relay.scalar_type("int32")], relay.scalar_type("bool")
-#     )
-
+# def initialize_box_adt(mod):
+#     # initializes simple ADT for tests
+#     box = relay.GlobalTypeVar("box")
+#     tv = relay.TypeVar("tv")
+#     constructor = relay.Constructor("constructor", [tv], box)
+#     data = relay.TypeData(box, [tv], [constructor])
+#     mod[box] = data
+#     return box, constructor
 
 # def test_constructor_type():
 #     mod = tvm.IRModule()
@@ -322,19 +341,20 @@ def test_incomplete_call():
 #     tvm.ir.assert_structural_equal(ft.ret_type, relay.TensorType([Any(), 1], dtype="float32"))
 
 
-# def test_type_arg_infer():
-#     mod = assert_module_type_checks(
-#         """
-#         #[version = "0.0.5"]
-#         def @id[A](%x: A) -> A {
-#             %x
-#         }
+# TODO(@jroesch): this one fails due to parsing issue
+def test_type_arg_infer():
+    mod = assert_module_type_checks(
+        """
+        #[version = "0.0.5"]
+        def @id[A](%x: A) -> A {
+            %x
+        }
 
-#         def @main(%f: float32) -> float32 {
-#             @id(%f)
-#         }
-#         """)
-#     tvm.ir.assert_structural_equal(mod["main"].body.type_args, [relay.TensorType((), "float32")])
+        def @main(%f: float32) -> float32 {
+            @id(%f)
+        }
+        """)
+    tvm.ir.assert_structural_equal(mod["main"].body.type_args, [relay.TensorType((), "float32")])
 
 if __name__ == "__main__":
     import sys

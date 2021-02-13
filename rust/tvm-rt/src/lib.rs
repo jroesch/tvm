@@ -45,9 +45,12 @@ pub use crate::{
     ndarray::NDArray,
 };
 
-pub use function::{ArgValue, RetValue};
+pub use function::{ArgValue, RetValue, Result};
 pub use tvm_sys::byte_array::ByteArray;
 pub use tvm_sys::datatype::DataType;
+pub use array::Array;
+pub use map::Map;
+pub use object::{IsObjectRef, ObjectPtr, ObjectRef};
 use tvm_sys::ffi;
 
 pub use tvm_macros::external;

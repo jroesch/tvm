@@ -178,6 +178,22 @@ pub struct FuncTypeNode {
     pub type_constraints: Array<TypeConstraint>,
 }
 
+impl FuncType {
+    pub fn new<AT, TP, TC>(arg_types: AT, ret_type: Type, type_params: TP, type_constraints: TC, span: Span) -> FuncType
+    where AT: IntoIterator<Item = Type>,
+          TP: IntoIterator<Item = TypeVar>,
+          TC: IntoIterator<Item = TypeConstraint>,{
+        use std::iter::FromIterator;
+        let node = FuncTypeNode {
+            base: TypeNode::base::<FuncTypeNode>(span),
+            arg_types: Array::from_iter(arg_types),
+            ret_type,
+            type_params: Array::from_iter(type_params),
+            type_constraints: Array::from_iter(type_constraints),
+        };
+        ObjectPtr::new(node).into()
+    }
+}
 /*
  * \brief Intermediate values that is used to indicate incomplete type
  *         during type inference.
