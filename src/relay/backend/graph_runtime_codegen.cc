@@ -228,7 +228,6 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
     auto main_module = lowered_module.main_module;
     main_module = relay::transform::InferType()(main_module);
     relay::Function main_func = Downcast<relay::Function>(main_module->Lookup("main"));
-    std::cout << "MainFunction: " << PrettyPrint(main_func) << std::endl;
 
     // Now that we have lowered all operators to TIR code, we can proceed with compilation.
     storage_device_map_ = GraphPlanMemory(main_func);
@@ -253,7 +252,6 @@ class GraphRuntimeCodegen : public backend::MemoizedExprTranslator<std::vector<G
     }
 
     ret.lowered_funcs = lowered_module.per_target_module;
-    std::cout << "Modules: " << ret.lowered_funcs << std::endl;
     ret.external_mods = lowered_module.external_mods;
     return ret;
   }

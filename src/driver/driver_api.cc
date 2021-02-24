@@ -274,7 +274,6 @@ runtime::Module build(const Map<Target, IRModule>& inputs, const Target& target_
     target_host_val = DefaultTargetHost(target_host_val);
   }
 
-  std::cout << "All Modules Before: " << inputs << std::endl;
   IRModule mhost_all = IRModule(Map<GlobalVar, BaseFunc>());
 
   ICHECK(mhost_all.defined()) << "The host module must be defined";
@@ -297,7 +296,6 @@ runtime::Module build(const Map<Target, IRModule>& inputs, const Target& target_
     }
   }
 
-  std::cout << "All Modules: " << mhost_all << std::endl;
 
   runtime::Module mhost = codegen::Build(mhost_all, target_host_val);
   // Import all modules
