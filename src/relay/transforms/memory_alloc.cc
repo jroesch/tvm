@@ -450,6 +450,7 @@ Pass ManifestAlloc(Target target_host, Map<tvm::Integer, tvm::Target> targets) {
           }
         }
 
+        std::cout << PrettyPrint(mod) << std::endl;
         mod = relay::transform::InferType()(mod);
         return mod;
       },

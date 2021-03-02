@@ -28,6 +28,7 @@
 #include <tvm/runtime/object.h>
 #include <tvm/runtime/vm/vm.h>
 #include <tvm/support/logging.h>
+#include <tvm/ir/diagnostic.h>
 
 #include <algorithm>
 #include <chrono>
@@ -360,259 +361,274 @@ void VirtualMachine::RunLoop() {
   ICHECK(this->code_);
   pc_ = 0;
   Index frame_start = frames_.size();
-  while (true) {
-  main_loop:
-    auto const& instr = code_[this->pc_];
-    DLOG(INFO) << "Executing(" << pc_ << "): " << instr;
+  try {
+    while (true) {
+    main_loop:
+      auto const& instr = code_[this->pc_];
+      DLOG(INFO) << "Executing(" << pc_ << "): " << instr;
 
-    switch (instr.op) {
-      case Opcode::Move: {
-        ObjectRef from_obj;
-        from_obj = ReadRegister(instr.from);
-        WriteRegister(instr.dst, from_obj);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::Fatal: {
-        throw std::runtime_error("VM encountered fatal error");
-      }
-      case Opcode::LoadConst: {
-        auto constant_obj = exec_->constants[instr.const_index];
-        // We cache the allocated object in the constant pool. To measure, the
-        // first iteration will set the pool up. The other iterations will
-        // directly reuse the allocated objects.
-        if (const_pool_.size() <= static_cast<size_t>(instr.const_index)) {
-          const_pool_.resize(instr.const_index + 1);
-        }
-
-        if (!const_pool_[instr.const_index].defined()) {
-          TVMContext ctx = GetContext(exec_->const_device_type[instr.const_index]);
-          const_pool_[instr.const_index] = CopyTo(constant_obj, ctx);
-        }
-        WriteRegister(instr.dst, const_pool_[instr.const_index]);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::LoadConsti: {
-        auto tensor = NDArray::Empty({1}, {kDLInt, 64, 1}, {kDLCPU, 0});
-        reinterpret_cast<int64_t*>(tensor->data)[0] = instr.load_consti.val;
-        WriteRegister(instr.dst, tensor);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::Invoke: {
-        std::vector<ObjectRef> args;
-        for (Index i = 0; i < instr.num_args; ++i) {
-          args.push_back(ReadRegister(instr.invoke_args_registers[i]));
-        }
-        InvokeGlobal(exec_->functions[instr.func_index], args);
-        frames_.back().caller_return_register = instr.dst;
-        goto main_loop;
-      }
-      case Opcode::InvokePacked: {
-        DLOG(INFO) << "InvokedPacked " << instr.packed_index << " arity=" << instr.arity;
-        ICHECK_LE(instr.packed_index, packed_funcs_.size());
-        const auto& func = packed_funcs_[instr.packed_index];
-        const auto& arity = instr.arity;
-        std::vector<ObjectRef> args;
-        for (Index i = 0; i < arity; ++i) {
-          DLOG(INFO) << "arg" << i << " $" << instr.packed_args[i];
-          auto arg = ReadRegister(instr.packed_args[i]);
-          args.push_back(arg);
-        }
-
-        // We no longer need to write the registers back, we write directly
-        // through the registers mutably.
-        InvokePacked(instr.packed_index, func, arity, instr.output_size, args);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::InvokeClosure: {
-        auto object = ReadRegister(instr.closure);
-        const auto* closure = object.as<VMClosureObj>();
-
-        std::vector<ObjectRef> args;
-        for (auto free_var : closure->free_vars) {
-          args.push_back(free_var);
-        }
-        for (Index i = 0; i < instr.num_closure_args; ++i) {
-          args.push_back(ReadRegister(instr.closure_args[i]));
-        }
-        InvokeGlobal(exec_->functions[closure->func_index], args);
-        frames_.back().caller_return_register = instr.dst;
-        goto main_loop;
-      }
-      case Opcode::GetField: {
-        auto object = ReadRegister(instr.object);
-        const auto& tuple = Downcast<ADT>(object);
-        auto field = tuple[instr.field_index];
-        WriteRegister(instr.dst, field);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::GetTag: {
-        auto object = ReadRegister(instr.get_tag.object);
-        const auto& adt = Downcast<ADT>(object);
-        auto tag = adt.tag();
-        auto tag_tensor = NDArray::Empty({1}, {kDLInt, 32, 1}, {kDLCPU, 0});
-        reinterpret_cast<int32_t*>(tag_tensor->data)[0] = tag;
-        WriteRegister(instr.dst, tag_tensor);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::Goto: {
-        pc_ += instr.pc_offset;
-        goto main_loop;
-      }
-      case Opcode::If: {
-        int32_t test_val = LoadScalarInt(instr.if_op.test);
-        int32_t target_val = LoadScalarInt(instr.if_op.target);
-
-        if (test_val == target_val) {
-          ICHECK_NE(instr.if_op.true_offset, 0);
-          pc_ += instr.if_op.true_offset;
-        } else {
-          ICHECK_NE(instr.if_op.false_offset, 0);
-          pc_ += instr.if_op.false_offset;
-        }
-
-        goto main_loop;
-      }
-      case Opcode::AllocTensor: {
-        auto shape = std::vector<int64_t>(instr.alloc_tensor.ndim);
-
-        for (uint32_t i = 0; i < instr.alloc_tensor.ndim; ++i) {
-          shape[i] = instr.alloc_tensor.shape[i];
-        }
-
-        auto storage_obj = ReadRegister(instr.alloc_tensor.storage);
-        auto offset = LoadScalarInt(instr.alloc_tensor.offset);
-        auto storage = Downcast<Storage>(storage_obj);
-        auto obj = storage->AllocNDArray(offset, shape, instr.alloc_tensor.dtype);
-
-        WriteRegister(instr.dst, obj);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::AllocTensorReg: {
-        DLContext cpu_ctx = GetContext(static_cast<Index>(kDLCPU));
-        auto shape_obj = ReadRegister(instr.alloc_tensor_reg.shape_register);
-        NDArray shape_tensor = Downcast<NDArray>(CopyTo(shape_obj, cpu_ctx));
-        auto shape = ToShape(shape_tensor);
-        auto storage_obj = ReadRegister(instr.alloc_tensor_reg.storage);
-        auto storage = Downcast<Storage>(storage_obj);
-        auto offset = LoadScalarInt(instr.alloc_tensor.offset);
-        auto obj = storage->AllocNDArray(offset, shape, instr.alloc_tensor_reg.dtype);
-
-        WriteRegister(instr.dst, obj);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::AllocADT: {
-        std::vector<ObjectRef> fields;
-        for (Index i = 0; i < instr.num_fields; ++i) {
-          fields.push_back(ReadRegister(instr.datatype_fields[i]));
-        }
-        ObjectRef obj = ADT(instr.constructor_tag, fields);
-        WriteRegister(instr.dst, obj);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::AllocClosure: {
-        std::vector<ObjectRef> free_vars;
-        for (Index i = 0; i < instr.num_freevar; i++) {
-          free_vars.push_back(ReadRegister(instr.free_vars[i]));
-        }
-        WriteRegister(instr.dst, VMClosure(instr.func_index, free_vars));
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::AllocStorage: {
-        auto size = LoadScalarInt(instr.alloc_storage.allocation_size);
-        auto alignment = instr.alloc_storage.alignment;
-
-        DLOG(INFO) << "AllocStorage: allocation_size=" << size << ", alignment=" << alignment
-                   << ", dtype_hint=" << DLDataType2String(instr.alloc_storage.dtype_hint)
-                   << ", device_type=" << instr.alloc_storage.device_type;
-
-        auto storage_obj = SimpleObjAllocator().make_object<StorageObj>();
-        auto dev_type = instr.alloc_storage.device_type;
-        ICHECK_LT(static_cast<size_t>(dev_type), allocators_.size())
-            << "Memory allocator for device " << dev_type << " has not been initialized";
-        auto* alloc = allocators_[dev_type];
-        ICHECK(alloc) << "Did you forget to init the VirtualMachine with contexts?";
-        storage_obj->buffer = alloc->Alloc(size, alignment, instr.alloc_storage.dtype_hint);
-        Storage storage(storage_obj);
-        WriteRegister(instr.dst, storage);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::ShapeOf: {
-        auto input = ReadRegister(instr.shape_of.tensor);
-        NDArray input_array = Downcast<NDArray>(input);
-        int ndim = input_array->ndim;
-        auto out_tensor = NDArray::Empty({ndim}, {kDLInt, 64, 1}, {kDLCPU, 0});
-        for (int i = 0; i < ndim; ++i) {
-          reinterpret_cast<int64_t*>(out_tensor->data)[i] = input_array->shape[i];
-        }
-        WriteRegister(instr.dst, out_tensor);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::Ret: {
-        // If we have hit the point from which we started
-        // running, we should return to the caller breaking
-        // the dispatch loop.
-        return_register_ = ReadRegister(instr.result);
-        auto caller_return_register = frames_.back().caller_return_register;
-
-        if (PopFrame() == frame_start) {
-          return;
-          // Otherwise we are just returning from a local call.
-        } else {
-          WriteRegister(caller_return_register, return_register_);
+      switch (instr.op) {
+        case Opcode::Move: {
+          ObjectRef from_obj;
+          from_obj = ReadRegister(instr.from);
+          WriteRegister(instr.dst, from_obj);
+          pc_++;
           goto main_loop;
         }
-      }
-      case Opcode::ReshapeTensor: {
-        DLContext cpu_ctx = GetContext(static_cast<Index>(kDLCPU));
-        auto tensor_obj = ReadRegister(instr.reshape_tensor.tensor);
-        NDArray tensor_arr = Downcast<NDArray>(tensor_obj);
-        // Read the shape from shape tensor
-        auto shape_obj = ReadRegister(instr.reshape_tensor.newshape);
-        NDArray shape_tensor = Downcast<NDArray>(CopyTo(shape_obj, cpu_ctx));
-        const DLTensor* dl_tensor = shape_tensor.operator->();
-        ICHECK_EQ(dl_tensor->dtype.code, 0u);
-        ICHECK_EQ(dl_tensor->dtype.bits, 64);
-        int64_t* dims = reinterpret_cast<int64_t*>(dl_tensor->data);
-        int64_t ndim = shape_tensor->shape[0];
-        std::vector<int64_t> shape(dims, dims + ndim);
-        // Reshape the input tensor
-        auto out_tensor = tensor_arr.CreateView(shape, tensor_arr->dtype);
-        WriteRegister(instr.dst, out_tensor);
-        pc_++;
-        goto main_loop;
-      }
-      case Opcode::DeviceCopy: {
-        auto tensor_src = ReadRegister(instr.src);
-        NDArray src_data = Downcast<NDArray>(tensor_src);
-        DLContext src_ctx = src_data->ctx;
-        ICHECK_EQ(static_cast<Index>(src_ctx.device_type), instr.src_device_type);
+        case Opcode::Fatal: {
+          throw std::runtime_error("VM encountered fatal error");
+        }
+        case Opcode::LoadConst: {
+          auto constant_obj = exec_->constants[instr.const_index];
+          // We cache the allocated object in the constant pool. To measure, the
+          // first iteration will set the pool up. The other iterations will
+          // directly reuse the allocated objects.
+          if (const_pool_.size() <= static_cast<size_t>(instr.const_index)) {
+            const_pool_.resize(instr.const_index + 1);
+          }
 
-        DLContext dst_ctx;
-        dst_ctx.device_type = static_cast<DLDeviceType>(instr.dst_device_type);
-        dst_ctx.device_id = 0;
+          if (!const_pool_[instr.const_index].defined()) {
+            TVMContext ctx = GetContext(exec_->const_device_type[instr.const_index]);
+            const_pool_[instr.const_index] = CopyTo(constant_obj, ctx);
+          }
+          WriteRegister(instr.dst, const_pool_[instr.const_index]);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::LoadConsti: {
+          auto tensor = NDArray::Empty({1}, {kDLInt, 64, 1}, {kDLCPU, 0});
+          reinterpret_cast<int64_t*>(tensor->data)[0] = instr.load_consti.val;
+          WriteRegister(instr.dst, tensor);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::Invoke: {
+          std::vector<ObjectRef> args;
+          for (Index i = 0; i < instr.num_args; ++i) {
+            args.push_back(ReadRegister(instr.invoke_args_registers[i]));
+          }
+          InvokeGlobal(exec_->functions[instr.func_index], args);
+          frames_.back().caller_return_register = instr.dst;
+          goto main_loop;
+        }
+        case Opcode::InvokePacked: {
+          DLOG(INFO) << "InvokedPacked " << instr.packed_index << " arity=" << instr.arity;
+          ICHECK_LE(instr.packed_index, packed_funcs_.size());
+          const auto& func = packed_funcs_[instr.packed_index];
+          const auto& arity = instr.arity;
+          std::vector<ObjectRef> args;
+          for (Index i = 0; i < arity; ++i) {
+            DLOG(INFO) << "arg" << i << " $" << instr.packed_args[i];
+            auto arg = ReadRegister(instr.packed_args[i]);
+            args.push_back(arg);
+          }
 
-        NDArray dst_data = src_data.CopyTo(dst_ctx);
-        WriteRegister(instr.dst, dst_data);
-        pc_++;
-        goto main_loop;
+          // We no longer need to write the registers back, we write directly
+          // through the registers mutably.
+          InvokePacked(instr.packed_index, func, arity, instr.output_size, args);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::InvokeClosure: {
+          auto object = ReadRegister(instr.closure);
+          const auto* closure = object.as<VMClosureObj>();
+
+          std::vector<ObjectRef> args;
+          for (auto free_var : closure->free_vars) {
+            args.push_back(free_var);
+          }
+          for (Index i = 0; i < instr.num_closure_args; ++i) {
+            args.push_back(ReadRegister(instr.closure_args[i]));
+          }
+          InvokeGlobal(exec_->functions[closure->func_index], args);
+          frames_.back().caller_return_register = instr.dst;
+          goto main_loop;
+        }
+        case Opcode::GetField: {
+          auto object = ReadRegister(instr.object);
+          const auto& tuple = Downcast<ADT>(object);
+          auto field = tuple[instr.field_index];
+          WriteRegister(instr.dst, field);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::GetTag: {
+          auto object = ReadRegister(instr.get_tag.object);
+          const auto& adt = Downcast<ADT>(object);
+          auto tag = adt.tag();
+          auto tag_tensor = NDArray::Empty({1}, {kDLInt, 32, 1}, {kDLCPU, 0});
+          reinterpret_cast<int32_t*>(tag_tensor->data)[0] = tag;
+          WriteRegister(instr.dst, tag_tensor);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::Goto: {
+          pc_ += instr.pc_offset;
+          goto main_loop;
+        }
+        case Opcode::If: {
+          int32_t test_val = LoadScalarInt(instr.if_op.test);
+          int32_t target_val = LoadScalarInt(instr.if_op.target);
+
+          if (test_val == target_val) {
+            ICHECK_NE(instr.if_op.true_offset, 0);
+            pc_ += instr.if_op.true_offset;
+          } else {
+            ICHECK_NE(instr.if_op.false_offset, 0);
+            pc_ += instr.if_op.false_offset;
+          }
+
+          goto main_loop;
+        }
+        case Opcode::AllocTensor: {
+          auto shape = std::vector<int64_t>(instr.alloc_tensor.ndim);
+
+          for (uint32_t i = 0; i < instr.alloc_tensor.ndim; ++i) {
+            shape[i] = instr.alloc_tensor.shape[i];
+          }
+
+          auto storage_obj = ReadRegister(instr.alloc_tensor.storage);
+          auto offset = LoadScalarInt(instr.alloc_tensor.offset);
+          auto storage = Downcast<Storage>(storage_obj);
+          auto obj = storage->AllocNDArray(offset, shape, instr.alloc_tensor.dtype);
+
+          WriteRegister(instr.dst, obj);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::AllocTensorReg: {
+          DLContext cpu_ctx = GetContext(static_cast<Index>(kDLCPU));
+          auto shape_obj = ReadRegister(instr.alloc_tensor_reg.shape_register);
+          NDArray shape_tensor = Downcast<NDArray>(CopyTo(shape_obj, cpu_ctx));
+          auto shape = ToShape(shape_tensor);
+          auto storage_obj = ReadRegister(instr.alloc_tensor_reg.storage);
+          auto storage = Downcast<Storage>(storage_obj);
+          auto offset = LoadScalarInt(instr.alloc_tensor.offset);
+          auto obj = storage->AllocNDArray(offset, shape, instr.alloc_tensor_reg.dtype);
+
+          WriteRegister(instr.dst, obj);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::AllocADT: {
+          std::vector<ObjectRef> fields;
+          for (Index i = 0; i < instr.num_fields; ++i) {
+            fields.push_back(ReadRegister(instr.datatype_fields[i]));
+          }
+          ObjectRef obj = ADT(instr.constructor_tag, fields);
+          WriteRegister(instr.dst, obj);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::AllocClosure: {
+          std::vector<ObjectRef> free_vars;
+          for (Index i = 0; i < instr.num_freevar; i++) {
+            free_vars.push_back(ReadRegister(instr.free_vars[i]));
+          }
+          WriteRegister(instr.dst, VMClosure(instr.func_index, free_vars));
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::AllocStorage: {
+          auto size = LoadScalarInt(instr.alloc_storage.allocation_size);
+          auto alignment = instr.alloc_storage.alignment;
+
+          DLOG(INFO) << "AllocStorage: allocation_size=" << size << ", alignment=" << alignment
+                    << ", dtype_hint=" << DLDataType2String(instr.alloc_storage.dtype_hint)
+                    << ", device_type=" << instr.alloc_storage.device_type;
+
+          auto storage_obj = SimpleObjAllocator().make_object<StorageObj>();
+          auto dev_type = instr.alloc_storage.device_type;
+          ICHECK_LT(static_cast<size_t>(dev_type), allocators_.size())
+              << "Memory allocator for device " << dev_type << " has not been initialized";
+          auto* alloc = allocators_[dev_type];
+          ICHECK(alloc) << "Did you forget to init the VirtualMachine with contexts?";
+          storage_obj->buffer = alloc->Alloc(size, alignment, instr.alloc_storage.dtype_hint);
+          Storage storage(storage_obj);
+          WriteRegister(instr.dst, storage);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::ShapeOf: {
+          auto input = ReadRegister(instr.shape_of.tensor);
+          NDArray input_array = Downcast<NDArray>(input);
+          int ndim = input_array->ndim;
+          auto out_tensor = NDArray::Empty({ndim}, {kDLInt, 64, 1}, {kDLCPU, 0});
+          for (int i = 0; i < ndim; ++i) {
+            reinterpret_cast<int64_t*>(out_tensor->data)[i] = input_array->shape[i];
+          }
+          WriteRegister(instr.dst, out_tensor);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::Ret: {
+          // If we have hit the point from which we started
+          // running, we should return to the caller breaking
+          // the dispatch loop.
+          return_register_ = ReadRegister(instr.result);
+          auto caller_return_register = frames_.back().caller_return_register;
+
+          if (PopFrame() == frame_start) {
+            return;
+            // Otherwise we are just returning from a local call.
+          } else {
+            WriteRegister(caller_return_register, return_register_);
+            goto main_loop;
+          }
+        }
+        case Opcode::ReshapeTensor: {
+          DLContext cpu_ctx = GetContext(static_cast<Index>(kDLCPU));
+          auto tensor_obj = ReadRegister(instr.reshape_tensor.tensor);
+          NDArray tensor_arr = Downcast<NDArray>(tensor_obj);
+          // Read the shape from shape tensor
+          auto shape_obj = ReadRegister(instr.reshape_tensor.newshape);
+          NDArray shape_tensor = Downcast<NDArray>(CopyTo(shape_obj, cpu_ctx));
+          const DLTensor* dl_tensor = shape_tensor.operator->();
+          ICHECK_EQ(dl_tensor->dtype.code, 0u);
+          ICHECK_EQ(dl_tensor->dtype.bits, 64);
+          int64_t* dims = reinterpret_cast<int64_t*>(dl_tensor->data);
+          int64_t ndim = shape_tensor->shape[0];
+          std::vector<int64_t> shape(dims, dims + ndim);
+          // Reshape the input tensor
+          auto out_tensor = tensor_arr.CreateView(shape, tensor_arr->dtype);
+          WriteRegister(instr.dst, out_tensor);
+          pc_++;
+          goto main_loop;
+        }
+        case Opcode::DeviceCopy: {
+          auto tensor_src = ReadRegister(instr.src);
+          if (!tensor_src.as<NDArray::Container>()) {
+            auto adt = Downcast<ADT>(tensor_src);
+            std::cout << "Fields: " << adt.size();
+            LOG(FATAL) << "Not an NDArray";
+          }
+          NDArray src_data = Downcast<NDArray>(tensor_src);
+          DLContext src_ctx = src_data->ctx;
+          ICHECK_EQ(static_cast<Index>(src_ctx.device_type), instr.src_device_type);
+
+          DLContext dst_ctx;
+          dst_ctx.device_type = static_cast<DLDeviceType>(instr.dst_device_type);
+          dst_ctx.device_id = 0;
+
+          NDArray dst_data = src_data.CopyTo(dst_ctx);
+          WriteRegister(instr.dst, dst_data);
+          pc_++;
+          goto main_loop;
+        }
+        default:
+          LOG(FATAL) << "Unknown instruction opcode: " << int(instr.op);
       }
-      default:
-        LOG(FATAL) << "Unknown instruction opcode: " << int(instr.op);
     }
   }
+  catch (dmlc::Error err) {
+    throw err;
+    // ReportFatalError(ctx, pc_, err);
+  }
 }
+
+// void ReportFatalError(const DiagnosticContext &ctx, size_t pc, const dmlc::Error& err) {
+//   throw err;
+// }
 
 runtime::Module CreateVirtualMachine(const Executable* exec) {
   auto vm = make_object<VirtualMachine>();

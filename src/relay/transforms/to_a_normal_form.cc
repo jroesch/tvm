@@ -253,7 +253,7 @@ Expr Fill::VisitExpr_(const MatchNode* m, const Var& v) {
 }
 
 IRModule ToANormalForm(const IRModule& m) {
-  DLOG(INFO) << "ToANF:" << std::endl << m;
+  // DLOG(INFO) << "ToANF:" << std::endl << m;
 
   tvm::Map<GlobalVar, Function> updates;
   auto funcs = m->functions;
@@ -272,7 +272,7 @@ IRModule ToANormalForm(const IRModule& m) {
     m->Add(pair.first, pair.second, true);
   }
 
-  DLOG(INFO) << "ToANF: transformed" << std::endl << m;
+  // DLOG(INFO) << "ToANF: transformed" << std::endl << m;
 
   return m;
 }

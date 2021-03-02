@@ -32,6 +32,7 @@
 #include <tvm/runtime/vm/bytecode.h>
 #include <tvm/runtime/vm/executable.h>
 #include <tvm/runtime/vm/memory_manager.h>
+#include <tvm/ir/span.h>
 
 #include <memory>
 #include <string>
@@ -85,15 +86,19 @@ struct VMFunction {
   Index register_file_size;
   /*! \brief The device type of each parameter for this function. */
   std::vector<Index> params_device_type;
+  /*! \brief The VM span map. */
+  std::unordered_map<int, Span> span_map;
 
   VMFunction(const std::string& name, std::vector<std::string> params,
              const std::vector<Instruction>& instructions, Index register_file_size,
-             const std::vector<Index> params_device_type = {})
+             const std::vector<Index> params_device_type = {},
+             const std::unordered_map<int, Span> span_map = {})
       : name(name),
         params(params),
         instructions(instructions),
         register_file_size(register_file_size),
-        params_device_type(params_device_type) {}
+        params_device_type(params_device_type),
+        span_map(span_map) {}
 
   VMFunction() {}
 

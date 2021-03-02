@@ -79,6 +79,7 @@ class ValidateAnnotation : private ExprVisitor {
       }
 
       ICHECK_EQ(call_node->args.size(), 1U);
+
       const auto* node = call_node->args[0].operator->();
       if (annotation_map_.count(node)) {
         ICHECK_EQ(annotation_map_.at(node), device_type)
@@ -200,7 +201,6 @@ class RewriteAnnotation : public ExprMutator {
 
     if (annotated) {
       Call new_call = Call(call_node->op, new_args, call_node->attrs, call_node->type_args);
-
       UpdateAnnotationMap(call_node, new_call.operator->());
       return this->VisitExpr(new_call);
     } else {
@@ -275,14 +275,34 @@ class RewriteAnnotation : public ExprMutator {
    * \param dst_dev_type The device type where the data is copied to.
    * \return The created call node.
    */
-  Call CreateDeviceCopy(const Expr& src, int src_dev_type, int dst_dev_type) {
-    auto attrs = make_object<DeviceCopyAttrs>();
-    attrs->src_dev_type = src_dev_type;
-    attrs->dst_dev_type = dst_dev_type;
-    static const Op& op = Op::Get("device_copy");
-    Call device_copy = Call(op, {src}, Attrs(attrs), {});
-    annotation_map_.insert({device_copy.operator->(), dst_dev_type});
-    return device_copy;
+  Expr CreateDeviceCopy(const Expr& src, int src_dev_type, int dst_dev_type) {
+    std::cout << PrettyPrint(src) << std::endl;
+
+    Expr copy;
+    if (auto tensor_ty = src->checked_type().as<TensorTypeNode>()) {
+        auto attrs = make_object<DeviceCopyAttrs>();
+        attrs->src_dev_type = src_dev_type;
+        attrs->dst_dev_type = dst_dev_type;
+        static const Op& op = Op::Get("device_copy");
+        copy = Call(op, {src}, Attrs(attrs), {});
+    } else if (auto tuple_ty = src->checked_type().as<TupleTypeNode>()) {
+      Array<Expr> fields;
+      for (int i = 0; i < tuple_ty->fields.size(); i++) {
+        auto field = TupleGetItem(src, i);
+        field->checked_type_ = tuple_ty->fields[i];
+        fields.push_back(CreateDeviceCopy(field, src_dev_type, dst_dev_type));
+      }
+      copy = Tuple(fields);
+    } else {
+      LOG(FATAL) << "We can only device copy a single tensor, or tuple.";
+    }
+
+    ICHECK(copy.defined())
+      << "updated_src should be set above.";
+
+    copy->checked_type_ = src->checked_type_;
+    annotation_map_.insert({copy.operator->(), dst_dev_type});
+    return copy;
   }
 
   std::unordered_map<const ExprNode*, int> annotation_map_;
@@ -542,7 +562,10 @@ namespace transform {
 Pass RewriteAnnotatedOps(int fallback_device) {
   runtime::TypedPackedFunc<Function(Function, IRModule, PassContext)> pass_func =
       [=](Function f, IRModule m, PassContext pc) {
-        return Downcast<Function>(relay::RewriteAnnotatedOps(f, fallback_device));
+        std::cout << PrettyPrint(f) << std::endl;
+        auto func = relay::RewriteAnnotatedOps(f, fallback_device);
+        std::cout << PrettyPrint(func) << std::endl;
+        return Downcast<Function>(func);
       };
   return CreateFunctionPass(pass_func, 1, "RewriteAnnotatedOps", {"InferType"});
 }

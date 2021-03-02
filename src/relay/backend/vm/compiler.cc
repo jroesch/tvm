@@ -297,13 +297,13 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
       }
     }
 
-    return VMFunction(var->name_hint, params_, instructions_, registers_num_, params_device_type);
+    return VMFunction(var->name_hint, params_, instructions_, registers_num_, params_device_type, span_map);
   }
 
  protected:
   size_t NewRegister() { return registers_num_++; }
 
-  inline void Emit(const Instruction& instr) {
+  inline void Emit(const Instruction& instr, Span span) {
     DLOG(INFO) << "VMCompiler::Emit: instr=" << instr;
     ICHECK((int)instr.op < 100) << "Invalid opcode " << (int)instr.op;
     switch (instr.op) {
@@ -331,6 +331,7 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
       case Opcode::Fatal:
         break;
     }
+    span_map[instructions_.size()] = span;
     instructions_.push_back(instr);
   }
 
@@ -346,7 +347,7 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
       context_->const_device_type.push_back(expr_device_map_[con].device_type);
     }
     context_->constants.push_back(const_node->data);
-    Emit(Instruction::LoadConst(konst_idx, NewRegister()));
+    Emit(Instruction::LoadConst(konst_idx, NewRegister()), const_node->span);
   }
 
   void VisitExpr_(const VarNode* var_node) {
@@ -366,7 +367,7 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     // TODO(@jroesch): use correct tag
-    Emit(Instruction::AllocADT(0, tuple->fields.size(), fields_registers, NewRegister()));
+    Emit(Instruction::AllocADT(0, tuple->fields.size(), fields_registers, NewRegister()), tuple_node->span);
   }
 
   void VisitExpr_(const MatchNode* match_node) {
@@ -377,7 +378,6 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
   }
 
   void VisitExpr_(const LetNode* let_node) {
-    DLOG(INFO) << PrettyPrint(let_node->value);
     this->VisitExpr(let_node->value);
     var_register_map_.insert({let_node->var, this->last_register_});
     this->VisitExpr(let_node->body);
@@ -387,7 +387,7 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
     auto get = GetRef<TupleGetItem>(get_node);
     this->VisitExpr(get->tuple);
     auto tuple_register = last_register_;
-    Emit(Instruction::GetField(tuple_register, get->index, NewRegister()));
+    Emit(Instruction::GetField(tuple_register, get->index, NewRegister()), get_node->span);
   }
 
   void VisitExpr_(const GlobalVarNode* gvar) {
@@ -396,7 +396,7 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
     auto it = context_->global_map.find(var);
     ICHECK(it != context_->global_map.end());
     // Allocate closure with zero free vars
-    Emit(Instruction::AllocClosure(it->second, 0, {}, NewRegister()));
+    Emit(Instruction::AllocClosure(it->second, 0, {}, NewRegister()), gvar->span);
   }
 
   void VisitExpr_(const IfNode* if_node) {
@@ -404,16 +404,16 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
 
     size_t test_register = last_register_;
 
-    this->Emit(Instruction::LoadConsti(1, NewRegister()));
+    this->Emit(Instruction::LoadConsti(1, NewRegister()), if_node->span);
     auto after_cond = instructions_.size();
     auto target_register = last_register_;
-    this->Emit(Instruction::If(test_register, target_register, 0, 0));
+    this->Emit(Instruction::If(test_register, target_register, 0, 0), if_node->cond->span);
     this->VisitExpr(if_node->true_branch);
 
     // It saves the result of If-Else expression.
     auto merge_register = NewRegister();
-    Emit(Instruction::Move(last_register_, merge_register));
-    Emit(Instruction::Goto(0));
+    Emit(Instruction::Move(last_register_, merge_register), if_node->cond->span);
+    Emit(Instruction::Goto(0), if_node->cond->span);
 
     // Finally store how many instructions there are in the
     // true branch.
@@ -424,7 +424,7 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
     size_t false_register = last_register_;
 
     // In else-branch, override the then-branch register
-    Emit(Instruction::Move(false_register, merge_register));
+    Emit(Instruction::Move(false_register, merge_register), if_node->cond->span);
     // Compute the total number of instructions
     // after generating false.
     auto after_false = this->instructions_.size();
@@ -446,7 +446,7 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
     this->last_register_ = merge_register;
   }
 
-  void EmitShapeFunc(Function func, Array<Expr> inputs, Array<Expr> outputs) {
+  void EmitShapeFunc(Function func, Array<Expr> inputs, Array<Expr> outputs, Span span) {
     // Lower shape function
     CCacheKey key(func, target_host_);
     auto cfunc = engine_->LowerShapeFunc(key);
@@ -477,10 +477,10 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     Emit(Instruction::InvokePacked(op_index, argument_registers.size(), outputs.size(),
-                                   argument_registers));
+                                   argument_registers), span);
   }
 
-  void EmitInvokeTVMOp(const Function& func, const Expr& inputs, const Expr& outputs) {
+  void EmitInvokeTVMOp(const Function& func, const Expr& inputs, const Expr& outputs, Span span) {
     std::vector<Index> argument_registers;
 
     ICHECK(func->GetAttr<Integer>(attr::kPrimitive, 0) != 0)
@@ -551,11 +551,12 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
     }
 
     Emit(Instruction::InvokePacked(op_index, argument_registers.size(), output_tuple->fields.size(),
-                                   argument_registers));
+                                   argument_registers), span);
   }
 
   void VisitExpr_(const CallNode* call_node) {
     Expr op = call_node->op;
+    Span span = call_node->span;
 
     // First we handle the case in which we are using an opaque
     // operator used to define a sub-dialect, such as memory
@@ -564,12 +565,12 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
       OpMatch<void> matcher;
       matcher
           .Match("vm.invoke_tvm_op",
-                 [this](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
+                 [this, span](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
                    ICHECK_EQ(args.size(), 3);
-                   EmitInvokeTVMOp(Downcast<Function>(args[0]), args[1], args[2]);
+                   EmitInvokeTVMOp(Downcast<Function>(args[0]), args[1], args[2], span);
                  })
           .Match("memory.alloc_tensor",
-                 [this](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
+                 [this, span](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
                    ICHECK_EQ(args.size(), 3);
 
                    // Get the attributes.
@@ -595,16 +596,16 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
                      std::vector<int64_t> raw_shape = ToAllocTensorShape(shape);
                      // Add context field.
                      Emit(Instruction::AllocTensor(storage_register, offset_register, raw_shape,
-                                                   dtype, NewRegister()));
+                                                   dtype, NewRegister()), span);
                    } else {
                      this->VisitExpr(args[2]);
                      auto shape_register = last_register_;
                      Emit(Instruction::AllocTensorReg(storage_register, offset_register,
-                                                      shape_register, dtype, NewRegister()));
+                                                      shape_register, dtype, NewRegister()), span);
                    }
                  })
           .Match("memory.alloc_storage",
-                 [this, call_node](const Array<Expr>& args, const Attrs& attrs,
+                 [this, call_node, span](const Array<Expr>& args, const Attrs& attrs,
                                    const Array<Type>& type_arg) {
                    ICHECK_EQ(args.size(), 2);
                    // Compute the size of the allocation.
@@ -637,18 +638,18 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
                    }
 
                    Emit(Instruction::AllocStorage(size_register, alignment, dtype, device_type,
-                                                  NewRegister()));
+                                                  NewRegister()), span);
                  })
           .Match("vm.shape_func",
-                 [this](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
+                 [this, span](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
                    ICHECK_EQ(args.size(), 3);
                    auto shape_func = Downcast<Function>(args[0]);
                    auto inputs = Downcast<Tuple>(args[1]);
                    auto outputs = Downcast<Tuple>(args[2]);
-                   EmitShapeFunc(shape_func, inputs->fields, outputs->fields);
+                   EmitShapeFunc(shape_func, inputs->fields, outputs->fields, span);
                  })
           .Match("vm.shape_of",
-                 [this](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
+                 [this, span](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
                    ICHECK_EQ(args.size(), 1U);
                    // Get the attributes.
                    const auto* shape_of_attrs = attrs.as<ShapeOfAttrs>();
@@ -657,19 +658,19 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
                        << "The dtype of shape of must be int64, but got"
                        << DLDataType2String(shape_of_attrs->dtype);
                    this->VisitExpr(args[0]);
-                   Emit(Instruction::ShapeOf(last_register_, NewRegister()));
+                   Emit(Instruction::ShapeOf(last_register_, NewRegister()), span);
                  })
           .Match("vm.reshape_tensor",
-                 [this](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
+                 [this, span](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
                    ICHECK_EQ(args.size(), 2u);
                    this->VisitExpr(args[0]);
                    auto tensor_reg = last_register_;
                    this->VisitExpr(args[1]);
                    auto shape_reg = last_register_;
-                   Emit(Instruction::ReshapeTensor(tensor_reg, shape_reg, NewRegister()));
+                   Emit(Instruction::ReshapeTensor(tensor_reg, shape_reg, NewRegister()), span);
                  })
           .Match("device_copy",
-                 [this](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
+                 [this, span](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
                    ICHECK_EQ(args.size(), 1U);
                    this->VisitExpr(args[0]);
                    auto src_reg = last_register_;
@@ -679,7 +680,7 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
                    Index src_device_type = device_copy_attrs->src_dev_type;
                    Index dst_device_type = device_copy_attrs->dst_dev_type;
                    Emit(Instruction::DeviceCopy(src_reg, src_device_type, dst_device_type,
-                                                NewRegister()));
+                                                NewRegister()), span);
                  })
           .Match("memory.kill",
                  [](const Array<Expr>& args, const Attrs& attrs, const Array<Type>& type_arg) {
@@ -706,8 +707,8 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
       auto global = GetRef<GlobalVar>(global_node);
       auto it = context_->global_map.find(global);
       ICHECK(it != context_->global_map.end());
-      DLOG(INFO) << "VisitExpr_: generating invoke for " << global->name_hint
-                 << " with func_index=" << it->second;
+      // DLOG(INFO) << "VisitExpr_: generating invoke for " << global->name_hint
+      //           << " with func_index=" << it->second;
 
       // TODO(tvm-team):
       // Think about mixed call into global that is not a relay::Function
@@ -716,24 +717,24 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
 
       if (IsClosure(func)) {
         auto arity = func->params.size();
-        Emit(Instruction::AllocClosure(it->second, arity, args_registers, NewRegister()));
+        Emit(Instruction::AllocClosure(it->second, arity, args_registers, NewRegister()), span);
       } else {
-        Emit(Instruction::Invoke(it->second, args_registers, NewRegister()));
+        Emit(Instruction::Invoke(it->second, args_registers, NewRegister()), span);
       }
     } else if (auto constructor_node = op.as<ConstructorNode>()) {
       // In the constructor case, we simply need to find its tag
       // and emit a call to allocate the data structure.
       auto constructor = GetRef<Constructor>(constructor_node);
       Emit(Instruction::AllocADT(constructor->tag, call_node->args.size(), args_registers,
-                                 NewRegister()));
+                                 NewRegister()), span);
     } else if (auto var_node = op.as<VarNode>()) {
       // If we are calling a variable, it must be the case that it is a closure so we
       // emit invoke closure here.
       VisitExpr(GetRef<Var>(var_node));
-      Emit(Instruction::InvokeClosure(last_register_, args_registers, NewRegister()));
+      Emit(Instruction::InvokeClosure(last_register_, args_registers, NewRegister()), span);
     } else if (auto inner_call_node = op.as<CallNode>()) {
       VisitExpr(GetRef<Call>(inner_call_node));
-      Emit(Instruction::InvokeClosure(last_register_, args_registers, NewRegister()));
+      Emit(Instruction::InvokeClosure(last_register_, args_registers, NewRegister()), span);
     } else {
       // Finally if there are any other cases this is a bug.
       LOG(FATAL) << "internal error: unreachable code,"
@@ -757,41 +758,45 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
    * \return The register number assigned for the final value
    */
   RegName CompileMatchValue(MatchValuePtr val) {
+    // TODO(@jroesch): fix
+    Span span;
     if (std::dynamic_pointer_cast<RegisterValue>(val)) {
       auto r = std::dynamic_pointer_cast<RegisterValue>(val);
       return r->rergister_num;
     } else {
       auto path = std::dynamic_pointer_cast<AccessField>(val);
       auto p = CompileMatchValue(path->parent);
-      Emit(Instruction::GetField(p, path->index, NewRegister()));
+      Emit(Instruction::GetField(p, path->index, NewRegister()), span);
       path->reg = last_register_;
       return path->reg;
     }
   }
 
   void CompileTreeNode(TreeObjectPtr tree) {
+    // TODO(@jroesch): fix
+    Span span;
     if (auto node = std::dynamic_pointer_cast<TreeLeafNode>(tree)) {
       VisitExpr(node->body);
     } else if (std::dynamic_pointer_cast<TreeLeafFatalNode>(tree)) {
-      Emit(Instruction::Fatal());
+      Emit(Instruction::Fatal(), span);
     } else if (auto node = std::dynamic_pointer_cast<TreeBranchNode>(tree)) {
       if (auto cond = std::dynamic_pointer_cast<TagCompare>(node->cond)) {
         // For Tag compariton, generate branches
         auto r = CompileMatchValue(cond->obj);
-        Emit(Instruction::GetTag(r, NewRegister()));
+        Emit(Instruction::GetTag(r, NewRegister()), span);
         auto operand1 = last_register_;
-        Emit(Instruction::LoadConsti(cond->target_tag, NewRegister()));
+        Emit(Instruction::LoadConsti(cond->target_tag, NewRegister()), span);
         auto operand2 = last_register_;
 
-        Emit(Instruction::If(operand1, operand2, 1, 0));
+        Emit(Instruction::If(operand1, operand2, 1, 0), span);
         auto cond_offset = instructions_.size() - 1;
         CompileTreeNode(node->then_branch);
         auto if_reg = last_register_;
-        Emit(Instruction::Goto(1));
+        Emit(Instruction::Goto(1), span);
         auto goto_offset = instructions_.size() - 1;
         CompileTreeNode(node->else_branch);
         auto else_reg = last_register_;
-        Emit(Instruction::Move(else_reg, if_reg));
+        Emit(Instruction::Move(else_reg, if_reg), span);
         last_register_ = if_reg;
         auto else_offset = instructions_.size() - 1;
         // Fixing offsets
@@ -844,6 +849,8 @@ class VMFunctionCompiler : ExprFunctor<void(const Expr& expr)> {
   Target target_host_;
   /*! \brief Map from Relay expr to device type. */
   ExprDeviceMap expr_device_map_;
+  /*! \brief The mapping from instruction to span. */
+  std::unordered_map<int, Span> span_map;
 };
 
 PackedFunc VMCompiler::GetFunction(const std::string& name, const ObjectPtr<Object>& sptr_to_self) {
@@ -1087,9 +1094,13 @@ IRModule VMCompiler::OptimizeModule(IRModule mod, const TargetsMap& targets,
   if (targets.size() == 1) {
     const auto& it = targets.begin();
     With<Target> tctx((*it).second);
-    return seq(mod);
+    auto ret = seq(mod);
+    std::cout << PrettyPrint(ret);
+    return ret;
   }
-  return seq(mod);
+  auto ret = seq(mod);
+  std::cout << PrettyPrint(ret);
+  return ret;
 }
 
 void VMCompiler::PopulateGlobalMap() {

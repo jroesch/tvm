@@ -320,6 +320,21 @@ Expr DeviceCopy(Expr data, int src_dev_type, int dst_dev_type) {
 
 TVM_REGISTER_GLOBAL("relay.op._make.device_copy").set_body_typed(DeviceCopy);
 
+bool DeviceCopyRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
+                 const TypeReporter& reporter) {
+  ICHECK_EQ(types.size(), 2)
+    << "device_copy: should only have one input";
+  if (types[0].as<TensorTypeNode>() || types[0].as<IncompleteTypeNode>()) {
+    reporter->Assign(types[0], types[1]);
+    return true;
+  } else {
+    reporter->GetDiagCtx().Emit(
+      Diagnostic::Error(reporter->GetSpan())
+        << "device_copy only works on tensor inputs.");
+    return false;
+  }
+}
+
 RELAY_REGISTER_OP("device_copy")
     .describe(R"code(
 Copy data from one tensor to another. The source and destination might be
@@ -328,7 +343,7 @@ on different devices.
     .set_num_inputs(1)
     .add_argument("data", "Tensor", "The input data.")
     .set_support_level(10)
-    .add_type_rel("Identity", IdentityRel)
+    .add_type_rel("DeviceCopyRel", DeviceCopyRel)
     .set_attr<TOpPattern>("TOpPattern", kOpaque)
     .set_attr<TOpIsStateful>("TOpIsStateful", false)
     .set_attr<FInferCorrectLayout>("FInferCorrectLayout", ElemwiseArbitraryLayout)
