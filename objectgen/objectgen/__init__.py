@@ -60,7 +60,7 @@ class Generator:
 class CPPGenerator(Generator):
 
     def generate(self, definitions):
-        by_ns = defaultdict(lambda: (io.StringIO(LICENSE), io.StringIO(LICENSE)))
+        by_ns = defaultdict(lambda: (io.StringIO(""), io.StringIO("")))
         for defn in definitions:
             path = self.qualified_path(defn)
             print(path)
@@ -69,21 +69,37 @@ class CPPGenerator(Generator):
 
         for ns in by_ns:
             # Ensure directory exists.
-            Path(self.config.cpp_include_root.joinpath(ns)).mkdir(parents=True, exist_ok=True)
-            Path(self.config.cpp_source_root.joinpath(ns)).mkdir(parents=True, exist_ok=True)
+            Path(self.config.cpp_include_root.joinpath(ns)).parents[0].mkdir(parents=True, exist_ok=True)
+            Path(self.config.cpp_source_root.joinpath(ns)).parents[0].mkdir(parents=True, exist_ok=True)
 
             (header, source) = by_ns[ns]
             header_file = self.config.cpp_include_root.joinpath(ns).with_suffix(".h")
-            with open(header_file, 'w+') as file:
+            with open(header_file, 'w') as file:
+                file.seek(0)
+                file.truncate()
                 file.write(LICENSE)
-                file.write(str(header))
+                file.write(header.getvalue())
 
             source_file = self.config.cpp_source_root.joinpath(ns).with_suffix(".cpp")
-            with open(source_file, 'w+') as file:
+            with open(source_file, 'w') as file:
+                file.seek(0)
+                file.truncate()
                 file.write(LICENSE)
-                file.write(str(header))
+                file.write(header.getvalue())
 
     def generate_object_def(self, header_buf, source_buf, object_def):
+        header_value = "_".join([ns.upper() for ns in object_def.namespace])
+        header_value = f"TVM_{header_value}_H_"
+        header_buf.write("\n")
+        header_buf.write(f"#ifndef {header_value}\n")
+        header_buf.write(f"#define {header_value}\n")
+        for ns in ["tvm"] + object_def.namespace:
+            header_buf.write(f"namespace {ns} {{ \n")
+
+        for ns in reversed(["tvm"] + object_def.namespace):
+            header_buf.write(f"}} // namespace {ns} \n")
+
+        header_buf.write(f"#endif  // {header_value}\n")
         pass
 
 def ns_to_path(ns):
