@@ -289,17 +289,93 @@ class CPPGenerator(Generator):
         source_buf.write(");\n")
         source_buf.write(f"}});\n\n")
 
-
-
-
-        # return Tuple(fields, span);
-        #});
-
 # TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
 #     .set_dispatch<TupleNode>([](const ObjectRef& ref, ReprPrinter* p) {
 #       auto* node = static_cast<const TupleNode*>(ref.get());
 #       p->stream << "Tuple(" << node->fields << ")";
 #     });
+
+
+class PythonGenerator(Generator):
+    def source_for(self, ns):
+        ns = ns_to_path(ns)
+        path = Path(self.config.python_root.joinpath(ns)).resolve()
+        path.parents[0].mkdir(parents=True, exist_ok=True)
+        return path.with_suffix(".py")
+
+    def ffi_for(self, ns):
+        ns = ns_to_path(ns)
+        path = Path(self.config.python_root.joinpath(ns)).resolve()
+        path.parents[0].mkdir(parents=True, exist_ok=True)
+        return path.with_suffix(".py")
+
+    def generate(self, definitions):
+        by_ns = defaultdict(list)
+
+        # Group definitions by namespaces.
+        for defn in definitions:
+            ns = self.qualified_path(defn)
+            by_ns[ns].append(defn)
+
+        for ns in by_ns:
+            ns = ns[:-1]
+            ffi_file = self.ffi_for(list(ns) + ["_ffi_api.py"])
+            api_ns = ".".join(ns)
+            license_str =("\n").join([f"# {line}" for line in LICENSE.splitlines()])
+
+            with open(ffi_file, 'w') as file:
+                print(f"FFI File: {ffi_file}")
+                file.seek(0)
+                file.truncate()
+                file.write(license_str)
+                file.write("\nfrom tvm import _ffi\n")
+                file.write(f"_ffi._init_api(\"{api_ns}\", __name__)\n")
+                file.write("\n")
+
+        # Generate each NS to a set of files.
+        for ns in by_ns:
+            source = io.StringIO("")
+
+            self.generate_ns(source, ns, by_ns[ns])
+
+            # Ensure directory exists.
+            source_file = self.source_for(ns)
+            print(f"SourceFile: {source_file}")
+
+            license_str =("\n").join([f"# {line}" for line in LICENSE.splitlines()])
+
+            with open(source_file, 'w') as file:
+                file.seek(0)
+                file.truncate()
+                file.write(license_str)
+                file.write("\n")
+                file.write("import tvm._ffi\n")
+                file.write("from ..ir.base import Node\n")
+                file.write("from . import _ffi_api\n")
+                file.write("\n")
+                file.write("ObjectRef = Node\n")
+                file.write(source.getvalue())
+
+    def generate_ns(self, source_buf, namespace, defs):
+        for defn in defs:
+            source_buf.write(f"class {defn.ref_name()}({defn.parent_ref_name()}):\n")
+            source_buf.write(f"{4 * ' '}def __init__(self, ")
+
+            for i, field in enumerate(defn.fields):
+                source_buf.write(f"{field.field_name}")
+                if i != len(defn.fields) - 1:
+                    source_buf.write(", ")
+
+            source_buf.write("):\n")
+            source_buf.write(f"{8 * ' '}self.__init_handle_by_constructor__(_ffi_api.{defn.ref_name()}, ")
+
+            for i, field in enumerate(defn.fields):
+                source_buf.write(f" {field.field_name}")
+                if i != len(defn.fields) - 1:
+                    source_buf.write(", ")
+
+            source_buf.write(")\n")
+            source_buf.write("\n\n")
 
 
 def ns_to_path(ns):
@@ -309,10 +385,10 @@ def from_python(config, definitions):
     if config.cpp_include_root and config.cpp_source_root:
         cpp_gen = CPPGenerator(config)
         cpp_gen.generate(definitions)
-    elif config.python_root:
-        assert False
-    else:
-        assert False
+
+    if config.python_root:
+        py_gen = PythonGenerator(config)
+        py_gen.generate(definitions)
 
 def in_ns(ns, defs):
     for defn in defs:

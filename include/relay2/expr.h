@@ -44,7 +44,7 @@ class ExprNode : public Object {
     void SHashReduce(SHashReducer hash_reduce) const {
         hash_reduce(span);
     }
-    static constexpr const char* _type_key = "expr.Expr";
+    static constexpr const char* _type_key = "relay2.expr.Expr";
     static constexpr const bool _type_has_method_sequal_reduce = true;
     static constexpr const bool _type_has_method_shash_reduce = true;
     TVM_DECLARE_BASE_OBJECT_INFO(ExprNode, Object);
@@ -70,7 +70,7 @@ class VarNode : public Object {
     void SHashReduce(SHashReducer hash_reduce) const {
         hash_reduce(id);
     }
-    static constexpr const char* _type_key = "expr.Var";
+    static constexpr const char* _type_key = "relay2.expr.Var";
     static constexpr const bool _type_has_method_sequal_reduce = true;
     static constexpr const bool _type_has_method_shash_reduce = true;
     TVM_DECLARE_FINAL_OBJECT_INFO(VarNode, Object);
