@@ -63,6 +63,10 @@ class ObjectDefinition:
     def type_key(self):
         return ".".join(self.namespace + [self.name])
 
+    def ctor_pf(self):
+        # this is a temporary hack, need to think about how to clean up ns handling
+        return ".".join(self.namespace[:-1] + [self.name])
+
 @attr.s(auto_attribs=True)
 class ObjectGenConfig:
     cpp_include_root: Optional[Path]
@@ -271,7 +275,7 @@ class CPPGenerator(Generator):
 
         source_buf.write(f"TVM_REGISTER_NODE_TYPE({payload});\n\n")
 
-        source_buf.write(f"TVM_REGISTER_GLOBAL(\"{object_def.type_key()}\")")
+        source_buf.write(f"TVM_REGISTER_GLOBAL(\"{object_def.ctor_pf()}\")")
         source_buf.write(f".set_body_typed([]")
 
         source_buf.write(f"(")

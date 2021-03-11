@@ -38,7 +38,7 @@ Expr::Expr(
 
 TVM_REGISTER_NODE_TYPE(ExprNode);
 
-TVM_REGISTER_GLOBAL("relay2.expr.Expr").set_body_typed([](Span span) {
+TVM_REGISTER_GLOBAL("relay2.Expr").set_body_typed([](Span span) {
     return Expr(span);
 });
 
@@ -51,7 +51,7 @@ Var::Var(
 
 TVM_REGISTER_NODE_TYPE(VarNode);
 
-TVM_REGISTER_GLOBAL("relay2.expr.Var").set_body_typed([](relay::Id id) {
+TVM_REGISTER_GLOBAL("relay2.Var").set_body_typed([](relay::Id id) {
     return Var(id);
 });
 
