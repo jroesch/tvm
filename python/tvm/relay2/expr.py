@@ -20,13 +20,63 @@ from ..ir.base import Node
 from . import _ffi_api
 
 ObjectRef = Node
+@tvm._ffi.register_object("relay2.expr.Type")
+class Type(ObjectRef):
+    def __init__(self, span):
+        self.__init_handle_by_constructor__(_ffi_api.Type,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.Expr")
 class Expr(ObjectRef):
     def __init__(self, span):
         self.__init_handle_by_constructor__(_ffi_api.Expr,  span)
 
 
-class Var(ObjectRef):
-    def __init__(self, id):
-        self.__init_handle_by_constructor__(_ffi_api.Var,  id)
+@tvm._ffi.register_object("relay2.expr.Var")
+class Var(Expr):
+    def __init__(self, id, ty, span):
+        self.__init_handle_by_constructor__(_ffi_api.Var,  id,  ty,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.Binding")
+class Binding(ObjectRef):
+    def __init__(self, var, val):
+        self.__init_handle_by_constructor__(_ffi_api.Binding,  var,  val)
+
+
+@tvm._ffi.register_object("relay2.expr.Let")
+class Let(Expr):
+    def __init__(self, bindings, body, span):
+        self.__init_handle_by_constructor__(_ffi_api.Let,  bindings,  body,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.Function")
+class Function(Expr):
+    def __init__(self, name, params, body, ret_type, span):
+        self.__init_handle_by_constructor__(_ffi_api.Function,  name,  params,  body,  ret_type,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.BroadcastShape")
+class BroadcastShape(Expr):
+    def __init__(self, lhs, rhs, span):
+        self.__init_handle_by_constructor__(_ffi_api.BroadcastShape,  lhs,  rhs,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.Dim")
+class Dim(Type):
+    def __init__(self, span):
+        self.__init_handle_by_constructor__(_ffi_api.Dim,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.Shape")
+class Shape(Type):
+    def __init__(self, span):
+        self.__init_handle_by_constructor__(_ffi_api.Shape,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.Tensor")
+class Tensor(Type):
+    def __init__(self, shape, dtype, span):
+        self.__init_handle_by_constructor__(_ffi_api.Tensor,  shape,  dtype,  span)
 
 

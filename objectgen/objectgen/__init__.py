@@ -41,6 +41,7 @@ class ObjectDefinition:
     methods: List[ObjectMethod] = []
     inherits_from: str = "ObjectRef"
     namespace: List[str] = []
+    imports: List[List[str]] = []
     final: bool = True
     docs: str = ""
 
@@ -148,6 +149,10 @@ class CPPGenerator(Generator):
             f"\"{self.header_for(namespace)}\"",
         ]
 
+        for defn in defs:
+            for imp in defn.imports:
+                includes += [f"\"{self.header_for(imp)}\""]
+
         source_buf.write("\n")
         header_buf.write("\n")
         for include in includes:
@@ -200,21 +205,7 @@ class CPPGenerator(Generator):
             header_buf.write(f"{8 * ' '}v->Visit(\"{field.field_name}\", &{field.field_name});\n")
         header_buf.write(f"{4 * ' '}}}\n")
 
-        # Equality
-        header_buf.write(f"{4 * ' '}bool SEqualReduce(const {object_def.payload_name()}* other, SEqualReducer equal) const {{\n")
-        header_buf.write(f"{8 * ' '}return")
-        for i, field in enumerate(object_def.fields):
-            header_buf.write(f" equal({field.field_name}, other->{field.field_name})")
-            if i != len(object_def.fields) - 1:
-                header_buf.write(" && ")
-        header_buf.write(";\n")
-        header_buf.write(f"{4 * ' '}}}\n")
-
-        # Hashing
-        header_buf.write(f"{4 * ' '}void SHashReduce(SHashReducer hash_reduce) const {{\n")
-        for field in object_def.fields:
-            header_buf.write(f"{8 * ' '}hash_reduce({field.field_name});\n")
-        header_buf.write(f"{4 * ' '}}}\n")
+        self.generate_equal_and_hash(header_buf, object_def)
 
         header_buf.write(f"{4 * ' '}static constexpr const char* _type_key = \"{object_def.type_key()}\";\n")
         header_buf.write(f"{4 * ' '}static constexpr const bool _type_has_method_sequal_reduce = true;\n")
@@ -229,6 +220,28 @@ class CPPGenerator(Generator):
 
         header_buf.write("};\n\n")
 
+    def generate_equal_and_hash(self, header_buf, object_def):
+        # Equality
+        header_buf.write(f"{4 * ' '}bool SEqualReduce(const {object_def.payload_name()}* other, SEqualReducer equal) const {{\n")
+
+        header_buf.write(f"{8 * ' '}return")
+        if len(object_def.fields):
+            for i, field in enumerate(object_def.fields):
+                header_buf.write(f" equal({field.field_name}, other->{field.field_name})")
+                if i != len(object_def.fields) - 1:
+                    header_buf.write(" && ")
+        else:
+            header_buf.write(" true")
+
+        header_buf.write(";\n")
+        header_buf.write(f"{4 * ' '}}}\n")
+
+        # Hashing
+        header_buf.write(f"{4 * ' '}void SHashReduce(SHashReducer hash_reduce) const {{\n")
+        for field in object_def.fields:
+            header_buf.write(f"{8 * ' '}hash_reduce({field.field_name});\n")
+        header_buf.write(f"{4 * ' '}}}\n")
+
     def generate_ref_decl(self, header_buf, object_def):
         ref = object_def.ref_name()
         payload = object_def.payload_name()
@@ -238,6 +251,19 @@ class CPPGenerator(Generator):
         header_buf.write(f"class {ref} : public {parent_ref} {{\n")
         header_buf.write(" public:\n")
 
+        if len(object_def.fields):
+            self.generate_ctor_decl(header_buf, object_def)
+
+        # TODO(@jroesch): ast nodes should be non-nullable need to fix default ctor issue
+        # header_buf.write(f"{4 * ' '}TVM_DEFINE_NOTNULLABLE_OBJECT_REF_METHODS")
+        header_buf.write(f"{4 * ' '}TVM_DEFINE_OBJECT_REF_METHODS")
+
+        header_buf.write(f"({ref}, {parent_ref}, {payload});\n")
+
+        header_buf.write("};\n\n")
+
+    def generate_ctor_decl(self, header_buf, object_def):
+        ref = object_def.ref_name()
         header_buf.write(f"{4 * ' '}TVM_DLL {ref}(\n")
         for i, field in enumerate(object_def.fields):
             header_buf.write(f"{8 * ' '}{field.field_type} {field.field_name}")
@@ -245,33 +271,14 @@ class CPPGenerator(Generator):
                 header_buf.write(f",\n")
         header_buf.write(f"{4 * ' '});\n")
 
-        header_buf.write(f"{4 * ' '}TVM_DEFINE_NOTNULLABLE_OBJECT_REF_METHODS")
-
-        header_buf.write(f"({ref}, {parent_ref}, {payload});\n")
-
-        header_buf.write("};\n\n")
-
     def generate_impl(self, source_buf, object_def):
         ref = object_def.ref_name()
         payload = object_def.payload_name()
         parent_ref = object_def.parent_ref_name()
         parent_payload = object_def.parent_payload_name()
 
-
-        source_buf.write(f"{ref}::{ref}(\n")
-        for i, field in enumerate(object_def.fields):
-            source_buf.write(f"{4 * ' '}{field.field_type} {field.field_name}")
-            if i != len(object_def.fields) - 1:
-                source_buf.write(f",\n")
-        source_buf.write(f") {{\n")
-
-        source_buf.write(f"{4 * ' '}ObjectPtr<{payload}> n = make_object<{payload}>();\n")
-
-        for field in object_def.fields:
-            name = field.field_name
-            source_buf.write(f"{4 * ' '}n->{name} = std::move({name});\n")
-        source_buf.write(f"{4 * ' '}data_ = std::move(n);\n")
-        source_buf.write("}\n\n")
+        if len(object_def.fields):
+            self.generate_ctor_impl(source_buf, object_def)
 
         source_buf.write(f"TVM_REGISTER_NODE_TYPE({payload});\n\n")
 
@@ -298,6 +305,24 @@ class CPPGenerator(Generator):
 #       auto* node = static_cast<const TupleNode*>(ref.get());
 #       p->stream << "Tuple(" << node->fields << ")";
 #     });
+    def generate_ctor_impl(self, source_buf, object_def):
+        ref = object_def.ref_name()
+        payload = object_def.payload_name()
+
+        source_buf.write(f"{ref}::{ref}(\n")
+        for i, field in enumerate(object_def.fields):
+            source_buf.write(f"{4 * ' '}{field.field_type} {field.field_name}")
+            if i != len(object_def.fields) - 1:
+                source_buf.write(f",\n")
+        source_buf.write(f") {{\n")
+
+        source_buf.write(f"{4 * ' '}ObjectPtr<{payload}> n = make_object<{payload}>();\n")
+
+        for field in object_def.fields:
+            name = field.field_name
+            source_buf.write(f"{4 * ' '}n->{name} = std::move({name});\n")
+        source_buf.write(f"{4 * ' '}data_ = std::move(n);\n")
+        source_buf.write("}\n\n")
 
 
 class PythonGenerator(Generator):
@@ -362,6 +387,7 @@ class PythonGenerator(Generator):
 
     def generate_ns(self, source_buf, namespace, defs):
         for defn in defs:
+            source_buf.write(f"@tvm._ffi.register_object(\"{defn.type_key()}\")\n")
             source_buf.write(f"class {defn.ref_name()}({defn.parent_ref_name()}):\n")
             source_buf.write(f"{4 * ' '}def __init__(self, ")
 
@@ -385,7 +411,19 @@ class PythonGenerator(Generator):
 def ns_to_path(ns):
     return "/".join(ns)
 
+def resolve_parent_fields(definitions):
+    parent_map = {}
+    for defn in definitions:
+        parent_map[defn.name] = defn
+
+    for defn in definitions:
+        if defn.inherits_from != "ObjectRef":
+            parent_fields = parent_map[defn.inherits_from].fields
+            defn.fields = defn.fields + parent_fields
+
 def from_python(config, definitions):
+    resolve_parent_fields(definitions)
+
     if config.cpp_include_root and config.cpp_source_root:
         cpp_gen = CPPGenerator(config)
         cpp_gen.generate(definitions)
@@ -394,7 +432,9 @@ def from_python(config, definitions):
         py_gen = PythonGenerator(config)
         py_gen.generate(definitions)
 
-def in_ns(ns, defs):
+def in_ns(ns, imports, defs):
     for defn in defs:
         defn.namespace = ns + defn.namespace
+        defn.imports = imports + defn.imports
+
     return defs

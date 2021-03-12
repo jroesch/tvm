@@ -23,11 +23,24 @@
 #include <tvm/runtime/container.h>
 #include <tvm/runtime/object.h>
 #include <tvm/relay/expr.h>
-#include "/Users/jroesch/Git/tvm/include/relay2/expr.h"
+#include "/home/jroesch/Git/tvm/include/relay2/expr.h"
 
 namespace tvm { 
 namespace relay2 { 
 namespace expr { 
+
+Type::Type(
+    Span span) {
+    ObjectPtr<TypeNode> n = make_object<TypeNode>();
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(TypeNode);
+
+TVM_REGISTER_GLOBAL("relay2.Type").set_body_typed([](Span span) {
+    return Type(span);
+});
 
 Expr::Expr(
     Span span) {
@@ -43,16 +56,133 @@ TVM_REGISTER_GLOBAL("relay2.Expr").set_body_typed([](Span span) {
 });
 
 Var::Var(
-    relay::Id id) {
+    Optional<relay::Id> id,
+    Type ty,
+    Span span) {
     ObjectPtr<VarNode> n = make_object<VarNode>();
     n->id = std::move(id);
+    n->ty = std::move(ty);
+    n->span = std::move(span);
     data_ = std::move(n);
 }
 
 TVM_REGISTER_NODE_TYPE(VarNode);
 
-TVM_REGISTER_GLOBAL("relay2.Var").set_body_typed([](relay::Id id) {
-    return Var(id);
+TVM_REGISTER_GLOBAL("relay2.Var").set_body_typed([](Optional<relay::Id> id,Type ty,Span span) {
+    return Var(id,ty,span);
+});
+
+Binding::Binding(
+    Var var,
+    Expr val) {
+    ObjectPtr<BindingNode> n = make_object<BindingNode>();
+    n->var = std::move(var);
+    n->val = std::move(val);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(BindingNode);
+
+TVM_REGISTER_GLOBAL("relay2.Binding").set_body_typed([](Var var,Expr val) {
+    return Binding(var,val);
+});
+
+Let::Let(
+    runtime::Array<Binding> bindings,
+    Expr body,
+    Span span) {
+    ObjectPtr<LetNode> n = make_object<LetNode>();
+    n->bindings = std::move(bindings);
+    n->body = std::move(body);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(LetNode);
+
+TVM_REGISTER_GLOBAL("relay2.Let").set_body_typed([](runtime::Array<Binding> bindings,Expr body,Span span) {
+    return Let(bindings,body,span);
+});
+
+Function::Function(
+    runtime::String name,
+    runtime::Array<Var> params,
+    Expr body,
+    Type ret_type,
+    Span span) {
+    ObjectPtr<FunctionNode> n = make_object<FunctionNode>();
+    n->name = std::move(name);
+    n->params = std::move(params);
+    n->body = std::move(body);
+    n->ret_type = std::move(ret_type);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(FunctionNode);
+
+TVM_REGISTER_GLOBAL("relay2.Function").set_body_typed([](runtime::String name,runtime::Array<Var> params,Expr body,Type ret_type,Span span) {
+    return Function(name,params,body,ret_type,span);
+});
+
+BroadcastShape::BroadcastShape(
+    Expr lhs,
+    Expr rhs,
+    Span span) {
+    ObjectPtr<BroadcastShapeNode> n = make_object<BroadcastShapeNode>();
+    n->lhs = std::move(lhs);
+    n->rhs = std::move(rhs);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(BroadcastShapeNode);
+
+TVM_REGISTER_GLOBAL("relay2.BroadcastShape").set_body_typed([](Expr lhs,Expr rhs,Span span) {
+    return BroadcastShape(lhs,rhs,span);
+});
+
+Dim::Dim(
+    Span span) {
+    ObjectPtr<DimNode> n = make_object<DimNode>();
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(DimNode);
+
+TVM_REGISTER_GLOBAL("relay2.Dim").set_body_typed([](Span span) {
+    return Dim(span);
+});
+
+Shape::Shape(
+    Span span) {
+    ObjectPtr<ShapeNode> n = make_object<ShapeNode>();
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(ShapeNode);
+
+TVM_REGISTER_GLOBAL("relay2.Shape").set_body_typed([](Span span) {
+    return Shape(span);
+});
+
+Tensor::Tensor(
+    Optional<Expr> shape,
+    Optional<Expr> dtype,
+    Span span) {
+    ObjectPtr<TensorNode> n = make_object<TensorNode>();
+    n->shape = std::move(shape);
+    n->dtype = std::move(dtype);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(TensorNode);
+
+TVM_REGISTER_GLOBAL("relay2.Tensor").set_body_typed([](Optional<Expr> shape,Optional<Expr> dtype,Span span) {
+    return Tensor(shape,dtype,span);
 });
 
 } // namespace expr 
