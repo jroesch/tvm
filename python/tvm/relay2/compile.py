@@ -1,4 +1,5 @@
 from tvm.driver.build_module import lower, build
+from tvm.tir.ir_builder
 
 class Compiler:
     def __init__(self, module):
