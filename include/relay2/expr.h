@@ -181,10 +181,44 @@ class Let : public Expr {
     TVM_DEFINE_OBJECT_REF_METHODS(Let, Expr, LetNode);
 };
 
+class Call;
+class CallNode : public ExprNode {
+ public:
+    Expr fn;
+    runtime::Array<Expr> args;
+    Span span;
+    void VisitAttrs(AttrVisitor* v) {
+        v->Visit("fn", &fn);
+        v->Visit("args", &args);
+        v->Visit("span", &span);
+    }
+    bool SEqualReduce(const CallNode* other, SEqualReducer equal) const {
+        return equal(fn, other->fn) &&  equal(args, other->args) &&  equal(span, other->span);
+    }
+    void SHashReduce(SHashReducer hash_reduce) const {
+        hash_reduce(fn);
+        hash_reduce(args);
+        hash_reduce(span);
+    }
+    static constexpr const char* _type_key = "relay2.expr.Call";
+    static constexpr const bool _type_has_method_sequal_reduce = true;
+    static constexpr const bool _type_has_method_shash_reduce = true;
+    TVM_DECLARE_FINAL_OBJECT_INFO(CallNode, ExprNode);
+};
+
+class Call : public Expr {
+ public:
+    TVM_DLL Call(
+        Expr fn,
+        runtime::Array<Expr> args,
+        Span span    );
+    TVM_DEFINE_OBJECT_REF_METHODS(Call, Expr, CallNode);
+};
+
 class Function;
 class FunctionNode : public ExprNode {
  public:
-    runtime::String name;
+    Optional<runtime::String> name;
     runtime::Array<Var> params;
     Expr body;
     Type ret_type;
@@ -215,7 +249,7 @@ class FunctionNode : public ExprNode {
 class Function : public Expr {
  public:
     TVM_DLL Function(
-        runtime::String name,
+        Optional<runtime::String> name,
         runtime::Array<Var> params,
         Expr body,
         Type ret_type,
@@ -255,6 +289,138 @@ class BroadcastShape : public Expr {
         Expr rhs,
         Span span    );
     TVM_DEFINE_OBJECT_REF_METHODS(BroadcastShape, Expr, BroadcastShapeNode);
+};
+
+class ShapeOf;
+class ShapeOfNode : public ExprNode {
+ public:
+    Expr tensor;
+    Span span;
+    void VisitAttrs(AttrVisitor* v) {
+        v->Visit("tensor", &tensor);
+        v->Visit("span", &span);
+    }
+    bool SEqualReduce(const ShapeOfNode* other, SEqualReducer equal) const {
+        return equal(tensor, other->tensor) &&  equal(span, other->span);
+    }
+    void SHashReduce(SHashReducer hash_reduce) const {
+        hash_reduce(tensor);
+        hash_reduce(span);
+    }
+    static constexpr const char* _type_key = "relay2.expr.ShapeOf";
+    static constexpr const bool _type_has_method_sequal_reduce = true;
+    static constexpr const bool _type_has_method_shash_reduce = true;
+    TVM_DECLARE_FINAL_OBJECT_INFO(ShapeOfNode, ExprNode);
+};
+
+class ShapeOf : public Expr {
+ public:
+    TVM_DLL ShapeOf(
+        Expr tensor,
+        Span span    );
+    TVM_DEFINE_OBJECT_REF_METHODS(ShapeOf, Expr, ShapeOfNode);
+};
+
+class TensorSlice;
+class TensorSliceNode : public ExprNode {
+ public:
+    Expr tensor;
+    Array<Expr> slice;
+    Span span;
+    void VisitAttrs(AttrVisitor* v) {
+        v->Visit("tensor", &tensor);
+        v->Visit("slice", &slice);
+        v->Visit("span", &span);
+    }
+    bool SEqualReduce(const TensorSliceNode* other, SEqualReducer equal) const {
+        return equal(tensor, other->tensor) &&  equal(slice, other->slice) &&  equal(span, other->span);
+    }
+    void SHashReduce(SHashReducer hash_reduce) const {
+        hash_reduce(tensor);
+        hash_reduce(slice);
+        hash_reduce(span);
+    }
+    static constexpr const char* _type_key = "relay2.expr.TensorSlice";
+    static constexpr const bool _type_has_method_sequal_reduce = true;
+    static constexpr const bool _type_has_method_shash_reduce = true;
+    TVM_DECLARE_FINAL_OBJECT_INFO(TensorSliceNode, ExprNode);
+};
+
+class TensorSlice : public Expr {
+ public:
+    TVM_DLL TensorSlice(
+        Expr tensor,
+        Array<Expr> slice,
+        Span span    );
+    TVM_DEFINE_OBJECT_REF_METHODS(TensorSlice, Expr, TensorSliceNode);
+};
+
+class Compute;
+class ComputeNode : public ExprNode {
+ public:
+    Expr out_shape;
+    Expr compute_body;
+    Span span;
+    void VisitAttrs(AttrVisitor* v) {
+        v->Visit("out_shape", &out_shape);
+        v->Visit("compute_body", &compute_body);
+        v->Visit("span", &span);
+    }
+    bool SEqualReduce(const ComputeNode* other, SEqualReducer equal) const {
+        return equal(out_shape, other->out_shape) &&  equal(compute_body, other->compute_body) &&  equal(span, other->span);
+    }
+    void SHashReduce(SHashReducer hash_reduce) const {
+        hash_reduce(out_shape);
+        hash_reduce(compute_body);
+        hash_reduce(span);
+    }
+    static constexpr const char* _type_key = "relay2.expr.Compute";
+    static constexpr const bool _type_has_method_sequal_reduce = true;
+    static constexpr const bool _type_has_method_shash_reduce = true;
+    TVM_DECLARE_FINAL_OBJECT_INFO(ComputeNode, ExprNode);
+};
+
+class Compute : public Expr {
+ public:
+    TVM_DLL Compute(
+        Expr out_shape,
+        Expr compute_body,
+        Span span    );
+    TVM_DEFINE_OBJECT_REF_METHODS(Compute, Expr, ComputeNode);
+};
+
+class Add;
+class AddNode : public ExprNode {
+ public:
+    Expr lhs;
+    Expr rhs;
+    Span span;
+    void VisitAttrs(AttrVisitor* v) {
+        v->Visit("lhs", &lhs);
+        v->Visit("rhs", &rhs);
+        v->Visit("span", &span);
+    }
+    bool SEqualReduce(const AddNode* other, SEqualReducer equal) const {
+        return equal(lhs, other->lhs) &&  equal(rhs, other->rhs) &&  equal(span, other->span);
+    }
+    void SHashReduce(SHashReducer hash_reduce) const {
+        hash_reduce(lhs);
+        hash_reduce(rhs);
+        hash_reduce(span);
+    }
+    static constexpr const char* _type_key = "relay2.expr.Add";
+    static constexpr const bool _type_has_method_sequal_reduce = true;
+    static constexpr const bool _type_has_method_shash_reduce = true;
+    TVM_DECLARE_FINAL_OBJECT_INFO(AddNode, ExprNode);
+};
+
+class Add : public Expr {
+ public:
+    TVM_DLL Add(
+        Expr lhs,
+        Expr rhs,
+        Span span    );
+    TVM_DEFINE_OBJECT_REF_METHODS(Add, Expr, AddNode);
 };
 
 class Dim;

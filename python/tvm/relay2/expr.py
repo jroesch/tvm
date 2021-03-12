@@ -50,6 +50,12 @@ class Let(Expr):
         self.__init_handle_by_constructor__(_ffi_api.Let,  bindings,  body,  span)
 
 
+@tvm._ffi.register_object("relay2.expr.Call")
+class Call(Expr):
+    def __init__(self, fn, args, span):
+        self.__init_handle_by_constructor__(_ffi_api.Call,  fn,  args,  span)
+
+
 @tvm._ffi.register_object("relay2.expr.Function")
 class Function(Expr):
     def __init__(self, name, params, body, ret_type, span):
@@ -60,6 +66,30 @@ class Function(Expr):
 class BroadcastShape(Expr):
     def __init__(self, lhs, rhs, span):
         self.__init_handle_by_constructor__(_ffi_api.BroadcastShape,  lhs,  rhs,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.ShapeOf")
+class ShapeOf(Expr):
+    def __init__(self, tensor, span):
+        self.__init_handle_by_constructor__(_ffi_api.ShapeOf,  tensor,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.TensorSlice")
+class TensorSlice(Expr):
+    def __init__(self, tensor, slice, span):
+        self.__init_handle_by_constructor__(_ffi_api.TensorSlice,  tensor,  slice,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.Compute")
+class Compute(Expr):
+    def __init__(self, out_shape, compute_body, span):
+        self.__init_handle_by_constructor__(_ffi_api.Compute,  out_shape,  compute_body,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.Add")
+class Add(Expr):
+    def __init__(self, lhs, rhs, span):
+        self.__init_handle_by_constructor__(_ffi_api.Add,  lhs,  rhs,  span)
 
 
 @tvm._ffi.register_object("relay2.expr.Dim")

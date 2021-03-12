@@ -310,6 +310,7 @@ runtime::Module build(const Map<Target, IRModule>& inputs_arg, const Target& tar
       mhost.Import(it);
     }
   }
+
   return mhost;
 }
 

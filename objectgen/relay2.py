@@ -48,10 +48,18 @@ in_ns(["relay2", "expr"], [], [
         ]
     ),
     ObjectDefinition(
+        name="Call",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("fn", "Expr"),
+            ObjectField("args", "runtime::Array<Expr>"),
+        ]
+    ),
+    ObjectDefinition(
         name="Function",
         inherits_from="Expr",
         fields=[
-            ObjectField("name", "runtime::String"),
+            ObjectField("name", "Optional<runtime::String>"),
             ObjectField("params", "runtime::Array<Var>"),
             ObjectField("body", "Expr"),
             ObjectField("ret_type", "Type"),
@@ -63,6 +71,37 @@ in_ns(["relay2", "expr"], [], [
         fields=[
             ObjectField("lhs", "Expr"),
             ObjectField("rhs", "Expr"),
+        ]
+    ),
+    ObjectDefinition(
+        name="ShapeOf",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("tensor", "Expr"),
+        ]
+    ),
+    ObjectDefinition(
+        name="TensorSlice",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("tensor", "Expr"),
+            ObjectField("slice", "Array<Expr>")
+        ]
+    ),
+    ObjectDefinition(
+        name="Compute",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("out_shape", "Expr"),
+            ObjectField("compute_body", "Expr")
+        ]
+    ),
+    ObjectDefinition(
+        name="Add",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("lhs", "Expr"),
+            ObjectField("rhs", "Expr")
         ]
     ),
     ObjectDefinition(

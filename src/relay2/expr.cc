@@ -104,8 +104,25 @@ TVM_REGISTER_GLOBAL("relay2.Let").set_body_typed([](runtime::Array<Binding> bind
     return Let(bindings,body,span);
 });
 
+Call::Call(
+    Expr fn,
+    runtime::Array<Expr> args,
+    Span span) {
+    ObjectPtr<CallNode> n = make_object<CallNode>();
+    n->fn = std::move(fn);
+    n->args = std::move(args);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(CallNode);
+
+TVM_REGISTER_GLOBAL("relay2.Call").set_body_typed([](Expr fn,runtime::Array<Expr> args,Span span) {
+    return Call(fn,args,span);
+});
+
 Function::Function(
-    runtime::String name,
+    Optional<runtime::String> name,
     runtime::Array<Var> params,
     Expr body,
     Type ret_type,
@@ -121,7 +138,7 @@ Function::Function(
 
 TVM_REGISTER_NODE_TYPE(FunctionNode);
 
-TVM_REGISTER_GLOBAL("relay2.Function").set_body_typed([](runtime::String name,runtime::Array<Var> params,Expr body,Type ret_type,Span span) {
+TVM_REGISTER_GLOBAL("relay2.Function").set_body_typed([](Optional<runtime::String> name,runtime::Array<Var> params,Expr body,Type ret_type,Span span) {
     return Function(name,params,body,ret_type,span);
 });
 
@@ -140,6 +157,72 @@ TVM_REGISTER_NODE_TYPE(BroadcastShapeNode);
 
 TVM_REGISTER_GLOBAL("relay2.BroadcastShape").set_body_typed([](Expr lhs,Expr rhs,Span span) {
     return BroadcastShape(lhs,rhs,span);
+});
+
+ShapeOf::ShapeOf(
+    Expr tensor,
+    Span span) {
+    ObjectPtr<ShapeOfNode> n = make_object<ShapeOfNode>();
+    n->tensor = std::move(tensor);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(ShapeOfNode);
+
+TVM_REGISTER_GLOBAL("relay2.ShapeOf").set_body_typed([](Expr tensor,Span span) {
+    return ShapeOf(tensor,span);
+});
+
+TensorSlice::TensorSlice(
+    Expr tensor,
+    Array<Expr> slice,
+    Span span) {
+    ObjectPtr<TensorSliceNode> n = make_object<TensorSliceNode>();
+    n->tensor = std::move(tensor);
+    n->slice = std::move(slice);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(TensorSliceNode);
+
+TVM_REGISTER_GLOBAL("relay2.TensorSlice").set_body_typed([](Expr tensor,Array<Expr> slice,Span span) {
+    return TensorSlice(tensor,slice,span);
+});
+
+Compute::Compute(
+    Expr out_shape,
+    Expr compute_body,
+    Span span) {
+    ObjectPtr<ComputeNode> n = make_object<ComputeNode>();
+    n->out_shape = std::move(out_shape);
+    n->compute_body = std::move(compute_body);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(ComputeNode);
+
+TVM_REGISTER_GLOBAL("relay2.Compute").set_body_typed([](Expr out_shape,Expr compute_body,Span span) {
+    return Compute(out_shape,compute_body,span);
+});
+
+Add::Add(
+    Expr lhs,
+    Expr rhs,
+    Span span) {
+    ObjectPtr<AddNode> n = make_object<AddNode>();
+    n->lhs = std::move(lhs);
+    n->rhs = std::move(rhs);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(AddNode);
+
+TVM_REGISTER_GLOBAL("relay2.Add").set_body_typed([](Expr lhs,Expr rhs,Span span) {
+    return Add(lhs,rhs,span);
 });
 
 Dim::Dim(
