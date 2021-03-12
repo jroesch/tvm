@@ -455,7 +455,7 @@ class IRBuilder(object):
         return _expr.Call(expr.dtype, "tir.likely", [expr])
 
     def get(self):
-        """Return the builded IR.
+        """Return the fully constructed IR.
 
         Returns
         -------
@@ -469,11 +469,11 @@ class IRBuilder(object):
 
 
 def create():
-    """Create a new IRBuilder
+    """Create a new IRBuilder.
 
     Returns
     -------
     builder : IRBuilder
-        The created IRBuilder
+        An empty IRBuilder.
     """
     return IRBuilder()
