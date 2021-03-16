@@ -356,7 +356,7 @@ void TVMExtractOutputShapes(tvm::runtime::Module& mod, size_t num_outputs, std::
   }
 }
 
-void TVMRun(tvm::runtime::Module& mod, std::vector<DLTensor>& inputs, std::vector<DLTensor>& outputs)
+void TVMRun(tvm::runtime::Module& mod, std::vector<DLTensor>& inputs, std::vector<DLTensor>& outputs, tvm::runtime::TVMRetValue *ret)
 {
   tvm::PackedFunc set_input = mod.GetFunction("set_input_zero_copy", false);
   for (size_t i = 0; i < inputs.size(); i++)
