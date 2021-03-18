@@ -34,7 +34,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <spirv.hpp>
+#include <SPIRV/spirv.hpp>
 // clang-format on
 
 namespace tvm {

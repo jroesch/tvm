@@ -16,7 +16,11 @@
 # under the License.
 
 # Be compatible with older version of CMake
-find_vulkan(${USE_VULKAN})
+find_package(Vulkan REQUIRED)
+find_package(PkgConfig REQUIRED)
+
+pkg_check_modules(SPIRV REQUIRED spirv)
+pkg_check_modules(SPIRV_TOOLS REQUIRED SPIRV-Tools)
 
 # Extra Vulkan runtime options, exposed for advanced users.
 tvm_option(USE_VULKAN_IMMEDIATE_MODE "Use Vulkan Immediate mode
@@ -29,7 +33,7 @@ tvm_option(USE_VULKAN_VALIDATION "Enable Vulkan API validation layers" OFF
 if(Vulkan_FOUND)
   # always set the includedir
   # avoid global retrigger of cmake
-  include_directories(SYSTEM ${Vulkan_INCLUDE_DIRS})
+  include_directories(SYSTEM ${Vulkan_INCLUDE_DIRS} ${SPIRV_INCLUDEDIR} ${SPIRV_TOOLS_INCLUDEDIR})
 endif(Vulkan_FOUND)
 
 if(USE_VULKAN)
@@ -41,8 +45,8 @@ if(USE_VULKAN)
   file(GLOB COMPILER_VULKAN_SRCS src/target/spirv/*.cc)
   list(APPEND RUNTIME_SRCS ${RUNTIME_VULKAN_SRCS})
   list(APPEND COMPILER_SRCS ${COMPILER_VULKAN_SRCS})
-  list(APPEND TVM_LINKER_LIBS ${Vulkan_SPIRV_TOOLS_LIBRARY})
-  list(APPEND TVM_RUNTIME_LINKER_LIBS ${Vulkan_LIBRARY})
+  list(APPEND TVM_LINKER_LIBS ${Vulkan_LIBRARIES} ${SPIRV_LIBRARIES} ${SPIRV_TOOLS_LIBRARIES})
+  list(APPEND TVM_RUNTIME_LINKER_LIBS ${Vulkan_LIBRARIES})
 
   if(USE_VULKAN_IMMEDIATE_MODE)
     message(STATUS "Build with Vulkan immediate mode")

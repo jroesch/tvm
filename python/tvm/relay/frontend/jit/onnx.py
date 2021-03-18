@@ -21,6 +21,7 @@ import tvm.relay
 import tvm.autotvm as autotvm
 import timeit
 import numpy as np
+import collections
 
 @tvm.register_func("tvm_run_with_benchmark")
 def run_with_benchmark(mod):
@@ -40,18 +41,24 @@ def run_with_benchmark(mod):
 def onnx_compile(model_string, target, target_host, opt_level, input_shapes):
     model = onnx.load_model_from_string(bytes(model_string))
 
-    input_shapes = {name : shape for (name, shape) in zip([i.name for i in model.graph.input], input_shapes)}
+    input_mapping = [(name , shape) for (name, shape) in zip([i.name for i in model.graph.input], input_shapes)]
+    # Using an ordereddict maintains input ordering.
+    shape_dict = collections.OrderedDict(input_mapping)
 
-    irmod, params = tvm.relay.frontend.from_onnx(model, input_shapes, opset=11)
+    irmod, params = tvm.relay.frontend.from_onnx(model, shape_dict, opset=11)
+    print(irmod)
+    # import ipdb; ipdb.set_trace()
     with tvm.relay.build_config(opt_level=opt_level):
         tuning_logfile = os.getenv("AUTOTVM_TUNING_LOG")
         if tuning_logfile:
             with autotvm.apply_history_best(tuning_logfile):
-                graph, lib, params = tvm.relay.build(irmod, target_host=target_host, target=target, params=params)
+                # XXX: do not pass parameters to relay.build otherwise they will be inline into the module
+                lib = tvm.relay.build(irmod, target_host=target_host, target=target)
         else:
-            graph, lib, params = tvm.relay.build(irmod, target_host=target_host, target=target, params=params)
+            lib = tvm.relay.build(irmod, target_host=target_host, target=target)
 
+    print(lib.graph_json)
     ctx = tvm.context(target, 0)
-    m = tvm.contrib.graph_runtime.create(graph, lib, ctx)
-    m.set_input(**params)
+    m = tvm.contrib.graph_runtime.GraphModule(lib["default"](ctx))
+    # m.set_input(**params)
     return m.module

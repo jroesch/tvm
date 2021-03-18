@@ -23,7 +23,7 @@
  */
 // Use libspirv for parsing and validating code.
 #include <dmlc/memory_io.h>
-#include <libspirv.h>
+#include <spirv-tools/libspirv.h>
 #include <tvm/tir/transform.h>
 
 #include "../../runtime/vulkan/vulkan_module.h"

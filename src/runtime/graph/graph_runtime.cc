@@ -84,6 +84,13 @@ void GraphRuntime::Init(const std::string& graph_json, tvm::runtime::Module modu
     const uint32_t nid = input_nodes_[i];
     std::string& name = nodes_[nid].name;
     input_map_[name] = i;
+    uint32_t eid = this->entry_id(input_nodes_[i], 0);
+    const DLTensor* old_t = data_entry_[eid].operator->();
+    std::stringstream s;
+    for(int ind = 0; ind < old_t->ndim; ind++) {
+      s << old_t->shape[ind] << " ";
+    }
+    LOG(INFO) << s.str();
   }
 }
 /*!
@@ -120,7 +127,13 @@ void GraphRuntime::SetInputZeroCopy(int index, DLTensor* data_ref) {
 
   // check the consistency of input
   ICHECK_EQ(data_alignment_[eid], details::GetDataAlignment(*data_ref));
-  ICHECK_EQ(reinterpret_cast<size_t>(data_ref->data) % kAllocAlignment, 0);
+  // ICHECK_EQ(reinterpret_cast<size_t>(data_ref->data) % kAllocAlignment, 0) << data_ref->data;
+  for(int i = 0; i < old_t->ndim; i++) {
+    LOG(INFO) << "OLD " << old_t->shape[i];
+  }
+  for(int i = 0; i < data_ref->ndim; i++) {
+    LOG(INFO) << "DATA_REF " << data_ref->shape[i];
+  }
   ICHECK_EQ(old_t->ndim, static_cast<size_t>(data_ref->ndim));
   ICHECK_EQ(old_t->ctx.device_type, data_ref->ctx.device_type);
   ICHECK_EQ(old_t->ctx.device_id, data_ref->ctx.device_id);
