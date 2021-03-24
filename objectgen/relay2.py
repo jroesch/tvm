@@ -28,8 +28,16 @@ in_ns(["relay2", "expr"], [], [
         name="Var",
         inherits_from="Expr",
         fields=[
-            ObjectField("id", "Optional<relay::Id>"),
-            ObjectField("ty", "Type"),
+            ObjectField("id", "relay::Id"),
+            ObjectField("ty", "Optional<Type>"),
+        ],
+    ),
+    ObjectDefinition(
+        name="GlobalVar",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("id", "relay::Id"),
+            ObjectField("ty", "Optional<Type>"),
         ],
     ),
     ObjectDefinition(
@@ -102,6 +110,20 @@ in_ns(["relay2", "expr"], [], [
         fields=[
             ObjectField("lhs", "Expr"),
             ObjectField("rhs", "Expr")
+        ]
+    ),
+    ObjectDefinition(
+        name="TIRExpr",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("expr", "PrimExpr")
+        ]
+    ),
+    ObjectDefinition(
+        name="Tuple",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("elements", "runtime::Array<Expr>")
         ]
     ),
     ObjectDefinition(

@@ -23,6 +23,8 @@
 #include <tvm/runtime/container.h>
 #include <tvm/runtime/object.h>
 #include <tvm/relay/expr.h>
+#include <tvm/ir/expr.h>
+#include <tvm/tir/expr.h>
 #include "/home/jroesch/Git/tvm/include/relay2/expr.h"
 
 namespace tvm { 
@@ -56,8 +58,8 @@ TVM_REGISTER_GLOBAL("relay2.Expr").set_body_typed([](Span span) {
 });
 
 Var::Var(
-    Optional<relay::Id> id,
-    Type ty,
+    relay::Id id,
+    Optional<Type> ty,
     Span span) {
     ObjectPtr<VarNode> n = make_object<VarNode>();
     n->id = std::move(id);
@@ -68,8 +70,25 @@ Var::Var(
 
 TVM_REGISTER_NODE_TYPE(VarNode);
 
-TVM_REGISTER_GLOBAL("relay2.Var").set_body_typed([](Optional<relay::Id> id,Type ty,Span span) {
+TVM_REGISTER_GLOBAL("relay2.Var").set_body_typed([](relay::Id id,Optional<Type> ty,Span span) {
     return Var(id,ty,span);
+});
+
+GlobalVar::GlobalVar(
+    relay::Id id,
+    Optional<Type> ty,
+    Span span) {
+    ObjectPtr<GlobalVarNode> n = make_object<GlobalVarNode>();
+    n->id = std::move(id);
+    n->ty = std::move(ty);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(GlobalVarNode);
+
+TVM_REGISTER_GLOBAL("relay2.GlobalVar").set_body_typed([](relay::Id id,Optional<Type> ty,Span span) {
+    return GlobalVar(id,ty,span);
 });
 
 Binding::Binding(
@@ -223,6 +242,36 @@ TVM_REGISTER_NODE_TYPE(AddNode);
 
 TVM_REGISTER_GLOBAL("relay2.Add").set_body_typed([](Expr lhs,Expr rhs,Span span) {
     return Add(lhs,rhs,span);
+});
+
+TIRExpr::TIRExpr(
+    PrimExpr expr,
+    Span span) {
+    ObjectPtr<TIRExprNode> n = make_object<TIRExprNode>();
+    n->expr = std::move(expr);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(TIRExprNode);
+
+TVM_REGISTER_GLOBAL("relay2.TIRExpr").set_body_typed([](PrimExpr expr,Span span) {
+    return TIRExpr(expr,span);
+});
+
+Tuple::Tuple(
+    runtime::Array<Expr> elements,
+    Span span) {
+    ObjectPtr<TupleNode> n = make_object<TupleNode>();
+    n->elements = std::move(elements);
+    n->span = std::move(span);
+    data_ = std::move(n);
+}
+
+TVM_REGISTER_NODE_TYPE(TupleNode);
+
+TVM_REGISTER_GLOBAL("relay2.Tuple").set_body_typed([](runtime::Array<Expr> elements,Span span) {
+    return Tuple(elements,span);
 });
 
 Dim::Dim(

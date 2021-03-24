@@ -25,6 +25,8 @@
 #include <tvm/runtime/container.h>
 #include <tvm/runtime/object.h>
 #include <tvm/relay/expr.h>
+#include <tvm/ir/expr.h>
+#include <tvm/tir/expr.h>
 #include "/home/jroesch/Git/tvm/include/relay2/expr.h"
 
 namespace tvm { 
@@ -86,8 +88,8 @@ class Expr : public ObjectRef {
 class Var;
 class VarNode : public ExprNode {
  public:
-    Optional<relay::Id> id;
-    Type ty;
+    relay::Id id;
+    Optional<Type> ty;
     Span span;
     void VisitAttrs(AttrVisitor* v) {
         v->Visit("id", &id);
@@ -111,10 +113,44 @@ class VarNode : public ExprNode {
 class Var : public Expr {
  public:
     TVM_DLL Var(
-        Optional<relay::Id> id,
-        Type ty,
+        relay::Id id,
+        Optional<Type> ty,
         Span span    );
     TVM_DEFINE_OBJECT_REF_METHODS(Var, Expr, VarNode);
+};
+
+class GlobalVar;
+class GlobalVarNode : public ExprNode {
+ public:
+    relay::Id id;
+    Optional<Type> ty;
+    Span span;
+    void VisitAttrs(AttrVisitor* v) {
+        v->Visit("id", &id);
+        v->Visit("ty", &ty);
+        v->Visit("span", &span);
+    }
+    bool SEqualReduce(const GlobalVarNode* other, SEqualReducer equal) const {
+        return equal(id, other->id) &&  equal(ty, other->ty) &&  equal(span, other->span);
+    }
+    void SHashReduce(SHashReducer hash_reduce) const {
+        hash_reduce(id);
+        hash_reduce(ty);
+        hash_reduce(span);
+    }
+    static constexpr const char* _type_key = "relay2.expr.GlobalVar";
+    static constexpr const bool _type_has_method_sequal_reduce = true;
+    static constexpr const bool _type_has_method_shash_reduce = true;
+    TVM_DECLARE_FINAL_OBJECT_INFO(GlobalVarNode, ExprNode);
+};
+
+class GlobalVar : public Expr {
+ public:
+    TVM_DLL GlobalVar(
+        relay::Id id,
+        Optional<Type> ty,
+        Span span    );
+    TVM_DEFINE_OBJECT_REF_METHODS(GlobalVar, Expr, GlobalVarNode);
 };
 
 class Binding;
@@ -421,6 +457,66 @@ class Add : public Expr {
         Expr rhs,
         Span span    );
     TVM_DEFINE_OBJECT_REF_METHODS(Add, Expr, AddNode);
+};
+
+class TIRExpr;
+class TIRExprNode : public ExprNode {
+ public:
+    PrimExpr expr;
+    Span span;
+    void VisitAttrs(AttrVisitor* v) {
+        v->Visit("expr", &expr);
+        v->Visit("span", &span);
+    }
+    bool SEqualReduce(const TIRExprNode* other, SEqualReducer equal) const {
+        return equal(expr, other->expr) &&  equal(span, other->span);
+    }
+    void SHashReduce(SHashReducer hash_reduce) const {
+        hash_reduce(expr);
+        hash_reduce(span);
+    }
+    static constexpr const char* _type_key = "relay2.expr.TIRExpr";
+    static constexpr const bool _type_has_method_sequal_reduce = true;
+    static constexpr const bool _type_has_method_shash_reduce = true;
+    TVM_DECLARE_FINAL_OBJECT_INFO(TIRExprNode, ExprNode);
+};
+
+class TIRExpr : public Expr {
+ public:
+    TVM_DLL TIRExpr(
+        PrimExpr expr,
+        Span span    );
+    TVM_DEFINE_OBJECT_REF_METHODS(TIRExpr, Expr, TIRExprNode);
+};
+
+class Tuple;
+class TupleNode : public ExprNode {
+ public:
+    runtime::Array<Expr> elements;
+    Span span;
+    void VisitAttrs(AttrVisitor* v) {
+        v->Visit("elements", &elements);
+        v->Visit("span", &span);
+    }
+    bool SEqualReduce(const TupleNode* other, SEqualReducer equal) const {
+        return equal(elements, other->elements) &&  equal(span, other->span);
+    }
+    void SHashReduce(SHashReducer hash_reduce) const {
+        hash_reduce(elements);
+        hash_reduce(span);
+    }
+    static constexpr const char* _type_key = "relay2.expr.Tuple";
+    static constexpr const bool _type_has_method_sequal_reduce = true;
+    static constexpr const bool _type_has_method_shash_reduce = true;
+    TVM_DECLARE_FINAL_OBJECT_INFO(TupleNode, ExprNode);
+};
+
+class Tuple : public Expr {
+ public:
+    TVM_DLL Tuple(
+        runtime::Array<Expr> elements,
+        Span span    );
+    TVM_DEFINE_OBJECT_REF_METHODS(Tuple, Expr, TupleNode);
 };
 
 class Dim;

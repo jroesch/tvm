@@ -1,7 +1,9 @@
 from __future__ import annotations
+import tvm
 from tvm.relay.base import Id
 from tvm.relay2 import expr
-
+from tvm import tir
+import numpy as np
 import synr
 
 from typing import TypeVar, Generic, Union
@@ -30,6 +32,8 @@ def print_fn(func):
     buffer.write("}")
     return buffer.getvalue()
 
+expr.Function.__str__ = print_fn
+
 class R2Transformer(Transformer):
     def __init__(self):
         self.str_to_var = {}
@@ -49,6 +53,19 @@ class R2Transformer(Transformer):
         if isinstance(ty, ast.TypeVar):
             if ty.id.name == "Tensor":
                 return expr.Tensor(None, None, None)
+
+        if isinstance(ty, ast.TypeApply):
+            if ty.id.name == "Tensor":
+                dims = []
+                # TODO(@jroesch): add support for dtype
+                for param in ty.params:
+                    if isinstance(param, ast.TypeConstant):
+                        dim = expr.TIRExpr(tir.IntImm("int32", param.value), None)
+                        dims.append(dim)
+                return expr.Tensor(expr.Tuple(dims, span=None), None, None)
+
+        import pdb; pdb.set_trace()
+
 
         self._diagnostic_context.emit('error', "invalid type", ty.span)
         self._diagnostic_context.render()
@@ -100,7 +117,14 @@ class R2Transformer(Transformer):
                         self._diagnostic_context.render()
                     return expr.Compute(params[0], params[1], span=None)
                 else:
-                    self._diagnostic_context.emit('error', f"unknown functionc all {params.len()}", exp.span)
+                    if exp.func_name.id.name in self.str_to_var:
+                        return self.str_to_var[exp.func_name.id.name]
+                    else:
+                        # todo: globalvar equality? use global str -> id map?
+                        ident = Id(exp.func_name.id.name)
+                        return expr.Call(expr.GlobalVar(ident, None, None), params, None)
+
+                    self._diagnostic_context.emit('error', f"unknown functionc all {len(params)}", exp.span)
                     self._diagnostic_context.render()
             elif isinstance(exp.func_name, ast.Op):
                 if exp.func_name.name == ast.BuiltinOp.Subscript:
@@ -163,10 +187,29 @@ class R2Transformer(Transformer):
     def transform_type(self, ty: ast.Type) -> T:
         pass
 
+GLOBAL_MODULE = {}
+
+def add_to_global_module(new_fns):
+    global GLOBAL_MODULE
+    for fn_name in new_fns:
+        if fn_name in GLOBAL_MODULE:
+            raise Exception(f"duplicate name {fn_name}")
+        else:
+            GLOBAL_MODULE[fn_name] = new_fns[fn_name]
+
+
 def r2(f):
     diag_cx = synr.PrinterDiagnosticContext()
     ast = synr.to_ast(f, diag_cx)
     module = R2Transformer().do_transform(ast, diag_cx)
-    compiler = Compiler(module)
-    compiler.compile()
-    print(print_fn(updated_f))
+    add_to_global_module(module)
+    def __wrapper(*inputs):
+        compiler = Compiler(module, f.__name__)
+        compiled_f = compiler.compile(execute=True)
+        # Actually compute needed buffer sizes.
+        out = tvm.nd.array(np.random.rand(10).astype('float32'))
+        import pdb; pdb.set_trace()
+        compiled_f(*(list(inputs) + [out]))
+        return out
+
+    return __wrapper

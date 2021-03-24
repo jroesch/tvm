@@ -1,0 +1,31 @@
+fn gemm(a: Tensor[n, k], b: Tensor[k, m]) -> Tensor // (n, m) {
+    compute((n, m), ...)
+}
+
+fn dynamic_batch(a: Tensor[?, n, k]) -> Tensor[k, n] {
+    if a.shape[0] == 1 {
+
+    } else {
+
+    }
+}
+
+fn while_concat(n: Tensor[n, k], repeat: int) -> Tensor {
+    let i = 0; // analyze value on interval (0..repeat);
+    let ret: Tensor = empty(); // shape = ()
+    while (i < repeat) {
+       ret = concat(ret, n); () U concat_shape((), (n, k))
+       repeat += 1;
+    }
+    return ret;
+}
+
+fn stack(tl: Array<Tensor<s>>, dim: Dim=0) -> Tensor {
+    let array_length = tl.len();
+    let sh = get_common_sh(tl);
+    // implicit concats along 0 dim
+    let empty = tensor.empty(length ++ sh);
+    for i in range(0, array_length):
+        empty[i] = tl[i]
+    return empty
+}

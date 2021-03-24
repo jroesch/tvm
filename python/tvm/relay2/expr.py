@@ -38,6 +38,12 @@ class Var(Expr):
         self.__init_handle_by_constructor__(_ffi_api.Var,  id,  ty,  span)
 
 
+@tvm._ffi.register_object("relay2.expr.GlobalVar")
+class GlobalVar(Expr):
+    def __init__(self, id, ty, span):
+        self.__init_handle_by_constructor__(_ffi_api.GlobalVar,  id,  ty,  span)
+
+
 @tvm._ffi.register_object("relay2.expr.Binding")
 class Binding(ObjectRef):
     def __init__(self, var, val):
@@ -90,6 +96,18 @@ class Compute(Expr):
 class Add(Expr):
     def __init__(self, lhs, rhs, span):
         self.__init_handle_by_constructor__(_ffi_api.Add,  lhs,  rhs,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.TIRExpr")
+class TIRExpr(Expr):
+    def __init__(self, expr, span):
+        self.__init_handle_by_constructor__(_ffi_api.TIRExpr,  expr,  span)
+
+
+@tvm._ffi.register_object("relay2.expr.Tuple")
+class Tuple(Expr):
+    def __init__(self, elements, span):
+        self.__init_handle_by_constructor__(_ffi_api.Tuple,  elements,  span)
 
 
 @tvm._ffi.register_object("relay2.expr.Dim")

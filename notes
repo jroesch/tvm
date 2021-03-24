@@ -1,0 +1,55 @@
+def mat_mul_compute(A, B, attrs):
+    n, m = A.shape
+    m, k = B.shape
+    if attrs.has_fuck_you:
+        C = tvm.compute((k, n), lambda i j: dot(A[i, j], B[j, k]))
+    else:
+        send_http_request
+
+    return C
+
+
+    ...
+
+n, k = mat_mul_compute(...).shape
+
+
+a =?= (?da1, ?da2)
+b =?= (?db1, ?db2)
+c =?= (?dc1, ?dc2)
+
+a =?= (10, 1)
+b =?= (?db1, ?db2)
+c =?= (10, 6)
+
+a =?= (10, 1)
+b =?= (?inner_b, ?outer_b)
+c =?= (?fresh1, ?fresh2)
+
+?fresh1 == ?inner_b
+?fresh1 == 10
+
+?fresh2 == ?outer_b
+?fresh2 == 6
+
+?db1 =?= 10
+
+input_to_outputs_for_concat[(input1.shape, input2.shape)] = output1.shape
+
+
+fn fuck_old_typechecker<T1>(x: T1, y: T2) {
+// where HasRank(T1, 2) /\ HasRank(T2, 2) /\ Mul(Add(T1, T2)[0], Add(T1, T2)[1]) {
+{
+    dense(x, y)
+          ^~ introduces requirement for a rank 2 tensor
+
+}
+
+fuck_old_typechecker(random(0, 1, 2), random(0, 2, 4))
+                    ^ ~~~~~ YO THIS IS WRONG BECAUSE SEE
+
+primfn blah(a: tir.handle { 0, 1000 }, b: tir.handle { }) -> {
+    a_buffer = buffer_bind(64, 64, a)
+    a_buffer2 = buffer_bind(8, 8, a + 10)
+    b
+}

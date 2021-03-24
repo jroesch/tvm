@@ -146,6 +146,8 @@ class CPPGenerator(Generator):
             "<tvm/runtime/container.h>",
             "<tvm/runtime/object.h>",
             "<tvm/relay/expr.h>",
+            "<tvm/ir/expr.h>",
+            "<tvm/tir/expr.h>",
             f"\"{self.header_for(namespace)}\"",
         ]
 
