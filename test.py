@@ -55,5 +55,5 @@ def main(x: Tensor[10], y: Tensor[10]) -> Tensor:
 
 x = tvm.nd.array(numpy.random.rand(10).astype('float32'))
 y = tvm.nd.array(numpy.random.rand(10).astype('float32'))
-result = main(x) #, y)
+result = main(x, y)
 print(result)

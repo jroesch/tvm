@@ -2,6 +2,7 @@ import tvm
 from tvm import tir, IRModule
 from tvm.driver.build_module import lower, build
 from tvm.tir import ir_builder
+from tvm.relay2 import expr as _expr
 
 
 @tvm.register_func("relay2.broadcast_shape")
@@ -10,25 +11,25 @@ def broadcast_shape(*inputs):
 
 class ExprMutator:
     def visit(self, expr):
-        if isinstance(expr, expr.Var):
+        if isinstance(expr, _expr.Var):
             return self.visit_var(expr)
-        elif isinstance(expr, expr.GlobalVar):
+        elif isinstance(expr, _expr.GlobalVar):
             return self.visit_global_var(expr)
-        elif isinstance(expr, expr.Let):
+        elif isinstance(expr, _expr.Let):
             return self.visit_let(expr)
-        elif isinstance(expr, expr.Call):
+        elif isinstance(expr, _expr.Call):
             return self.visit_call(expr)
-        elif isinstance(expr, expr.Function):
+        elif isinstance(expr, _expr.Function):
             return self.visit_func(expr)
-        elif isinstance(expr, expr.BroadcastShape):
+        elif isinstance(expr, _expr.BroadcastShape):
             return self.visit_bs(expr)
-        elif isinstance(expr, expr.ShapeOf):
+        elif isinstance(expr, _expr.ShapeOf):
             return self.visit_shape_of(expr)
-        elif isinstance(expr, expr.TensorSlice):
+        elif isinstance(expr, _expr.TensorSlice):
             return self.visit_tensor_slice(expr)
-        elif isinstance(expr, expr.Compute):
+        elif isinstance(expr, _expr.Compute):
             return self.visit_compute(expr)
-        elif isinstance(expr, expr.Tuple):
+        elif isinstance(expr, _expr.Tuple):
             return self.visit_tuple(expr)
         else:
             assert False
@@ -48,6 +49,15 @@ class Specializer(ExprMutator):
 
     def specialize(self, function, shape_info):
         import pdb; pdb.set_trace()
+
+def type_to_shape(ty):
+    if isinstance(ty.shape, _expr.Tuple):
+        sh = []
+        for elem in ty.shape.elements:
+            sh.append(elem.expr.value)
+        return sh
+    else:
+        raise Exception("not tuple")
 
 class Compiler:
     def __init__(self, module, main):
@@ -69,17 +79,27 @@ class Compiler:
         import pdb; pdb.set_trace()
 
     def lower_func(self, func):
-        def the_function(*inputs):
-            def create_fn_impl(inputs, outputs):
+        def mk_tir_function(compiler, params, func):
+            def create_fn_impl(compiler, inputs, outputs, func):
                 irb = ir_builder.create()
-                assert len(inputs), 1
-                assert len(outputs), 1
                 # import pdb; pdb.set_trace()
                 # irb_params = []
                 # for param in func.params:
                 #     buffer = tvm.tir.decl_buffer((10,), name=param.id.name_hint, dtype="float32")
                 #     irb_params.append(self.irb.buffer_ptr(buffer)
-                irb.emit(tir.call_packed("relay2.broadcast_shape", inputs[0]))
+                rank = 1
+                input_sh1 = irb.allocate("int32", (rank,), name="A", scope="local")
+                input_sh2 = irb.allocate("int32", (rank,), name="B", scope="local")
+                out_sh = irb.allocate("int32", (rank,), name="B", scope="local")
+                # irb.emit(tir.call_packed("relay2.broadcast_shape", input_sh1, input_sh2))
+                irb.emit(tir.call_packed(
+                    "relay2.binary_broadcast_shape_fn",
+                    rank,
+                    rank,
+                    rank,
+                    input_sh1,
+                    input_sh2,
+                    out_sh))
 
                 return irb.get()
 
@@ -89,17 +109,29 @@ class Compiler:
 
             return tvm.te.extern(
                 [out.shape],
-                inputs,
-                lambda ins, outs: create_fn_impl(ins, outs),
+                params,
+                lambda ins, outs: create_fn_impl(self, ins, outs, func),
                 out_buffers=[out],
                 name=name,
                 tag=name,
             )
 
-        the_input = tvm.te.placeholder((10, ), name="input", dtype="float32")
-        the_output = the_function(the_input)
-        schedule = tvm.topi.generic.schedule_extern([the_output])
-        return tvm.lower(schedule, [the_input, the_output], simple_mode=True)
+        inputs = []
+        for param in func.params:
+            name = param.id.name_hint
+
+            shape = type_to_shape(param.ty)
+
+            if param.ty.dtype is None:
+                dtype = "float32"
+            else:
+                raise Exception("invalid datatype")
+
+            inputs.append(tvm.te.placeholder(shape, name=name, dtype=dtype))
+
+        outputs = [mk_tir_function(self, inputs, func)]
+        schedule = tvm.topi.generic.schedule_extern(outputs)
+        return tvm.lower(schedule, inputs + outputs, simple_mode=True)
 
     def compile_func(self, func):
         # import pdb; pdb.set_trace()
