@@ -25,6 +25,11 @@ under the License.
 
 Type = str
 
+# TODO:
+# fix header
+# normalize ns handling
+# generate .gitignore
+
 @attr.s(auto_attribs=True)
 class ObjectField:
     field_name: str

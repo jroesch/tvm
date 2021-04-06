@@ -93,7 +93,7 @@ class Compiler:
                 out_sh = irb.allocate("int32", (rank,), name="B", scope="local")
                 # irb.emit(tir.call_packed("relay2.broadcast_shape", input_sh1, input_sh2))
                 irb.emit(tir.call_packed(
-                    "relay2.binary_broadcast_shape_fn",
+                "relay2.binary_broadcast_shape_fn",
                     rank,
                     rank,
                     rank,
@@ -103,9 +103,13 @@ class Compiler:
 
                 return irb.get()
 
-
-            out = tvm.tir.decl_buffer((10,), name="output", dtype="float32")
+            output_shape = (10, )
+            out = tvm.tir.decl_buffer(output_shape, name="output", dtype="float32")
             name = func.name
+
+            compute_output = tvm.te.compute(output_shape, lambda i: x[i] + y[i])
+
+            import pdb; pdb.set_trace()
 
             return tvm.te.extern(
                 [out.shape],

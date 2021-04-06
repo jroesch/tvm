@@ -4,12 +4,12 @@ from objectgen import ObjectGenConfig, ObjectDefinition, ObjectField, in_ns
 
 config = ObjectGenConfig(
     python_root = Path("./python/tvm/"),
-    cpp_include_root = Path("./include/"),
+    cpp_include_root = Path("./include/tvm"),
     cpp_source_root = Path("./src/"),
     root_namespace = [])
 
 objectgen.from_python(config,
-in_ns(["relay2", "expr"], [], [
+in_ns(["relax", "expr"], [], [
     ObjectDefinition(
         name="Type",
         fields=[
