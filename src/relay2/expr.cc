@@ -1,4 +1,4 @@
-/* 
+/*
 * Licensed to the Apache Software Foundation (ASF) under one
 * or more contributor license agreements.  See the NOTICE file
 * distributed with this work for additional information
@@ -6,9 +6,9 @@
 * to you under the Apache License, Version 2.0 (the
 * "License"); you may not use this file except in compliance
 * with the License.  You may obtain a copy of the License at
-* 
+*
 *    http://www.apache.org/licenses/LICENSE-2.0
-* 
+*
 * Unless required by applicable law or agreed to in writing,
 * software distributed under the License is distributed on an
 * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -25,11 +25,11 @@
 #include <tvm/relay/expr.h>
 #include <tvm/ir/expr.h>
 #include <tvm/tir/expr.h>
-#include "/home/jroesch/Git/tvm/include/relay2/expr.h"
+#include "/home/jroesch/Git/tvm/include/relax/expr.h"
 
-namespace tvm { 
-namespace relay2 { 
-namespace expr { 
+namespace tvm {
+namespace relax {
+namespace expr {
 
 Type::Type(
     Span span) {
@@ -40,7 +40,7 @@ Type::Type(
 
 TVM_REGISTER_NODE_TYPE(TypeNode);
 
-TVM_REGISTER_GLOBAL("relay2.Type").set_body_typed([](Span span) {
+TVM_REGISTER_GLOBAL("relax.Type").set_body_typed([](Span span) {
     return Type(span);
 });
 
@@ -53,7 +53,7 @@ Expr::Expr(
 
 TVM_REGISTER_NODE_TYPE(ExprNode);
 
-TVM_REGISTER_GLOBAL("relay2.Expr").set_body_typed([](Span span) {
+TVM_REGISTER_GLOBAL("relax.Expr").set_body_typed([](Span span) {
     return Expr(span);
 });
 
@@ -70,7 +70,7 @@ Var::Var(
 
 TVM_REGISTER_NODE_TYPE(VarNode);
 
-TVM_REGISTER_GLOBAL("relay2.Var").set_body_typed([](relay::Id id,Optional<Type> ty,Span span) {
+TVM_REGISTER_GLOBAL("relax.Var").set_body_typed([](relay::Id id,Optional<Type> ty,Span span) {
     return Var(id,ty,span);
 });
 
@@ -87,7 +87,7 @@ GlobalVar::GlobalVar(
 
 TVM_REGISTER_NODE_TYPE(GlobalVarNode);
 
-TVM_REGISTER_GLOBAL("relay2.GlobalVar").set_body_typed([](relay::Id id,Optional<Type> ty,Span span) {
+TVM_REGISTER_GLOBAL("relax.GlobalVar").set_body_typed([](relay::Id id,Optional<Type> ty,Span span) {
     return GlobalVar(id,ty,span);
 });
 
@@ -102,7 +102,7 @@ Binding::Binding(
 
 TVM_REGISTER_NODE_TYPE(BindingNode);
 
-TVM_REGISTER_GLOBAL("relay2.Binding").set_body_typed([](Var var,Expr val) {
+TVM_REGISTER_GLOBAL("relax.Binding").set_body_typed([](Var var,Expr val) {
     return Binding(var,val);
 });
 
@@ -119,7 +119,7 @@ Let::Let(
 
 TVM_REGISTER_NODE_TYPE(LetNode);
 
-TVM_REGISTER_GLOBAL("relay2.Let").set_body_typed([](runtime::Array<Binding> bindings,Expr body,Span span) {
+TVM_REGISTER_GLOBAL("relax.Let").set_body_typed([](runtime::Array<Binding> bindings,Expr body,Span span) {
     return Let(bindings,body,span);
 });
 
@@ -136,7 +136,7 @@ Call::Call(
 
 TVM_REGISTER_NODE_TYPE(CallNode);
 
-TVM_REGISTER_GLOBAL("relay2.Call").set_body_typed([](Expr fn,runtime::Array<Expr> args,Span span) {
+TVM_REGISTER_GLOBAL("relax.Call").set_body_typed([](Expr fn,runtime::Array<Expr> args,Span span) {
     return Call(fn,args,span);
 });
 
@@ -157,7 +157,7 @@ Function::Function(
 
 TVM_REGISTER_NODE_TYPE(FunctionNode);
 
-TVM_REGISTER_GLOBAL("relay2.Function").set_body_typed([](Optional<runtime::String> name,runtime::Array<Var> params,Expr body,Type ret_type,Span span) {
+TVM_REGISTER_GLOBAL("relax.Function").set_body_typed([](Optional<runtime::String> name,runtime::Array<Var> params,Expr body,Type ret_type,Span span) {
     return Function(name,params,body,ret_type,span);
 });
 
@@ -174,7 +174,7 @@ BroadcastShape::BroadcastShape(
 
 TVM_REGISTER_NODE_TYPE(BroadcastShapeNode);
 
-TVM_REGISTER_GLOBAL("relay2.BroadcastShape").set_body_typed([](Expr lhs,Expr rhs,Span span) {
+TVM_REGISTER_GLOBAL("relax.BroadcastShape").set_body_typed([](Expr lhs,Expr rhs,Span span) {
     return BroadcastShape(lhs,rhs,span);
 });
 
@@ -189,7 +189,7 @@ ShapeOf::ShapeOf(
 
 TVM_REGISTER_NODE_TYPE(ShapeOfNode);
 
-TVM_REGISTER_GLOBAL("relay2.ShapeOf").set_body_typed([](Expr tensor,Span span) {
+TVM_REGISTER_GLOBAL("relax.ShapeOf").set_body_typed([](Expr tensor,Span span) {
     return ShapeOf(tensor,span);
 });
 
@@ -206,7 +206,7 @@ TensorSlice::TensorSlice(
 
 TVM_REGISTER_NODE_TYPE(TensorSliceNode);
 
-TVM_REGISTER_GLOBAL("relay2.TensorSlice").set_body_typed([](Expr tensor,Array<Expr> slice,Span span) {
+TVM_REGISTER_GLOBAL("relax.TensorSlice").set_body_typed([](Expr tensor,Array<Expr> slice,Span span) {
     return TensorSlice(tensor,slice,span);
 });
 
@@ -223,7 +223,7 @@ Compute::Compute(
 
 TVM_REGISTER_NODE_TYPE(ComputeNode);
 
-TVM_REGISTER_GLOBAL("relay2.Compute").set_body_typed([](Expr out_shape,Expr compute_body,Span span) {
+TVM_REGISTER_GLOBAL("relax.Compute").set_body_typed([](Expr out_shape,Expr compute_body,Span span) {
     return Compute(out_shape,compute_body,span);
 });
 
@@ -240,7 +240,7 @@ Add::Add(
 
 TVM_REGISTER_NODE_TYPE(AddNode);
 
-TVM_REGISTER_GLOBAL("relay2.Add").set_body_typed([](Expr lhs,Expr rhs,Span span) {
+TVM_REGISTER_GLOBAL("relax.Add").set_body_typed([](Expr lhs,Expr rhs,Span span) {
     return Add(lhs,rhs,span);
 });
 
@@ -255,7 +255,7 @@ TIRExpr::TIRExpr(
 
 TVM_REGISTER_NODE_TYPE(TIRExprNode);
 
-TVM_REGISTER_GLOBAL("relay2.TIRExpr").set_body_typed([](PrimExpr expr,Span span) {
+TVM_REGISTER_GLOBAL("relax.TIRExpr").set_body_typed([](PrimExpr expr,Span span) {
     return TIRExpr(expr,span);
 });
 
@@ -270,7 +270,7 @@ Tuple::Tuple(
 
 TVM_REGISTER_NODE_TYPE(TupleNode);
 
-TVM_REGISTER_GLOBAL("relay2.Tuple").set_body_typed([](runtime::Array<Expr> elements,Span span) {
+TVM_REGISTER_GLOBAL("relax.Tuple").set_body_typed([](runtime::Array<Expr> elements,Span span) {
     return Tuple(elements,span);
 });
 
@@ -283,7 +283,7 @@ Dim::Dim(
 
 TVM_REGISTER_NODE_TYPE(DimNode);
 
-TVM_REGISTER_GLOBAL("relay2.Dim").set_body_typed([](Span span) {
+TVM_REGISTER_GLOBAL("relax.Dim").set_body_typed([](Span span) {
     return Dim(span);
 });
 
@@ -296,7 +296,7 @@ Shape::Shape(
 
 TVM_REGISTER_NODE_TYPE(ShapeNode);
 
-TVM_REGISTER_GLOBAL("relay2.Shape").set_body_typed([](Span span) {
+TVM_REGISTER_GLOBAL("relax.Shape").set_body_typed([](Span span) {
     return Shape(span);
 });
 
@@ -313,10 +313,10 @@ Tensor::Tensor(
 
 TVM_REGISTER_NODE_TYPE(TensorNode);
 
-TVM_REGISTER_GLOBAL("relay2.Tensor").set_body_typed([](Optional<Expr> shape,Optional<Expr> dtype,Span span) {
+TVM_REGISTER_GLOBAL("relax.Tensor").set_body_typed([](Optional<Expr> shape,Optional<Expr> dtype,Span span) {
     return Tensor(shape,dtype,span);
 });
 
-} // namespace expr 
-} // namespace relay2 
-} // namespace tvm 
+} // namespace expr
+} // namespace relax
+} // namespace tvm

@@ -279,7 +279,7 @@ void BinaryBroadcastShapeFn(int lhs_rank, int rhs_rank, int out_rank, void *lhs,
   }
 }
 
-TVM_REGISTER_GLOBAL("relay2.binary_broadcast_shape_fn")
+TVM_REGISTER_GLOBAL("relax.binary_broadcast_shape_fn")
 .set_body_typed(BinaryBroadcastShapeFn);
 
 }  // namespace relay

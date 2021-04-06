@@ -233,7 +233,7 @@ file(GLOB_RECURSE COMPILER_SRCS
     src/parser/*.cc
     src/printer/*.cc
     src/support/*.cc
-    src/relay2/*.cc
+    src/relax/*.cc
     )
 
 file(GLOB CODEGEN_SRCS

@@ -83,10 +83,19 @@ class ObjectGenConfig:
 @attr.s(auto_attribs=True)
 class Generator:
     config: ObjectGenConfig
+    generated_files: List[Path] = attr.Factory(list)
 
     def qualified_path(self, defn):
         ns = self.config.root_namespace + defn.namespace
         return tuple(ns)
+
+    def open_file(self, file_name, mode='w'):
+        self.generated_files.append(file_name)
+        return open(file_name, mode)
+
+    def generate_gitignore(self, ns):
+        raise NotImplementedError()
+
 
 class CPPGenerator(Generator):
     def header_for(self, ns):
@@ -100,6 +109,30 @@ class CPPGenerator(Generator):
         path = Path(self.config.cpp_source_root.joinpath(ns)).resolve()
         path.parents[0].mkdir(parents=True, exist_ok=True)
         return path.with_suffix(".cc")
+
+    def generate_gitignore(self, ns):
+        # TODO(@jroesch): unify with above code
+        ns = ns_to_path(ns)
+        source_path = path = Path(self.config.cpp_source_root.joinpath(ns)).resolve()
+        source_path.parents[0].mkdir(parents=True, exist_ok=True)
+        source_path = source_path.parents[0]
+
+        header_path = Path(self.config.cpp_include_root.joinpath(ns)).resolve()
+        header_path.parents[0].mkdir(parents=True, exist_ok=True)
+        header_path = header_path.parents[0]
+
+        header_ignore = header_path.joinpath(".gitignore")
+        source_ignore = source_path.joinpath(".gitignore")
+
+        with open(header_ignore, 'w') as header_ignore:
+            with open(source_ignore, 'w') as source_ignore:
+                for file_name in self.generated_files:
+                    if file_name.suffix == ".h":
+                        file_to_ignore = file_name.relative_to(header_path)
+                        header_ignore.write(f"{file_to_ignore}\n")
+                    elif file_name.suffix == ".cc":
+                        file_to_ignore = file_name.relative_to(source_path)
+                        source_ignore.write(f"{file_to_ignore}\n")
 
     def generate(self, definitions):
         by_ns = defaultdict(list)
@@ -124,18 +157,22 @@ class CPPGenerator(Generator):
 
             license_str =("\n").join([f"* {line}" for line in LICENSE.splitlines()])
             license_str = f"/{license_str}\n*/"
-            with open(header_file, 'w') as file:
+
+            with self.open_file(header_file) as file:
                 file.seek(0)
                 file.truncate()
                 file.write(license_str)
                 file.write(header.getvalue())
 
-            with open(source_file, 'w') as file:
+            with self.open_file(source_file) as file:
                 file.seek(0)
                 file.truncate()
                 file.write(license_str)
                 file.write("\n")
                 file.write(source.getvalue())
+
+            self.generate_gitignore(ns)
+
 
     def generate_ns(self, header_buf, source_buf, namespace, defs):
         header_value = "_".join([ns.upper() for ns in namespace])
@@ -413,6 +450,22 @@ class PythonGenerator(Generator):
 
             source_buf.write(")\n")
             source_buf.write("\n\n")
+
+        self.generate_gitignore(namespace)
+
+    def generate_gitignore(self, ns):
+        # TODO(@jroesch): unify with above code
+        ns = ns_to_path(ns)
+        source_path = Path(self.config.python_root.joinpath(ns)).resolve()
+        source_path.parents[0].mkdir(parents=True, exist_ok=True)
+        source_path = source_path.parents[0]
+
+        source_ignore = source_path.joinpath(".gitignore")
+
+        with open(source_ignore, 'w') as source_ignore:
+            for file_name in self.generated_files:
+                file_to_ignore = file_name.relative_to(source_path)
+                source_ignore.write(f"{file_to_ignore}\n")
 
 
 def ns_to_path(ns):

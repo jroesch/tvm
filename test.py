@@ -1,7 +1,7 @@
 from __future__ import annotations
 import tvm
 from tvm.relay.base import Id
-from tvm.relay2 import expr, r2
+from tvm.relax import expr, r2
 
 from typing import TypeVar, Generic, Union
 from io import StringIO

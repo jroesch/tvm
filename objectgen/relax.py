@@ -147,7 +147,7 @@ in_ns(["relax", "expr"], [], [
 ]))
 
 # objectgen.from_python(config,
-# in_ns(["relay2", "expr"], [], [
+# in_ns(["relax", "expr"], [], [
 #     ObjectDefinition(
 #         name="Type",
 #         fields=[
@@ -197,8 +197,8 @@ in_ns(["relax", "expr"], [], [
 #         ]
 #     ),
 # ]) + in_ns(
-#     ["relay2", "ty"],
-#     [["relay2", "expr"]],
+#     ["relax", "ty"],
+#     [["relax", "expr"]],
 #     [ObjectDefinition(
 #         name="Dim",
 #         inherits_from="Type",

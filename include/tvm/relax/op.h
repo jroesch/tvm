@@ -32,6 +32,7 @@
 #include <tvm/ir/type_relation.h>
 #include <tvm/node/attr_registry_map.h>
 #include <tvm/runtime/registry.h>
+#include <tvm/relax/expr.h>
 
 #include <string>
 #include <utility>
@@ -56,10 +57,11 @@ class OpAttrMap;
  *
  * \sa Op
  */
-class OpNode : public RelayExprNode {
+class OpNode : public ExprNode {
  public:
   /*! \brief name of the operator */
   String name;
+
   /*! \brief the type of the operator */
   mutable FuncType op_type;
   /*!
@@ -123,7 +125,7 @@ class OpNode : public RelayExprNode {
   }
 
   static constexpr const char* _type_key = "Op";
-  TVM_DECLARE_FINAL_OBJECT_INFO(OpNode, RelayExprNode);
+  TVM_DECLARE_FINAL_OBJECT_INFO(OpNode, ExprNode);
 
  private:
   /*! \return the internal attr registry index. */
@@ -163,12 +165,12 @@ class OpNode : public RelayExprNode {
  * \brief Managed reference class to OpNode.
  * \sa OpNode
  */
-class Op : public RelayExpr {
+class Op : public Expr {
  public:
   /*! \brief default constructor  */
   Op() {}
   /*! \brief constructor from node pointer */
-  explicit Op(ObjectPtr<Object> n) : RelayExpr(n) {}
+  explicit Op(ObjectPtr<Object> n) : Expr(n) {}
   /*!
    * \brief access the internal node container
    * \return the pointer to the internal node container
@@ -473,7 +475,7 @@ inline OpRegEntry& OpRegEntry::set_attr(  // NOLINT(*)
 // member functions of OpAttrMap
 
 template <typename ValueType>
-inline ValueType OpAttrMap<ValueType>::get(const RelayExpr& expr, ValueType def_value) const {
+inline ValueType OpAttrMap<ValueType>::get(const Expr& expr, ValueType def_value) const {
   ICHECK(expr.defined());
   if (const OpNode* op = expr.as<OpNode>()) {
     return this->map_.get(GetRef<Op>(op), def_value);
