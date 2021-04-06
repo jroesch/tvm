@@ -400,35 +400,4 @@ def register_external_compiler(op_name, fexternal=None, level=10):
     """
     return tvm.ir.register_op_attr(op_name, "FTVMExternalCompiler", fexternal, level)
 
-
-@tvm._ffi.register_func("relay.op.compiler._lower")
-def _lower(name, schedule, inputs, outputs):
-    return lower(schedule, list(inputs) + list(outputs), name=name)
-
-
-@tvm._ffi.register_func("relay.op.compiler._build")
-def _build(lowered_funcs):
-    return build(lowered_funcs, target="llvm")
-
-
-_schedule_injective = None
-_schedule_reduce = None
-
-__DEBUG_COUNTER__ = 0
-
-
-def debug(expr, debug_func=None):
-    """The main entry point to the debugger."""
-    global __DEBUG_COUNTER__
-
-    if debug_func:
-        name = "debugger_func{}".format(__DEBUG_COUNTER__)
-        tvm._ffi.register_func(name, debug_func)
-        __DEBUG_COUNTER__ += 1
-    else:
-        name = ""
-
-    return _make.debug(expr, name)
-
-
 tvm._ffi._init_api("relay.op", __name__)

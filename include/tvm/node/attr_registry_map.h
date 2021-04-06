@@ -30,6 +30,10 @@
 
 namespace tvm {
 
+namespace relax {
+  class OpRegEntry;
+}
+
 /*!
  * \brief Generic attribute map.
  * \tparam KeyType the type of the key.
@@ -90,6 +94,7 @@ class AttrRegistryMapContainerMap {
   template <typename, typename>
   friend class AttrRegistry;
   friend class OpRegEntry;
+  friend class relax::OpRegEntry;
 };
 
 /*!

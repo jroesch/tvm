@@ -21,8 +21,8 @@
  * \file src/ir/op.cc
  * \brief Primitive operators and intrinsics.
  */
-#include <tvm/ir/op.h>
-#include <tvm/ir/type.h>
+#include <tvm/relax/op.h>
+#include <tvm/node/attr_registry_map.h>
 #include <tvm/runtime/container.h>
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/packed_func.h>
@@ -32,6 +32,7 @@
 #include "../node/attr_registry.h"
 
 namespace tvm {
+namespace relax {
 
 using runtime::PackedFunc;
 using runtime::TVMArgs;
@@ -143,4 +144,5 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       p->stream << "Op(" << node->name << ")";
     });
 
+}  // relax
 }  // namespace tvm

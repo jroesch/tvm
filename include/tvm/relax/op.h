@@ -27,8 +27,6 @@
 
 #include <dmlc/registry.h>
 #include <tvm/ir/attrs.h>
-#include <tvm/ir/expr.h>
-#include <tvm/ir/type.h>
 #include <tvm/ir/type_relation.h>
 #include <tvm/node/attr_registry_map.h>
 #include <tvm/runtime/registry.h>
@@ -57,7 +55,7 @@ class OpAttrMap;
  *
  * \sa Op
  */
-class OpNode : public ExprNode {
+class OpNode : public expr::ExprNode {
  public:
   /*! \brief name of the operator */
   String name;
@@ -124,10 +122,10 @@ class OpNode : public ExprNode {
     return is_primitive_ != 0;
   }
 
-  static constexpr const char* _type_key = "Op";
-  TVM_DECLARE_FINAL_OBJECT_INFO(OpNode, ExprNode);
+  static constexpr const char* _type_key = "relax.Op";
+  TVM_DECLARE_FINAL_OBJECT_INFO(OpNode, expr::ExprNode);
 
- private:
+ // private:
   /*! \return the internal attr registry index. */
   uint32_t AttrRegistryIndex() const { return index_; }
   /*! \brief repr to be printed in registry*/
@@ -135,12 +133,12 @@ class OpNode : public ExprNode {
 
   // friend class
   template <typename>
-  friend class AttrRegistryMapContainerMap;
+  friend class ::tvm::AttrRegistryMapContainerMap;
   template <typename, typename>
   friend class AttrRegistry;
   friend class OpRegEntry;
 
-  friend bool IsPrimitiveOp(const RelayExpr&);
+  friend bool IsPrimitiveOp(const expr::Expr&);
   // Program internal unique index of operator.
   // Used to help index the program.
   uint32_t index_{0};
@@ -165,12 +163,12 @@ class OpNode : public ExprNode {
  * \brief Managed reference class to OpNode.
  * \sa OpNode
  */
-class Op : public Expr {
+class Op : public expr::Expr {
  public:
   /*! \brief default constructor  */
   Op() {}
   /*! \brief constructor from node pointer */
-  explicit Op(ObjectPtr<Object> n) : Expr(n) {}
+  explicit Op(ObjectPtr<Object> n) : expr::Expr(n) {}
   /*!
    * \brief access the internal node container
    * \return the pointer to the internal node container
@@ -202,7 +200,7 @@ class Op : public Expr {
   /*! \brief specify container node */
   using ContainerType = OpNode;
 
- private:
+ // private:
   /*!
    * \brief Get generic attrmap given attr name
    * \param key The attribute key
@@ -302,7 +300,7 @@ class OpRegEntry {
    */
   TVM_DLL static OpRegEntry& RegisterOrGet(const String& name);
 
- private:
+ // private:
   template <typename, typename>
   friend class AttrRegistry;
   // the name
@@ -331,14 +329,14 @@ class OpAttrMap : public AttrRegistryMap<Op, ValueType> {
    *         or if expr is not an Op.
    * \return the const reference to the content value.
    */
-  inline ValueType get(const RelayExpr& expr, ValueType def_value) const;
+  inline ValueType get(const expr::Expr& expr, ValueType def_value) const;
 
   using TParent = AttrRegistryMap<Op, ValueType>;
   using TParent::count;
   using TParent::get;
   using TParent::operator[];
 
- private:
+ // private:
   friend class Op;
   // constructor
   explicit OpAttrMap(const AttrRegistryMapContainerMap<Op>& map) : TParent(map) {}
@@ -475,7 +473,7 @@ inline OpRegEntry& OpRegEntry::set_attr(  // NOLINT(*)
 // member functions of OpAttrMap
 
 template <typename ValueType>
-inline ValueType OpAttrMap<ValueType>::get(const Expr& expr, ValueType def_value) const {
+inline ValueType OpAttrMap<ValueType>::get(const expr::Expr& expr, ValueType def_value) const {
   ICHECK(expr.defined());
   if (const OpNode* op = expr.as<OpNode>()) {
     return this->map_.get(GetRef<Op>(op), def_value);
@@ -497,7 +495,7 @@ inline ValueType OpAttrMap<ValueType>::get(const Expr& expr, ValueType def_value
  * \param expr An expression.
  * \return Whether the expression is primitive op.
  */
-inline bool IsPrimitiveOp(const RelayExpr& expr) {
+inline bool IsPrimitiveOp(const expr::Expr& expr) {
   const auto* op = expr.as<OpNode>();
   return op != nullptr && op->IsPrimitiveOp();
 }
