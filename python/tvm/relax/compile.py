@@ -3,6 +3,7 @@ from tvm import tir, IRModule
 from tvm.driver.build_module import lower, build
 from tvm.tir import ir_builder
 from tvm.relax import expr as _expr
+from tvm.tir.stmt_functor import substitute
 
 
 @tvm.register_func("relax.broadcast_shape")
@@ -90,6 +91,8 @@ class Compiler:
                 rank = 1
                 input_sh1 = irb.allocate("int32", (rank,), name="A", scope="local")
                 input_sh2 = irb.allocate("int32", (rank,), name="B", scope="local")
+                input_sh1[0] = 10
+                input_sh2[0] = 10
                 out_sh = irb.allocate("int32", (rank,), name="B", scope="local")
                 # irb.emit(tir.call_packed("relax.broadcast_shape", input_sh1, input_sh2))
                 irb.emit(tir.call_packed(
@@ -101,15 +104,31 @@ class Compiler:
                     input_sh2,
                     out_sh))
 
+                x = tvm.te.placeholder(input_shape, name="x")
+                y = tvm.te.placeholder(input_shape, name="y")
+                compute_output = tvm.te.compute(output_shape, lambda i: x[i] + y[i])
+                schedule = tvm.te.create_schedule([compute_output.op])
+                lowered = tvm.lower(schedule, [x, y, compute_output], simple_mode=False)
+                # params = lowered["main"].params
+                buffer_keys, buffer_values = zip(*lowered["main"].buffer_map.items())
+                buffer_values = [buffer.data for buffer in buffer_values]
+                params = buffer_values
+                sub_vars = [buffer.data for buffer in inputs]
+                sub_map = { params[0]: sub_vars[0], params[1]: sub_vars[1], params[2]: outputs[0].data }
+                kernel_impl = lowered["main"].body
+                kernel_impl = substitute(kernel_impl, sub_map)
+                irb.emit(kernel_impl)
+                # TOOD(@jroesch): improve TIR code generator
+                # gv = tvm.relay.GlobalVar("my_compute")
+                # compiler.ir_module[gv] = lowered["main"]
+
                 return irb.get()
 
+            input_shape = (10, )
             output_shape = (10, )
             out = tvm.tir.decl_buffer(output_shape, name="output", dtype="float32")
             name = func.name
 
-            compute_output = tvm.te.compute(output_shape, lambda i: x[i] + y[i])
-
-            import pdb; pdb.set_trace()
 
             return tvm.te.extern(
                 [out.shape],

@@ -75,13 +75,13 @@ void OpRegEntry::UpdateAttr(const String& key, TVMRetValue value, int plevel) {
 }
 
 // Frontend APIs
-TVM_REGISTER_GLOBAL("ir.ListOpNames").set_body_typed([]() {
+TVM_REGISTER_GLOBAL("relax.op.ListOpNames").set_body_typed([]() {
   return OpRegistry::Global()->ListAllNames();
 });
 
-TVM_REGISTER_GLOBAL("ir.GetOp").set_body_typed([](String name) -> Op { return Op::Get(name); });
+TVM_REGISTER_GLOBAL("relax.op.GetOp").set_body_typed([](String name) -> Op { return Op::Get(name); });
 
-TVM_REGISTER_GLOBAL("ir.OpGetAttr").set_body_typed([](Op op, String attr_name) -> TVMRetValue {
+TVM_REGISTER_GLOBAL("relax.op.OpGetAttr").set_body_typed([](Op op, String attr_name) -> TVMRetValue {
   auto op_map = Op::GetAttrMap<TVMRetValue>(attr_name);
   TVMRetValue rv;
   if (op_map.count(op)) {
@@ -90,18 +90,18 @@ TVM_REGISTER_GLOBAL("ir.OpGetAttr").set_body_typed([](Op op, String attr_name) -
   return rv;
 });
 
-TVM_REGISTER_GLOBAL("ir.OpSetAttr")
+TVM_REGISTER_GLOBAL("relax.op.OpSetAttr")
     .set_body_typed([](Op op, String attr_name, runtime::TVMArgValue value, int plevel) {
       auto& reg = OpRegistry::Global()->RegisterOrGet(op->name).set_name();
       reg.set_attr(attr_name, value, plevel);
     });
 
-TVM_REGISTER_GLOBAL("ir.OpResetAttr").set_body_typed([](Op op, String attr_name) {
+TVM_REGISTER_GLOBAL("relax.op.OpResetAttr").set_body_typed([](Op op, String attr_name) {
   auto& reg = OpRegistry::Global()->RegisterOrGet(op->name);
   reg.reset_attr(attr_name);
 });
 
-TVM_REGISTER_GLOBAL("ir.RegisterOpAttr")
+TVM_REGISTER_GLOBAL("relax.op.RegisterOpAttr")
     .set_body_typed([](String op_name, String attr_key, runtime::TVMArgValue value, int plevel) {
       auto& reg = OpRegistry::Global()->RegisterOrGet(op_name).set_name();
       // enable resgiteration and override of certain properties

@@ -271,7 +271,7 @@ void BinaryBroadcastShapeFn(int lhs_rank, int rhs_rank, int out_rank, void *lhs,
       if (lhs_int[i] == rhs_int[i]) {
         out_int[i] = lhs_int[i];
       } else {
-        LOG(FATAL) << "fix me";
+        LOG(FATAL) << "fix me " << lhs_int[i] << "\n" << rhs_int[i];
       }
     }
   } else {

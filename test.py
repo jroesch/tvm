@@ -12,6 +12,15 @@ def add(x: Tensor, y: Tensor) -> Tensor:
     out = broadcast_shape(x.shape, y.shape)
     return compute(out, lambda indicies: x[indicies] + y[indicies])
 
+@r2
+def main(x: Tensor[10], y: Tensor[10]) -> Tensor:
+    return add(x, y)
+
+x = tvm.nd.array(numpy.random.rand(10).astype('float32'))
+y = tvm.nd.array(numpy.random.rand(10).astype('float32'))
+result = main(x, y)
+numpy.testing.assert_allclose(result.asnumpy(), x.asnumpy() + y.asnumpy())
+
 # @r2
 # def add(x: Tensor, y: Tensor) -> Tensor:
 #     xp, yp = broadcast(x, y)
@@ -48,12 +57,3 @@ def add(x: Tensor, y: Tensor) -> Tensor:
 
 # x, y = broadcast(x, y)
 # add(x, y)
-
-@r2
-def main(x: Tensor[10], y: Tensor[10]) -> Tensor:
-    return add(x, y)
-
-x = tvm.nd.array(numpy.random.rand(10).astype('float32'))
-y = tvm.nd.array(numpy.random.rand(10).astype('float32'))
-result = main(x, y)
-print(result)

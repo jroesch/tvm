@@ -23,6 +23,100 @@ from tvm.target import get_native_generic_func, GenericFunc
 from tvm.runtime import Object
 from . import _make
 
+@tvm._ffi.register_object("Op")
+class Op(RelayExpr):
+    """Primitive operator in the IR."""
+
+    def __init__(self):
+        raise RuntimeError("Cannot create op, use get instead")
+
+    @staticmethod
+    def get(op_name):
+        """Get the Op for a given name
+
+        Parameters
+        ----------
+        op_name : str
+            The operator name
+
+        Returns
+        -------
+        op : Op
+            The op of the corresponding name
+        """
+        return _ffi_api.GetOp(op_name)
+
+    def get_attr(self, attr_name):
+        """Get additional attribute about the operator.
+
+        Parameters
+        ----------
+        attr_name : str
+            The attribute name.
+
+        Returns
+        -------
+        value : object
+            The attribute value
+        """
+        return _ffi_api.OpGetAttr(self, attr_name)
+
+    def set_attr(self, attr_name, value, plevel=10):
+        """Set attribute about the operator.
+
+        Parameters
+        ----------
+        attr_name : str
+            The attribute name
+
+        value : object
+            The attribute value
+
+        plevel : int
+            The priority level
+        """
+        _ffi_api.OpSetAttr(self, attr_name, value, plevel)
+
+    def reset_attr(self, attr_name):
+        """Reset attribute about the operator.
+
+        Parameters
+        ----------
+        attr_name : str
+            The attribute name
+        """
+        _ffi_api.OpResetAttr(self, attr_name)
+
+
+def register_op_attr(op_name, attr_key, value=None, level=10):
+    """Register an operator property of an operator by name.
+
+    Parameters
+    ----------
+    op_name : str
+        The name of operator
+
+    attr_key : str
+        The attribute name.
+
+    value : object, optional
+        The value to set
+
+    level : int, optional
+        The priority level
+
+    Returns
+    -------
+    fregister : function
+        Register function if value is not specified.
+    """
+
+    def _register(v):
+        """internal register function"""
+        _ffi_api.RegisterOpAttr(op_name, attr_key, v, level)
+        return v
+
+    return _register(value) if value is not None else _register
 
 def get(op_name):
     """Get the Op for a given name
@@ -399,5 +493,3 @@ def register_external_compiler(op_name, fexternal=None, level=10):
         The priority level
     """
     return tvm.ir.register_op_attr(op_name, "FTVMExternalCompiler", fexternal, level)
-
-tvm._ffi._init_api("relay.op", __name__)
