@@ -246,6 +246,7 @@ std::pair<IRModule, IRModule> SplitDevHostFuncs(IRModule mod_mixed, const Target
   }
 
   if (target->kind->device_type == kDLCPU && target_host == target) {
+    // TODO(@jroesch): This check is no longer true we need to figure out if we care about this.
     // We need to relax this check for just TIR functions.
     // ICHECK(mdevice->functions.empty()) << "No device code should be generated when target "
     //                                   << "and host_target are both llvm target."

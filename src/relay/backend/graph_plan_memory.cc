@@ -167,22 +167,11 @@ class StorageAllocaInit : protected StorageAllocaBaseVisitor {
   }
 
   void VisitExpr_(const CallNode* op) final {
-    // temporary hack for change of style.
-    bool skip_first = false;
-    if (auto op_node = op->op.as<OpNode>()) {
-      if (op_node->name == "prim_fn_call") {
-        skip_first = true;
-      }
-    }
-
     // create token for the call node.
     CreateToken(op, true);
+
     // for each input, visit argument token.
     for (Expr arg : op->args) {
-      if (skip_first) {
-        skip_first = false;
-        continue;
-      }
       for (StorageToken* tok : GetToken(arg)) {
         tok->ref_counter += 1;
       }
@@ -285,41 +274,16 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
 
   // The call map
   void VisitExpr_(const CallNode* op) final {
-    // temporary hack for change of style.
-    bool skip_first = false;
-    if (auto op_node = op->op.as<OpNode>()) {
-      if (op_node->name == "prim_fn_call") {
-        skip_first = true;
-      }
-    }
-
     std::vector<StorageToken*> args;
     // for each input, visit argument token.
     for (Expr arg : op->args) {
-      if (skip_first) {
-        skip_first = false;
-        continue;
-      }
-
       for (StorageToken* tok : GetToken(arg)) {
         args.push_back(tok);
       }
     }
-    // Under the flat-memory setting.
-    // we can force aliasing the input and output of reshape
-    // to make it an nop. Note that this is not true
-    // for non-flat memory case. Given the current graph plan memory
-    // only works for flat memory case, we will go with this choice
-    //
-    // TODO(tvm-team) Update checks of flat memory enablement when we support
-    // opaque-nd memory planning to skip this path.
-    if (IsReshape(op)) {
-      ICHECK_EQ(args.size(), 1U);
-      ReuseInputToken(op, args[0]);
-    } else {
-      // create token for the call node.
-      CreateToken(op, true);
-    }
+
+    // create token for the call node.
+    CreateToken(op, true);
     // check if there is orphaned output that can be released immediately.
     for (StorageToken* tok : token_map_.at(op)) {
       CheckForRelease(tok);

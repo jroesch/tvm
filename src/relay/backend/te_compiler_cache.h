@@ -18,7 +18,7 @@
  */
 
 /*!
- * \file relay/backend/tec_compiler_utils.h
+ * \file relay/backend/tec_compiler_cache.h
  * \brief Utilities for compiling tensor expressions inside of the Relay compiler.
  */
 #ifndef TVM_RELAY_BACKEND_TE_COMPILER_CACHE_H_
@@ -43,6 +43,12 @@
 namespace tvm {
 namespace relay {
 namespace tec {
+
+// TODO(@jroesch): remove this in a future refactor
+
+/*! A wrapper around the multiple ways we invoke the TVM lowering process. */
+IRModule TVMLower(te::Schedule sch, const Array<te::Tensor>& args, const std::string& name,
+                  const relay::Function& func, const Map<te::Tensor, tir::Buffer>& binds);
 
 /*! \brief Indicate whether the data or shape or both of a parameter is used in the shape func. */
 enum ShapeFuncParamState {
@@ -213,7 +219,7 @@ CachedFunc PrimFuncFor(const Function& source_func, const Target& target,
 CachedFunc ShapeFuncFor(const Function& prim_func, const Target& target,
                         std::function<std::string(std::string)> renamer);
 
-std::string GetUniqueName(std::string name, std::unordered_map<std::string, int> name_map);
+std::string GetUniqueName(std::string name, std::unordered_map<std::string, int>* name_map);
 
 // implementations
 inline size_t CCacheKeyNode::Hash() const {

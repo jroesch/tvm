@@ -127,7 +127,6 @@ def test_plan_memory():
     func = relay.Function([x, y], z)
     mod = tvm.IRModule.from_expr(func)
     mod = relay.transform.InferType()(mod)
-    print(mod)
     mod = relay.transform.FuseOps(0)(mod)
     func = mod["main"]
     mod = relay.transform.InferType()(mod)
@@ -146,7 +145,7 @@ def test_plan_memory():
     # Current rule requires vars have unique storage id
     # because we don't do inplace, we will need another
     # two alternating temporary space.
-    assert len(storage_ids) == 4, f"found storaged_ids: {storage_ids}"
+    assert len(storage_ids) == 4, f"found storage_ids: {storage_ids}"
     assert len(device_types) == 1
     assert len(storage_sizes) == 4
 
@@ -289,12 +288,4 @@ def test_graph_executor_nested_tuples():
 
 
 if __name__ == "__main__":
-    test_add_op_tensor()
-    # test_plan_memory()
-    # test_with_params()
-    # test_add_op_scalar()
-    # test_add_op_tensor()
-    # test_add_op_broadcast()
-    # test_gru_like()
-    # test_compile_nested_tuples()
-    # test_add_op_tensor()
+    sys.exit(pytest.main([file] + sys.argv[1:]))

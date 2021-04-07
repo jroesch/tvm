@@ -59,9 +59,10 @@ namespace tec {
 
 // TODO(@jroesch, @chrisS) these should be a tvm::Map for uniformity sake
 // we should a version of context which works in Map
-using TargetsMap = std::unordered_map<int, Target>;
-using DeviceContextMap =
-    std::unordered_map<Expr, TVMContext, runtime::ObjectPtrHash, runtime::ObjectPtrEqual>;
+using TargetMap = std::unordered_map<int, Target>;
+using DeviceMap =
+    std::unordered_map<Expr, tvm::Device, runtime::ObjectPtrHash, runtime::ObjectPtrEqual>;
+using ProcessFn = std::function<void(Function)>;
 
 /*!
  * \brief A compiler which lowers primitive Relay functions to tensor expressions
@@ -78,7 +79,9 @@ class TECompilerNode : public Object {
    */
   virtual CachedFunc Lower(const CCacheKey& key) = 0;
 
+  /* Return all functions which have been lowered by the compiler, keyed by target. */
   virtual Map<String, IRModule> GetLoweredFunctions() = 0;
+
   /*!
    * \brief Just in time compile to get a PackedFunc.
    * \param key The key to the cached function.
@@ -100,7 +103,6 @@ class TECompilerNode : public Object {
   /*! \brief clear the cache. */
   virtual void Clear() = 0;
 
-  // VisitAttrs
   void VisitAttrs(AttrVisitor*) {}
 
   static constexpr const char* _type_key = "relay.TECompiler";
@@ -118,14 +120,31 @@ class TECompiler : public ObjectRef {
   TVM_DLL static TECompiler& Global();
 };
 
+/*! \brief The result of lowering a module, for now we need to pass an aggregate data structure
+ * which contains more then a single module in order to interact with the today API.
+ */
 struct LoweredModule {
+  /*! \brief The module which contains the Relay code. */
   IRModule main_module;
+  /*! \brief The module which contains per target code. */
   Map<String, IRModule> per_target_module;
+  /*! \brief The external runtime modules which must be combined with the lowered code. */
   Array<tvm::runtime::Module> external_mods;
 };
 
-LoweredModule LowerTE(const IRModule& module, TargetsMap targets,
-                      DeviceContextMap device_context_map);
+/*! \brief Lower an IRModule's primitive functions to TIR.
+ *
+ * This is the "back half" of the Relay compiler which lowers "primitive functions"
+ * to TE expressions, schedules them, and then to TIR.
+ *
+ * /param module The IRModule.
+ * /param targets The mapping for devices to targets.
+ * /param device_map An analysis result mapping each sub-expression to a device.
+ * /return The lowered module, see above.
+ */
+LoweredModule LowerTE(
+    const IRModule& module, TargetMap targets, DeviceMap device_map,
+    ProcessFn process_fn = [](Function f) {});
 
 }  // namespace tec
 }  // namespace relay

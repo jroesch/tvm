@@ -213,6 +213,7 @@ class TracingEnvironment:
 @tvm._ffi.register_func("auto_scheduler.enter_layout_rewrite")
 def enter_layout_rewrite():
     """Enter layout rewrite tracing environment"""
+    # import pdb; pdb.set_trace()
     env = TracingEnvironment(TracingMode.PREPARE_LAYOUT_REWRITE)
     env.__enter__()
 

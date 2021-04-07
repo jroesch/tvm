@@ -99,7 +99,6 @@ class TECompilerImpl : public TECompilerNode {
       ICHECK(src_func.defined());
       if (src_func->GetAttr<String>(attr::kCompiler).defined()) {
         auto code_gen = src_func->GetAttr<String>(attr::kCompiler);
-        ICHECK(code_gen.defined()) << "No external codegen is set";
         std::string code_gen_name = code_gen.value();
         cached_ext_funcs.push_back(it.first);
 
@@ -117,7 +116,7 @@ class TECompilerImpl : public TECompilerNode {
 
         std::string ext_name = "relay.ext." + code_gen_name;
         auto pf = tvm::runtime::Registry::Get(ext_name);
-        ICHECK(pf) << "Failed to find the codegen tool for " << ext_name << "\n";
+        ICHECK(pf) << "Failed to find the codegen tool for " << ext_name;
         // No need to keep compiler attribute at this point, functions have been
         // extracted for specific codegen.
         src_func = WithAttr(std::move(src_func), attr::kCompiler, NullValue<ObjectRef>());
@@ -180,11 +179,10 @@ class TECompilerImpl : public TECompilerNode {
       auto ir_module = IRModule();
       const auto name_node = key->source_func->GetAttr<String>(tvm::attr::kGlobalSymbol);
       ICHECK(name_node.defined()) << "External function has not been attached a name yet.";
-      auto func_name = std::string(name_node.value());
+      auto func_name = GetUniqueName(name_node.value(), &name_map_);
       auto target = Target("ext_dev");
       auto global_var = GlobalVar(func_name);
       global_var->checked_type_ = key->source_func->checked_type();
-      ir_module->Add(global_var, key->source_func);
       value->cached_func = CachedFunc(target, global_var, {}, {}, te::Schedule(), {}, ir_module);
       return value;
     }
@@ -193,7 +191,7 @@ class TECompilerImpl : public TECompilerNode {
 
     ICHECK(!value->cached_func.defined());
     auto cfunc = PrimFuncFor(key->source_func, key->target,
-                             [&](std::string name) { return GetUniqueName(name, name_map_); });
+                             [&](std::string name) { return GetUniqueName(name, &name_map_); });
 
     // Skip lowering for device copy node.
     const Expr body = (key->source_func)->body;
@@ -204,22 +202,15 @@ class TECompilerImpl : public TECompilerNode {
       }
     }
 
-    std::cout << "Input Size: " << cfunc->inputs.size() << std::endl;
-    std::cout << "Output Size: " << cfunc->outputs.size() << std::endl;
     // NOTE: array will copy on write.
     Array<te::Tensor> all_args = Array<te::Tensor>(cfunc->inputs);
     for (te::Tensor arg : cfunc->outputs) {
       all_args.push_back(arg);
     }
 
-    std::cout << "Allargs Size: " << all_args.size() << std::endl;
-
-    using tvm::transform::PassContext;
-    With<PassContext> fresh_pass_ctx_scope(PassContext::Create());
-
     std::unordered_map<te::Tensor, tir::Buffer> binds;
     auto func_name = cfunc->prim_fn_var->name_hint;
-    cfunc->funcs->Update(tvm::lower(cfunc->schedule, all_args, func_name, binds));
+    cfunc->funcs->Update(TVMLower(cfunc->schedule, all_args, func_name, key->source_func, binds));
     value->cached_func = cfunc;
     return value;
   }
@@ -242,8 +233,11 @@ class TECompilerImpl : public TECompilerNode {
     With<Target> target_scope(key->target);
 
     ICHECK(!value->cached_func.defined());
+
+    using tvm::transform::PassContext;
+    With<PassContext> fresh_pass_ctx_scope(PassContext::Create());
     auto cached_func = ShapeFuncFor(key->source_func, key->target, [&](std::string name) {
-      return GetUniqueName(name, name_map_);
+      return GetUniqueName(name, &name_map_);
     });
 
     value->cached_func = cached_func;
@@ -269,11 +263,12 @@ TECompiler::TECompiler() {
 
 class LowerTensorExpr : public ExprMutator {
  public:
-  LowerTensorExpr(const IRModule& module, const TargetsMap& targets,
-                  const DeviceContextMap& device_ctx_map, TECompiler compiler)
+  LowerTensorExpr(const IRModule& module, const TargetMap& targets, const DeviceMap& device_ctx_map,
+                  ProcessFn process_fn, TECompiler compiler)
       : module_(module),
         targets_(targets),
         device_context_map_(device_ctx_map),
+        process_fn(process_fn),
         compiler_(compiler) {}
 
   Expr VisitExpr_(const CallNode* call) override {
@@ -286,9 +281,11 @@ class LowerTensorExpr : public ExprMutator {
       return ExprMutator::VisitExpr_(call);
     }
 
+    // Provide a callback hook which allows one-level up code generators to
+    // act when we process a function.
+    this->process_fn(func);
+
     if (!func->HasNonzeroAttr(attr::kPrimitive)) {
-      // LOG(FATAL) << "TVM only support calls to primitive functions "
-      //           << "(i.e functions composed of fusable operator invocations)";
       return ExprMutator::VisitExpr_(call);
     }
 
@@ -304,7 +301,8 @@ class LowerTensorExpr : public ExprMutator {
       target = Target("ext_dev");
       CCacheKey key = CCacheKey(func, target);
       CachedFunc ext_func = compiler_->Lower(key);
-      ICHECK(ext_func.defined()) << "External function is not defined.";
+      ICHECK(ext_func.defined()) << "Lowering returned undefined function for "
+                                 << ext_func->prim_fn_var->name_hint;
       return Call(ext_func->prim_fn_var, args, {});
     }
 
@@ -342,18 +340,19 @@ class LowerTensorExpr : public ExprMutator {
   }
 
   IRModule module_;
-  TargetsMap targets_;
-  DeviceContextMap device_context_map_;
+  TargetMap targets_;
+  DeviceMap device_context_map_;
+  ProcessFn process_fn;
   TECompiler compiler_;
 };
 
-LoweredModule LowerTE(const IRModule& module, TargetsMap targets,
-                      DeviceContextMap device_context_map) {
+LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap device_context_map,
+                      std::function<void(Function)> process_fn) {
   TECompiler compiler;
 
   auto pass = CreateFunctionPass(
       [=](Function func, IRModule module, PassContext ctx) {
-        LowerTensorExpr lower_te(module, targets, device_context_map, compiler);
+        LowerTensorExpr lower_te(module, targets, device_context_map, process_fn, compiler);
         return Downcast<Function>(lower_te.VisitExpr(func));
       },
       0, "LowerTensorExpr", {});

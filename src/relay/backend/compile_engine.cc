@@ -79,6 +79,7 @@ class CompileEngineImpl : public CompileEngineNode {
     for (const auto& it : cache_) {
       auto src_func = it.first->source_func;
       ICHECK(src_func.defined());
+
       if (src_func->GetAttr<String>(attr::kCompiler).defined()) {
         auto code_gen = src_func->GetAttr<String>(attr::kCompiler);
         ICHECK(code_gen.defined()) << "No external codegen is set";
@@ -87,7 +88,9 @@ class CompileEngineImpl : public CompileEngineNode {
 
         auto symbol_name = src_func->GetAttr<String>(tvm::attr::kGlobalSymbol);
         ICHECK(symbol_name.defined()) << "No external symbol is set for:\n"
-                                      << AsText(src_func, false);
+                                      << AsText(src_func, false) << "\n"
+                                      << "Functions with external codegen must have the "
+                                      << tvm::attr::kGlobalSymbol << " attr set.";
 
         std::string sn = symbol_name.value();
         if (!cached_symbol.count(sn)) {
@@ -105,7 +108,12 @@ class CompileEngineImpl : public CompileEngineNode {
         src_func = WithAttr(std::move(src_func), attr::kCompiler, NullValue<ObjectRef>());
         runtime::Module ext_mod = (*pf)(src_func);
 
-        ICHECK(ext_mod.defined()) << "No external runtime is generated.";
+        // todo(@zhiics, @jroesch): Should this be a user visible error?
+        ICHECK(ext_mod.defined()) << "No external library was generated for " << ext_name
+                                  << "even though it was requested"
+                                     "by the annotated function "
+                                  << PrettyPrint(src_func);
+
         ret.push_back(ext_mod);
       }
     }
@@ -187,7 +195,7 @@ class CompileEngineImpl : public CompileEngineNode {
 
     ICHECK(!value->cached_func.defined());
     auto cfunc = PrimFuncFor(key->source_func, key->target,
-                             [&](std::string name) { return GetUniqueName(name, name_map_); });
+                             [&](std::string name) { return GetUniqueName(name, &name_map_); });
 
     // Skip lowering for device copy node.
     const Expr body = (key->source_func)->body;
@@ -204,12 +212,9 @@ class CompileEngineImpl : public CompileEngineNode {
       all_args.push_back(arg);
     }
 
-    using tvm::transform::PassContext;
-    With<PassContext> fresh_pass_ctx_scope(PassContext::Create());
-
     std::unordered_map<te::Tensor, tir::Buffer> binds;
     auto func_name = cfunc->prim_fn_var->name_hint;
-    cfunc->funcs->Update(tvm::lower(cfunc->schedule, all_args, func_name, binds));
+    cfunc->funcs->Update(TVMLower(cfunc->schedule, all_args, func_name, key->source_func, binds));
     value->cached_func = cfunc;
     return value;
   }
@@ -232,8 +237,11 @@ class CompileEngineImpl : public CompileEngineNode {
     With<Target> target_scope(key->target);
 
     ICHECK(!value->cached_func.defined());
+    using tvm::transform::PassContext;
+    With<PassContext> fresh_pass_ctx_scope(PassContext::Create());
+
     auto cached_func = ShapeFuncFor(key->source_func, key->target, [&](std::string name) {
-      return GetUniqueName(name, name_map_);
+      return GetUniqueName(name, &name_map_);
     });
 
     value->cached_func = cached_func;

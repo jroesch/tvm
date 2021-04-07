@@ -42,7 +42,7 @@
 namespace tvm {
 namespace relay {
 
-/// TODO(@jroesch, @chris): declare directly elsewhere
+/// TODO(@jroesch, @csullivan): declare directly elsewhere
 Map<Expr, Array<Array<tvm::Integer>>> GraphPlanMemory(const Function& func);
 
 namespace backend {
@@ -277,9 +277,6 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
   }
 
   LoweredOutput Codegen(relay::Function func) {
-    // Jared: why do we do this? just call C++ API.
-    // auto pf = GetPackedFunc("relay.backend.GraphPlanMemory");
-    // storage_device_map_ = (*pf)(func);
     storage_device_map_ = GraphPlanMemory(func);
 
     // Andrew why is this in here?
@@ -287,25 +284,31 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     // UpdateMainWorkspaceSize(func);
 
     // This first phase moves from implicit use of compile engine,
-    // to instead the lower the incoming IRModule, and then performing
-    // the pre-exiting graph runtime code generation phase.
+    // to instead explicitly lowering the incoming IRModule, and then
+    // performing the preexisting graph executor code generation phase.
     IRModule mod = IRModule::FromExpr(func);
 
     // Build a map from each operation to device.
-    tec::DeviceContextMap device_context_map;
+    tec::DeviceMap device_context_map;
     for (const auto& it : storage_device_map_) {
       auto expr = it.first;
       auto storage_and_device = it.second;
       ICHECK_EQ(storage_and_device.size(), 2u);
       auto device_type = storage_and_device[1];
-      TVMContext ctx;
-      ctx.device_id = 0;
-      ctx.device_type = static_cast<DLDeviceType>(device_type[0]->value);
-      device_context_map.insert({expr, ctx});
+      tvm::Device dev;
+      dev.device_id = 0;
+      dev.device_type = static_cast<DLDeviceType>(device_type[0]->value);
+      device_context_map.insert({expr, dev});
     }
 
     // todo map targets down
-    auto lowered_module = tec::LowerTE(mod, targets_, device_context_map);
+    auto lowered_module = tec::LowerTE(mod, targets_, device_context_map, [this](Function func) {
+      // We need to maintain the constant map for external functions so we pass this
+      // processing function which allows us to process each function as we lower it.
+      if (func->GetAttr<String>(attr::kCompiler).defined()) {
+        UpdateConstants(func, &params_);
+      }
+    });
 
     auto main_module = lowered_module.main_module;
     main_module = relay::transform::InferType()(main_module);
@@ -470,18 +473,15 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
   std::vector<GraphNodeRef> VisitExpr_(const CallNode* call_node) override {
     relay::Call call = GetRef<Call>(call_node);
     if (auto global_node = call->op.as<GlobalVarNode>()) {
-
       auto prim_fn_name = global_node->name_hint;
 
       Target target;
 
-      // // Handle external function
-      // if (func->GetAttr<String>(attr::kCompiler).defined()) {
-      //   UpdateConstants(func, &params_);
-      //   return GraphAddCallNode(call_node, prim_fn_name, prim_fn_name);
-      // }
+      ICHECK_GE(storage_device_map_.count(call), 0)
+          << "Could not find a storage device for " << prim_fn_name
+          << "The memory planning was either not performed for this precise node, or there is bug "
+             "in the memory planner.";
 
-      ICHECK_GE(storage_device_map_.count(call), 0);
       auto& device_type = storage_device_map_[call][1];
       auto call_dev_type = device_type[0]->value;
       // Normal Relay Function
@@ -505,7 +505,11 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
 
       return GraphAddCallNode(call_node, _GetUniqueName(prim_fn_name), prim_fn_name);
     } else {
-      LOG(FATAL) << "BadCase: " << PrettyPrint(call) << std::endl;
+      ICHECK(false) << "Non-primitive-call nodes should have been transformed away.\n"
+                    << "The graph executor code generator expects all calls to have their callee "
+                       "normalized to a GlobalVar but found a "
+                    << call->GetTypeKey() << "."
+                    << "AST: " << PrettyPrint(call) << PrettyPrint(call) << std::endl;
       return {};
     }
   }

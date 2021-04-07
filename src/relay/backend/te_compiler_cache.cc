@@ -49,6 +49,20 @@ namespace tvm {
 namespace relay {
 namespace tec {
 
+// TODO(@jroesch): remove this
+IRModule TVMLower(te::Schedule sch, const Array<te::Tensor>& args, const std::string& name,
+                  const relay::Function& source_func, const Map<te::Tensor, tir::Buffer>& binds) {
+  auto pf = runtime::Registry::Get("relay.backend.lower");
+  if (pf) {
+    return (*pf)(sch, args, name, source_func);
+  } else {
+    using tvm::transform::PassContext;
+    With<PassContext> fresh_pass_ctx_scope(PassContext::Create());
+    std::unordered_map<te::Tensor, tir::Buffer> std_binds(binds.begin(), binds.end());
+    return tvm::lower(sch, args, name, std_binds);
+  }
+}
+
 TVM_REGISTER_NODE_TYPE(LoweredOutputNode);
 TVM_REGISTER_NODE_TYPE(CachedFuncNode);
 TVM_REGISTER_NODE_TYPE(CCacheKeyNode);
@@ -90,8 +104,10 @@ Array<IndexExpr> GetShape(const Array<IndexExpr>& shape) {
     const int64_t* pval = tir::as_const_int(val);
     if (pval != nullptr) {
 #ifndef TVM_INDEX_DEFAULT_I64
-      ICHECK_LE(pval[0], std::numeric_limits<int32_t>::max());
-      ICHECK_GE(pval[0], std::numeric_limits<int32_t>::min());
+      ICHECK_LE(pval[0], std::numeric_limits<int32_t>::max())
+          << "dimension must be less then int32_t's max value";
+      ICHECK_GE(pval[0], std::numeric_limits<int32_t>::min())
+          << "dimension must be less then int32_t's max value";
       res.push_back(IntImm(DataType::Int(32), *pval));
 #else
       res.push_back(val);
@@ -105,11 +121,10 @@ Array<IndexExpr> GetShape(const Array<IndexExpr>& shape) {
   return res;
 }
 
-// The getter to get schedule from compile engine.
-// Get schedule from functor.
-class ScheduleGetter : public backend::MemoizedExprTranslator<Array<te::Tensor>> {
+// Construct a schedule for a given Relay primitive function and target.
+class ScheduleBuilder : public backend::MemoizedExprTranslator<Array<te::Tensor>> {
  public:
-  explicit ScheduleGetter(Target target)
+  explicit ScheduleBuilder(Target target)
       : target_(target), device_copy_op_(Op::Get("device_copy")) {
     // Whether to use auto_scheduler schedule.
     use_auto_scheduler_ = backend::IsAutoSchedulerEnabled();
@@ -148,6 +163,10 @@ class ScheduleGetter : public backend::MemoizedExprTranslator<Array<te::Tensor>>
       candidate_name = truncated_name.str();
     }
 
+    auto prim_fn_name = renamer(candidate_name);
+    auto prim_fn_var = GlobalVar(prim_fn_name);
+    prim_fn_var->checked_type_ = prim_func->checked_type();
+
     ICHECK(anchor_op_.defined());
     // Fusion over tupled results may leave identity relationships
     // between inputs and outputs, and those should not be scheduled.
@@ -167,7 +186,7 @@ class ScheduleGetter : public backend::MemoizedExprTranslator<Array<te::Tensor>>
             runtime::Registry::Get("auto_scheduler.relay_integration.auto_schedule_topi_compute");
         ICHECK(fauto_schedule != nullptr)
             << "auto_scheduler.relay_integration.auto_schedule_topi_compute is not registered";
-        ObjectRef obj = (*fauto_schedule)(tensor_outs);
+        ObjectRef obj = (*fauto_schedule)(prim_fn_name, tensor_outs);
         if (obj.defined()) {
           schedule = Downcast<te::Schedule>(obj);
         }
@@ -185,13 +204,11 @@ class ScheduleGetter : public backend::MemoizedExprTranslator<Array<te::Tensor>>
       }
     }
 
-    auto prim_fn_var = GlobalVar(candidate_name);
-    prim_fn_var->checked_type_ = prim_func->checked_type();
     return CachedFunc(target_, prim_fn_var, fn_inputs, outputs, schedule, {});
   }
 
   Array<te::Tensor> VisitExpr_(const VarNode* op) final {
-    LOG(FATAL) << "Free variable " << op->name_hint();
+    LOG(FATAL) << "Unexpected free variable " << op->name_hint();
     return {};
   }
 
@@ -238,8 +255,11 @@ class ScheduleGetter : public backend::MemoizedExprTranslator<Array<te::Tensor>>
         inputs.push_back(tensor);
       }
     }
+
     if (count_tuple) {
-      ICHECK_EQ(call_node->args.size(), 1U) << "Only allow function with a single tuple input";
+      ICHECK_EQ(call_node->args.size(), 1U)
+          << "Only functions with a single tuple input are allowed, but " << count_tuple
+          << " were provided.";
     }
 
     ICHECK(call_node->op.as<OpNode>()) << "Primitive function only allows call into primitive ops";
@@ -271,7 +291,9 @@ class ScheduleGetter : public backend::MemoizedExprTranslator<Array<te::Tensor>>
     }
     if (outputs.size() != 1) {
       const auto* tuple_type = call_node->checked_type().as<TupleTypeNode>();
-      ICHECK(tuple_type) << "Expect output to be a tuple type";
+      ICHECK(tuple_type) << "Expected output to be a tuple type "
+                         << PrettyPrint(call_node->checked_type());
+
       ICHECK_EQ(tuple_type->fields.size(), outputs.size());
     }
     // Set the name to `__copy`. It will be detected in graph runtime to perform
@@ -286,7 +308,7 @@ class ScheduleGetter : public backend::MemoizedExprTranslator<Array<te::Tensor>>
   }
 
   Array<te::Tensor> VisitExpr_(const FunctionNode* op) final {
-    LOG(FATAL) << "Do not support sub function";
+    LOG(FATAL) << "Primitive Functions can not contain nested functions.";
     return Array<te::Tensor>();
   }
 
@@ -340,7 +362,7 @@ class ScheduleGetter : public backend::MemoizedExprTranslator<Array<te::Tensor>>
  */
 CachedFunc PrimFuncFor(const Function& source_func, const Target& target,
                        std::function<std::string(std::string)> renamer) {
-  return ScheduleGetter(target).Create(source_func, renamer);
+  return ScheduleBuilder(target).Create(source_func, renamer);
 }
 
 // Creates shape function from functor.
@@ -406,8 +428,6 @@ class MakeShapeFunc : public backend::MemoizedExprTranslator<Array<te::Tensor>> 
       candidate_name = truncated_name.str();
     }
 
-    auto func_name = renamer(candidate_name);
-
     // Set all the inputs correctly.
     for (auto param : prim_func->params) {
       int state = param_states_[param];
@@ -424,6 +444,7 @@ class MakeShapeFunc : public backend::MemoizedExprTranslator<Array<te::Tensor>> 
       }
     }
 
+    auto func_name = renamer(candidate_name);
     auto prim_fn_gvar = GlobalVar(func_name);
     prim_fn_gvar->checked_type_ = prim_func->checked_type();
 
@@ -450,7 +471,7 @@ class MakeShapeFunc : public backend::MemoizedExprTranslator<Array<te::Tensor>> 
     With<PassContext> fresh_pass_ctx_scope(PassContext::Create());
 
     std::unordered_map<te::Tensor, tir::Buffer> binds;
-    auto ir_module = tvm::lower(schedule, all_args, func_name, binds);
+    auto ir_module = TVMLower(schedule, all_args, func_name, prim_func, binds);
 
     return CachedFunc(target, prim_fn_gvar, inputs, outputs, schedule, shape_func_param_states,
                       ir_module);
@@ -470,7 +491,7 @@ class MakeShapeFunc : public backend::MemoizedExprTranslator<Array<te::Tensor>> 
     auto var = GetRef<Var>(var_node);
     auto it = param_states_.find(var);
     if (it == param_states_.end()) {
-      LOG(FATAL) << "Free variable " << var->name_hint();
+      LOG(FATAL) << "Unexpected free variable " << var->name_hint();
       return {};
     } else {
       ICHECK(data_dependents_per_input_.size());
@@ -617,7 +638,8 @@ class MakeShapeFunc : public backend::MemoizedExprTranslator<Array<te::Tensor>> 
   Array<te::Tensor> VisitExpr_(const TupleNode* op) final {
     Array<te::Tensor> fields;
     for (Expr field : op->fields) {
-      ICHECK(field->checked_type().as<TensorTypeNode>()) << "Only allow Tuple of Tensor";
+      ICHECK(field->checked_type().as<TensorTypeNode>())
+          << "Expected a Tuple of Tensor, but got " << PrettyPrint(field->checked_type());
       Array<te::Tensor> res = VisitExpr(field);
       ICHECK_EQ(res.size(), 1);
       fields.push_back(res[0]);
@@ -657,14 +679,14 @@ CachedFunc ShapeFuncFor(const Function& prim_func, const Target& target,
  * \param name The orginal name.
  * \return Updated name which is unique.
  */
-std::string GetUniqueName(std::string name, std::unordered_map<std::string, int> name_map_) {
+std::string GetUniqueName(std::string name, std::unordered_map<std::string, int>* name_map_) {
   for (size_t i = 0; i < name.length(); ++i) {
     if (name[i] == '.') name[i] = '_';
   }
   while (true) {
-    auto it = name_map_.find(name);
-    if (it == name_map_.end()) {
-      name_map_[name] = 1;
+    auto it = name_map_->find(name);
+    if (it == name_map_->end()) {
+      (*name_map_)[name] = 1;
       return name;
     } else {
       std::ostringstream os;
