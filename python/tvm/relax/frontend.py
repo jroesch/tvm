@@ -187,6 +187,19 @@ class R2Transformer(Transformer):
     def transform_type(self, ty: ast.Type) -> T:
         pass
 
+class RelaxDecoratedFn:
+    def __init__(self, fn_ast):
+        self.fn_ast = fn_ast
+
+    def __call__(self, *args):
+        compiler = Compiler(self, f.__name__)
+        compiled_f = compiler.compile(execute=True)
+        # Actually compute needed buffer sizes.
+        out = tvm.nd.array(np.random.rand(10).astype('float32'))
+        import pdb; pdb.set_trace()
+        compiled_f(*(list(inputs) + [out]))
+        return out
+
 GLOBAL_MODULE = {}
 
 def add_to_global_module(new_fns):
@@ -202,14 +215,5 @@ def r2(f):
     diag_cx = synr.PrinterDiagnosticContext()
     ast = synr.to_ast(f, diag_cx)
     module = R2Transformer().do_transform(ast, diag_cx)
-    add_to_global_module(module)
-    def __wrapper(*inputs):
-        compiler = Compiler(module, f.__name__)
-        compiled_f = compiler.compile(execute=True)
-        # Actually compute needed buffer sizes.
-        out = tvm.nd.array(np.random.rand(10).astype('float32'))
-        import pdb; pdb.set_trace()
-        compiled_f(*(list(inputs) + [out]))
-        return out
-
-    return __wrapper
+    import pdb; pdb.set_trace()
+    # add_to_global_module(module)
