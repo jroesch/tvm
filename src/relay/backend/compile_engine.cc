@@ -773,6 +773,8 @@ class CompileEngineImpl : public CompileEngineNode {
       cache_node->funcs = tvm::lower(cfunc->schedule, all_args, cache_node->func_name, binds);
     }
     value->cached_func = CachedFunc(cache_node);
+    std::cout << "{ \"name\": \"" << cache_node->func_name << "\",\n" <<
+                 "  \"source\": \"" << PrettyPrint(key->source_func) << "\"\n},\n";
     return value;
   }
   // implement lowered shape func
@@ -809,6 +811,7 @@ class CompileEngineImpl : public CompileEngineNode {
     std::unordered_map<te::Tensor, tir::Buffer> binds;
     cache_node->funcs = tvm::lower(spair.first, all_args, cache_node->func_name, binds);
     value->cached_func = CachedFunc(cache_node);
+
     return value;
   }
   /*!
