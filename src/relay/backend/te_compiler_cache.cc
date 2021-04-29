@@ -163,7 +163,13 @@ class ScheduleBuilder : public backend::MemoizedExprTranslator<Array<te::Tensor>
       candidate_name = truncated_name.str();
     }
 
-    auto prim_fn_name = renamer(candidate_name);
+    // NB(@jroesch): unfortunately the graph runtime deals with copy in
+    // a totally hacky way, we really need to rectify this but this will
+    // have to work for now.
+    std::string prim_fn_name = candidate_name;
+    if (prim_fn_name != "__copy") {
+      prim_fn_name = renamer(prim_fn_name);
+    }
     auto prim_fn_var = GlobalVar(prim_fn_name);
     prim_fn_var->checked_type_ = prim_func->checked_type();
 

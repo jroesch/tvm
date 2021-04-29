@@ -42,6 +42,7 @@ def check_graph_executor(
             device_index = graph_json["attrs"]["device_index"][1]
             assert device_index == expected_index
         mod = graph_executor.create(graph, lib, contexts)
+        import pdb; pdb.set_trace()
         mod.set_input(**new_params)
         mod.run()
         res = mod.get_output(0).numpy()

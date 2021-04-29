@@ -295,6 +295,8 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
       auto storage_and_device = it.second;
       ICHECK_EQ(storage_and_device.size(), 2u);
       auto device_type = storage_and_device[1];
+      std::cout << PrettyPrint(expr) << std::endl;
+      std::cout << device_type << std::endl;
       tvm::Device dev;
       dev.device_id = 0;
       dev.device_type = static_cast<DLDeviceType>(device_type[0]->value);
@@ -311,6 +313,7 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     });
 
     auto main_module = lowered_module.main_module;
+    std::cout << "MainModule: " << main_module << std::endl;
     main_module = relay::transform::InferType()(main_module);
     relay::Function main_func = Downcast<relay::Function>(main_module->Lookup("main"));
 
@@ -475,33 +478,6 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     if (auto global_node = call->op.as<GlobalVarNode>()) {
       auto prim_fn_name = global_node->name_hint;
 
-      Target target;
-
-      ICHECK_GE(storage_device_map_.count(call), 0)
-          << "Could not find a storage device for " << prim_fn_name
-          << "The memory planning was either not performed for this precise node, or there is bug "
-             "in the memory planner.";
-
-      auto& device_type = storage_device_map_[call][1];
-      auto call_dev_type = device_type[0]->value;
-      // Normal Relay Function
-      if (targets_.size() == 1) {
-        // homogeneous execution.
-        const auto& it = targets_.begin();
-        target = (*it).second;
-      } else {
-        // heterogeneous execution.
-        std::string call_dev_name;
-        if (call_dev_type == 0) {
-          call_dev_name = "llvm";
-        } else {
-          call_dev_name = runtime::DeviceName(call_dev_type);
-        }
-        if (targets_.count(call_dev_type) == 0) {
-          LOG(FATAL) << "No target is provided for device " << call_dev_name;
-        }
-        target = targets_[call_dev_type];
-      }
 
       return GraphAddCallNode(call_node, _GetUniqueName(prim_fn_name), prim_fn_name);
     } else {

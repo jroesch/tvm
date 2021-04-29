@@ -306,7 +306,11 @@ class LowerTensorExpr : public ExprMutator {
       return Call(ext_func->prim_fn_var, args, {});
     }
 
-    ICHECK_GE(device_context_map_.count(expr), 0);
+    ICHECK_GE(device_context_map_.count(expr), 0)
+          << "Could not find an entry in the device context map for " << PrettyPrint(expr)
+          << "The memory planning was either not performed for this precise node, or there is bug "
+             "in the memory planner.";
+
     auto& device_context = this->device_context_map_[expr];
     auto call_dev_type = device_context.device_type;
 
@@ -317,6 +321,7 @@ class LowerTensorExpr : public ExprMutator {
       const auto& it = targets_.begin();
       target = (*it).second;
     } else {
+      std::cout << "DeviceType: " << call_dev_type << std::endl;
       // The heterogeneous execution case we have multiple targets
       // in this case.
       //
@@ -324,13 +329,25 @@ class LowerTensorExpr : public ExprMutator {
       std::string call_dev_name;
       if (call_dev_type == 0) {
         call_dev_name = "llvm";
+        call_dev_type = kDLCPU;
       } else {
         call_dev_name = ::tvm::runtime::DeviceName(call_dev_type);
       }
+
       if (targets_.count(call_dev_type) == 0) {
-        LOG(FATAL) << "No target is provided for device " << call_dev_name;
+          std::stringstream msg;
+          msg << "No target is specified for provided device name: `" << call_dev_name << "`\n\n";
+          msg << call_dev_name << " mapped to device type (" << call_dev_type << ") which was not found in the target map.\n";
+          msg << "Availible targets: \n";
+          for (auto target : targets_) {
+            msg << "  " << target.first << "-> " << target.second << "\n";
+          }
+          LOG(FATAL) << msg.str();
       }
+
+      std::cout << "DeviceName: " << call_dev_name << std::endl;
       target = targets_[call_dev_type];
+      std::cout << "Target: " << target << std::endl;
     }
 
     CCacheKey key = CCacheKey(func, target);
