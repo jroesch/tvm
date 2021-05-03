@@ -271,6 +271,16 @@ class LowerTensorExpr : public ExprMutator {
         process_fn(process_fn),
         compiler_(compiler) {}
 
+  // bool ShareSameStorage(const Expr& lhs, const Expr& rhs) {
+  //   auto lit = storage_device_map_.find(lhs);
+  //   auto rit = storage_device_map_.find(rhs);
+  //   ICHECK(lit != storage_device_map_.end());
+  //   ICHECK(rit != storage_device_map_.end());
+  //   int64_t lhs_storage_id = ((*lit).second)[0][0]->value;
+  //   int64_t rhs_storage_id = ((*rit).second)[0][0]->value;
+  //   return lhs_storage_id == rhs_storage_id;
+  // }
+
   Expr VisitExpr_(const CallNode* call) override {
     Call expr = GetRef<Call>(call);
     Function func;

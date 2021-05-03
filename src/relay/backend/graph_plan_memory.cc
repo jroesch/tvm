@@ -28,10 +28,28 @@
 #include <tvm/tir/op.h>
 
 #include "../../support/arena.h"
+#include "./utils.h"
 
 namespace tvm {
 namespace relay {
 
+namespace backend {
+  StorageInfo::StorageInfo(std::vector<int64_t> storage_ids, std::vector<DLDeviceType> device_ids) {
+    auto n = make_object<StorageInfoNode>();
+    n->storage_ids = std::move(storage_ids);
+    n->device_ids = std::move(device_ids);
+    data_ = std::move(n);
+  }
+
+  StaticMemoryPlan::StaticMemoryPlan(Map<Expr, StorageInfo> expr_to_storage_info) {
+    auto n = make_object<StaticMemoryPlanNode>();
+    n->expr_to_storage_info = std::move(expr_to_storage_info);
+    data_ = std::move(n);
+  }
+} // namespace backend
+
+using backend::StorageInfo;
+using backend::StaticMemoryPlan;
 using IntegerArray = Array<Integer>;
 
 struct StorageToken {
@@ -198,31 +216,31 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
   }
 
   // Run storage allocation for a function.
-  Map<Expr, Array<IntegerArray> > Plan(const Function& func) {
+  StaticMemoryPlan Plan(const Function& func) {
     prototype_ = StorageAllocaInit(&arena_).GetInitTokenMap(func);
     this->Run(func);
 
     // The value of smap contains two integer arrays where the first array
     // contains the planned storage ids and the second holds the device types.
-    Map<Expr, Array<IntegerArray> > smap;
+    Map<Expr, backend::StorageInfo> smap;
     int num_annotated_nodes = 0;
     int num_nodes = 0;
 
     for (const auto& kv : token_map_) {
-      std::vector<Integer> storage_ids;
-      std::vector<Integer> device_types;
-      std::vector<Integer> sid_sizes_byte;
+      std::vector<int64_t> storage_ids;
+      std::vector<DLDeviceType> device_types;
+      std::vector<Integer> sid_sizes_byte
+
       for (StorageToken* tok : kv.second) {
         if (tok->device_type) {
           num_annotated_nodes++;
         }
         num_nodes++;
         storage_ids.push_back(tok->storage_id);
-        device_types.push_back(tok->device_type);
-        sid_sizes_byte.push_back(GetMemorySize(tok));
+        device_types.push_back(static_cast<DLDeviceType>(tok->device_type));
       }
-      smap.Set(GetRef<Expr>(kv.first),
-               Array<IntegerArray>({storage_ids, device_types, sid_sizes_byte}));
+      auto storage_info = backend::StorageInfo(storage_ids, device_types);
+      smap.Set(GetRef<Expr>(kv.first), storage_info);
     }
     // Either all or none of the nodes should be annotated.
     if (num_annotated_nodes != 0 && num_annotated_nodes != num_nodes) {
@@ -230,7 +248,8 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
                  << "expressions are assigned with virtual device types. Either all "
                     "or none of the expressions are expected to be annotated.";
     }
-    return smap;
+
+    return backend::StaticMemoryPlan(smap);
   }
 
  protected:
@@ -409,7 +428,7 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
   std::unordered_map<const ExprNode*, std::vector<StorageToken*> > prototype_;
 };
 
-Map<Expr, Array<IntegerArray> > GraphPlanMemory(const Function& func) {
+StaticMemoryPlan GraphPlanMemory(const Function& func) {
   return StorageAllocator().Plan(func);
 }
 

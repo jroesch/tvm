@@ -59,7 +59,7 @@ namespace tec {
 
 // TODO(@jroesch, @chrisS) these should be a tvm::Map for uniformity sake
 // we should a version of context which works in Map
-using TargetMap = std::unordered_map<int, Target>;
+using TargetMap = std::unordered_map<DLDeviceType, Target>;
 using DeviceMap =
     std::unordered_map<Expr, tvm::Device, runtime::ObjectPtrHash, runtime::ObjectPtrEqual>;
 using ProcessFn = std::function<void(Function)>;
