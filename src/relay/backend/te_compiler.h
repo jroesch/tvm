@@ -130,6 +130,11 @@ struct LoweredModule {
   Map<String, IRModule> per_target_module;
   /*! \brief The external runtime modules which must be combined with the lowered code. */
   Array<tvm::runtime::Module> external_mods;
+  /*! \brief Primtive function to call node map.
+   * NB: this is a temporary workaround for storage information until we unify the hetergenous support, memory planning,
+   * and lowering.
+   */
+  Map<Expr, Expr> prim_fn_to_call_map;
 };
 
 /*! \brief Lower an IRModule's primitive functions to TIR.

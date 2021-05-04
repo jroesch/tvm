@@ -43,7 +43,7 @@ namespace tvm {
 namespace relay {
 
 /// TODO(@jroesch, @csullivan): declare directly elsewhere
-Map<Expr, Array<Array<tvm::Integer>>> GraphPlanMemory(const Function& func);
+backend::StaticMemoryPlan GraphPlanMemory(const Function& func);
 
 namespace backend {
 
@@ -273,10 +273,18 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     }
 
     function_metadata_.Set(String(runtime::symbol::tvm_module_main), FunctionInfo(fi_node));
+  StorageInfo GetStorageInfo(const Expr& e) {
+    size_t count = memory_plan_->expr_to_storage_info.count(e);
+    ICHECK_GT(count, 0) << "Expr is not existing in storage plan";
+    auto storage_info = memory_plan_->expr_to_storage_info[e];
+    return storage_info;
   }
 
   LoweredOutput Codegen(relay::Function func) {
-    storage_device_map_ = GraphPlanMemory(func);
+    // TODO(@jroesch): we need to split device planning and memory planning
+    // first we run device assignment, then we perform lowering, and then
+    // storage planning in ideal world.
+    memory_plan_ = GraphPlanMemory(func);
 
     // Andrew why is this in here?
     //
@@ -289,20 +297,17 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
 
     // Build a map from each operation to device.
     tec::DeviceMap device_context_map;
-    for (const auto& it : storage_device_map_) {
+    for (const auto& it : memory_plan_->expr_to_storage_info) {
       auto expr = it.first;
-      auto storage_and_device = it.second;
-      ICHECK_EQ(storage_and_device.size(), 2u);
-      auto device_type = storage_and_device[1];
-      std::cout << PrettyPrint(expr) << std::endl;
-      std::cout << device_type << std::endl;
+      auto storage_info = it.second;
+      auto device_types = storage_info->device_types;
+      // CHECK_EQ(device_types.size(), 1);
       tvm::Device dev;
       dev.device_id = 0;
-      dev.device_type = static_cast<DLDeviceType>(device_type[0]->value);
+      dev.device_type = device_types[0];
       device_context_map.insert({expr, dev});
     }
 
-    // todo map targets down
     auto lowered_module = tec::LowerTE(mod, targets_, device_context_map, [this](Function func) {
       // We need to maintain the constant map for external functions so we pass this
       // processing function which allows us to process each function as we lower it.
@@ -317,7 +322,12 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     relay::Function main_func = Downcast<relay::Function>(main_module->Lookup("main"));
 
     // Now that we have lowered all operators to TIR code, we can proceed with compilation.
-    storage_device_map_ = GraphPlanMemory(main_func);
+    //
+    // We need to unfortunately re-plan as the previous results have been invalidated by lowering
+    // we will fix this in future refactors.
+    memory_plan_ = GraphPlanMemory(main_func);
+
+    // The graph planner also can not handle planning calls to global variables to we must remap
 
     // First we convert all the parameters into input nodes.
     for (auto param : main_func->params) {
@@ -370,20 +380,17 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
    */
   std::vector<GraphNodeRef> AddNode(GraphObjectPtr node, Expr expr) {
     auto checked_type = expr->checked_type();
-    size_t count = storage_device_map_.count(expr);
-    ICHECK_GT(count, 0) << "Expr is not existing in storage plan";
-    auto storage_device_info = storage_device_map_[expr];
-    ICHECK_EQ(storage_device_info.size(), 3);
+    auto storage_info = GetStorageInfo(expr);
     // storage
-    std::vector<int64_t> storage_info;
-    for (auto& v : storage_device_info[0]) {
-      storage_info.push_back(v->value);
+    std::vector<int64_t> storage_ids;
+    for (auto v : storage_info->storage_ids) {
+      storage_ids.push_back(v);
     }
-    node->attrs_["storage_id"] = std::move(storage_info);
+    node->attrs_["storage_id"] = std::move(storage_ids);
     // type
     std::vector<int64_t> device_types;
-    for (auto& v : storage_device_info[1]) {
-      device_types.push_back(v->value);
+    for (auto v : storage_info->device_types) {
+      device_types.push_back(static_cast<int64_t>(v));
     }
     size_t num_unknown_devices = std::count(device_types.begin(), device_types.end(), 0);
     if (num_unknown_devices != 0 && num_unknown_devices != device_types.size()) {
@@ -443,7 +450,7 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     auto node = GraphInputNode::make_node_ptr(name, GraphAttrs());
     auto to_return = AddNode(node, expr);
     CHECK_EQ(to_return.size(), 1) << "Expected exactly 1 parameter node created";
-    param_storage_ids_[name] = storage_device_map_[expr][0][0]->value;
+    param_storage_ids_[name] = GetStorageInfo(expr)->storage_ids[0];
     params_[name] = op->data;
     return to_return;
   }
@@ -627,7 +634,7 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
   std::unordered_map<std::string, runtime::NDArray> params_;
   std::unordered_map<std::string, int64_t> param_storage_ids_;
   /*! \brief plan memory of device result */
-  Map<Expr, Array<IntegerArray>> storage_device_map_;
+  StaticMemoryPlan memory_plan_;
   /*! \brief lowered funcs */
   std::unordered_map<std::string, IRModule> lowered_funcs_;
   /*! \brief lowered funcs */

@@ -130,17 +130,16 @@ def test_plan_memory():
     mod = relay.transform.FuseOps(0)(mod)
     func = mod["main"]
     mod = relay.transform.InferType()(mod)
-    smap = relay.backend._backend.GraphPlanMemory(func)
+    memory_plan = relay.backend._backend.GraphPlanMemory(func)
     storage_ids = set()
     device_types = set()
-    storage_sizes = {}
-    for k, v in smap.items():
-        assert len(v) == 3
-        for x in v[0]:
-            storage_ids.add(x.value)
-            storage_sizes[x.value] = v[2]
-        for x in v[1]:
-            device_types.add(x.value)
+
+    for k, v in memory_plan.expr_to_storage_info.items():
+        import pdb; pdb.set_trace()
+        for x in v.storage_ids:
+            storage_ids.add(x)
+        for x in v.device_types:
+            device_types.add(x)
 
     # Current rule requires vars have unique storage id
     # because we don't do inplace, we will need another

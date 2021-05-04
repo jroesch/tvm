@@ -34,18 +34,22 @@ namespace tvm {
 namespace relay {
 
 namespace backend {
-  StorageInfo::StorageInfo(std::vector<int64_t> storage_ids, std::vector<DLDeviceType> device_ids) {
+  StorageInfo::StorageInfo(std::vector<int64_t> storage_ids, std::vector<DLDeviceType> device_types) {
     auto n = make_object<StorageInfoNode>();
     n->storage_ids = std::move(storage_ids);
-    n->device_ids = std::move(device_ids);
+    n->device_types = std::move(device_types);
     data_ = std::move(n);
   }
+
+  TVM_REGISTER_NODE_TYPE(StorageInfoNode);
 
   StaticMemoryPlan::StaticMemoryPlan(Map<Expr, StorageInfo> expr_to_storage_info) {
     auto n = make_object<StaticMemoryPlanNode>();
     n->expr_to_storage_info = std::move(expr_to_storage_info);
     data_ = std::move(n);
   }
+
+  TVM_REGISTER_NODE_TYPE(StaticMemoryPlanNode);
 } // namespace backend
 
 using backend::StorageInfo;

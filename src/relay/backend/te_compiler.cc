@@ -261,14 +261,17 @@ TECompiler::TECompiler() {
   data_ = object;
 }
 
+using AnalysisRemapping = std::unordered_map<Expr, Expr, ObjectHash, ObjectEqual>;
+
 class LowerTensorExpr : public ExprMutator {
  public:
   LowerTensorExpr(const IRModule& module, const TargetMap& targets, const DeviceMap& device_ctx_map,
-                  ProcessFn process_fn, TECompiler compiler)
+                  ProcessFn process_fn, AnalysisRemapping* prim_fn_to_call, TECompiler compiler)
       : module_(module),
         targets_(targets),
         device_context_map_(device_ctx_map),
         process_fn(process_fn),
+        prim_fn_to_call(prim_fn_to_call),
         compiler_(compiler) {}
 
   // bool ShareSameStorage(const Expr& lhs, const Expr& rhs) {
@@ -313,7 +316,9 @@ class LowerTensorExpr : public ExprMutator {
       CachedFunc ext_func = compiler_->Lower(key);
       ICHECK(ext_func.defined()) << "Lowering returned undefined function for "
                                  << ext_func->prim_fn_var->name_hint;
-      return Call(ext_func->prim_fn_var, args, {});
+      auto ret_call = Call(ext_func->prim_fn_var, args, {});
+      (*prim_fn_to_call)[func] = ret_call;
+      return std::move(ret_call);
     }
 
     ICHECK_GE(device_context_map_.count(expr), 0)
@@ -363,13 +368,16 @@ class LowerTensorExpr : public ExprMutator {
     CCacheKey key = CCacheKey(func, target);
     CachedFunc lowered_func = compiler_->Lower(key);
 
-    return Call(lowered_func->prim_fn_var, args, Attrs());
+    Expr ret_call = Call(lowered_func->prim_fn_var, args, Attrs());
+    (*prim_fn_to_call)[func] = ret_call;
+    return ret_call;
   }
 
   IRModule module_;
   TargetMap targets_;
   DeviceMap device_context_map_;
   ProcessFn process_fn;
+  AnalysisRemapping* prim_fn_to_call;
   TECompiler compiler_;
 };
 
@@ -377,9 +385,11 @@ LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap devic
                       std::function<void(Function)> process_fn) {
   TECompiler compiler;
 
+  AnalysisRemapping* prim_fn_to_call_map = new AnalysisRemapping;
+
   auto pass = CreateFunctionPass(
       [=](Function func, IRModule module, PassContext ctx) {
-        LowerTensorExpr lower_te(module, targets, device_context_map, process_fn, compiler);
+        LowerTensorExpr lower_te(module, targets, device_context_map, process_fn, prim_fn_to_call_map, compiler);
         return Downcast<Function>(lower_te.VisitExpr(func));
       },
       0, "LowerTensorExpr", {});
@@ -390,6 +400,8 @@ LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap devic
   lowered_module.main_module = updated_module;
   lowered_module.per_target_module = compiler->GetLoweredFunctions();
   lowered_module.external_mods = compiler->LowerExternalFunctions();
+  lowered_module.prim_fn_to_call_map = Map<Expr, Expr>(prim_fn_to_call_map->begin(), prim_fn_to_call_map->end());
+  delete prim_fn_to_call_map;
   return lowered_module;
 }
 

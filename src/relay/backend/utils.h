@@ -98,9 +98,10 @@ class StorageInfoNode : public Object {
   /*! \brief The set of storage ids where the expression is stored. */
   std::vector<int64_t> storage_ids;
   /* \brief The type of "virtual devices" these expressions are stored on. */
-  std::vector<DLDeviceType> device_ids;
+  std::vector<DLDeviceType> device_types;
 
-  void VisitAttrs(AttrVisitor*) {}
+  // TODO(@jroesch): expose the fields
+  void VisitAttrs(AttrVisitor* v) {}
 
   static constexpr const char* _type_key = "relay.StorageInfo";
   TVM_DECLARE_FINAL_OBJECT_INFO(StorageInfoNode, Object);
@@ -109,7 +110,7 @@ class StorageInfoNode : public Object {
 /*! \brief The storage information for a single expression. */
 class StorageInfo : public ObjectRef {
  public:
-  StorageInfo(std::vector<int64_t> storage_ids, std::vector<DLDeviceType> device_ids);
+  StorageInfo(std::vector<int64_t> storage_ids, std::vector<DLDeviceType> device_types);
   TVM_DEFINE_OBJECT_REF_METHODS(StorageInfo, ObjectRef, StorageInfoNode);
 };
 
