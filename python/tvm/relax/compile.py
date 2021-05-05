@@ -51,25 +51,40 @@ class Specializer(ExprMutator):
     def specialize(self, function, shape_info):
         import pdb; pdb.set_trace()
 
-def type_to_shape(ty):
+def type_to_shape(diag_cx, ty):
     if isinstance(ty.shape, _expr.Tuple):
         sh = []
         for elem in ty.shape.elements:
             sh.append(elem.expr.value)
         return sh
     else:
-        raise Exception("not tuple")
+        diag_cx.emit('error', f"unspecified rank, and/or dimensions on tensor type found: {ty.shape}", ty.span)
+        diag_cx.render()
+
+def inline_tir(args, lowered_func):
+    buffer_keys, buffer_values = zip(*lowered_func.buffer_map.items())
+    buffer_values = [buffer.data for buffer in buffer_values]
+    sub_vars = [buffer.data for buffer in args]
+    subs = {}
+    for value, sub_var in zip(buffer_values, sub_vars):
+        subs[value] = sub_var
+    kernel_impl = lowered_func.body
+    kernel_impl = substitute(kernel_impl, subs)
+    return kernel_impl
 
 class Compiler:
-    def __init__(self, module, main):
+    def __init__(self, diag_cx, module, main):
+        self.diag_cx = diag_cx
         self.module = module
         self.main = main
         self.ir_module = IRModule({})
 
     def compile(self, execute=False):
-        main_fn = self.module[self.main]
-        lowered_func = self.compile_func(main_fn)
-        self.ir_module.update(lowered_func)
+        for fn_name in self.module:
+            func = self.module[fn_name]
+            lowered_func = self.compile_func(func)
+            self.ir_module.update(lowered_func)
+
         if execute:
             print(self.ir_module)
             return tvm.build(self.ir_module, target="llvm", name='tf')
@@ -93,7 +108,7 @@ class Compiler:
                 input_sh2 = irb.allocate("int32", (rank,), name="B", scope="local")
                 input_sh1[0] = 10
                 input_sh2[0] = 10
-                out_sh = irb.allocate("int32", (rank,), name="B", scope="local")
+                out_sh = irb.allocate("int32", (rank,), name="C", scope="local")
                 # irb.emit(tir.call_packed("relax.broadcast_shape", input_sh1, input_sh2))
                 irb.emit(tir.call_packed(
                 "relax.binary_broadcast_shape_fn",
@@ -109,15 +124,8 @@ class Compiler:
                 compute_output = tvm.te.compute(output_shape, lambda i: x[i] + y[i])
                 schedule = tvm.te.create_schedule([compute_output.op])
                 lowered = tvm.lower(schedule, [x, y, compute_output], simple_mode=False)
-                # params = lowered["main"].params
-                buffer_keys, buffer_values = zip(*lowered["main"].buffer_map.items())
-                buffer_values = [buffer.data for buffer in buffer_values]
-                params = buffer_values
-                sub_vars = [buffer.data for buffer in inputs]
-                sub_map = { params[0]: sub_vars[0], params[1]: sub_vars[1], params[2]: outputs[0].data }
-                kernel_impl = lowered["main"].body
-                kernel_impl = substitute(kernel_impl, sub_map)
-                irb.emit(kernel_impl)
+                kernel_body = inline_tir(inputs + outputs, lowered["main"])
+                irb.emit(kernel_body)
                 # TOOD(@jroesch): improve TIR code generator
                 # gv = tvm.relay.GlobalVar("my_compute")
                 # compiler.ir_module[gv] = lowered["main"]
@@ -143,7 +151,7 @@ class Compiler:
         for param in func.params:
             name = param.id.name_hint
 
-            shape = type_to_shape(param.ty)
+            shape = type_to_shape(self.diag_cx, param.ty)
 
             if param.ty.dtype is None:
                 dtype = "float32"

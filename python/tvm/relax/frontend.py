@@ -1,16 +1,21 @@
 from __future__ import annotations
+
+import inspect
+from typing import TypeVar, Generic, Union
+from io import StringIO
+
 import tvm
 from tvm.relay.base import Id
 from tvm.relax import expr
+from tvm.ir import diagnostics
 from tvm import tir
+
 import numpy as np
+
 import synr
-
-from typing import TypeVar, Generic, Union
-
 from synr import ast, Transformer
 from synr.diagnostic_context import DiagnosticContext
-from io import StringIO
+
 from .compile import Compiler
 
 def print_ty(ty):
@@ -35,10 +40,18 @@ def print_fn(func):
 expr.Function.__str__ = print_fn
 
 class R2Transformer(Transformer):
-    def __init__(self):
+    def __init__(self, definition_scope, diag_ctx):
+        self.definition_scope = definition_scope
+        self.diag_ctx = diag_ctx
         self.str_to_var = {}
         self.blocks = []
+        self.module = {}
         super().__init__()
+
+    def span_to_span(self, span):
+        src_name = self.diag_ctx.str_to_source_name[span.filename]
+        tvm_span = tvm.ir.Span(src_name, span.start_line, span.end_line, span.start_column, span.end_column)
+        return tvm_span
 
     def decl_var(self, name, ty, span=None):
         identifier = Id(name)
@@ -52,7 +65,8 @@ class R2Transformer(Transformer):
 
         if isinstance(ty, ast.TypeVar):
             if ty.id.name == "Tensor":
-                return expr.Tensor(None, None, None)
+                span = self.span_to_span(ty.span)
+                return expr.Tensor(None, None, span)
 
         if isinstance(ty, ast.TypeApply):
             if ty.id.name == "Tensor":
@@ -62,6 +76,7 @@ class R2Transformer(Transformer):
                     if isinstance(param, ast.TypeConstant):
                         dim = expr.TIRExpr(tir.IntImm("int32", param.value), None)
                         dims.append(dim)
+
                 return expr.Tensor(expr.Tuple(dims, span=None), None, None)
 
         import pdb; pdb.set_trace()
@@ -71,11 +86,10 @@ class R2Transformer(Transformer):
         self._diagnostic_context.render()
 
     def transform_module(self, mod: ast.Module) -> M:
-        module = {}
         for func_name in mod.funcs:
             func = mod.funcs[func_name]
-            module[func_name] = self.transform_function(func)
-        return module
+            self.module[func_name] = self.transform_function(func)
+        return self.module
 
     def transform_function(self, func: ast.Function) -> F:
         params = []
@@ -120,6 +134,9 @@ class R2Transformer(Transformer):
                     if exp.func_name.id.name in self.str_to_var:
                         return self.str_to_var[exp.func_name.id.name]
                     else:
+                        name = exp.func_name.id.name
+                        relax_fn = getattr(self.definition_scope, name)
+                        self.module[name] = relax_fn.module[name]
                         # todo: globalvar equality? use global str -> id map?
                         ident = Id(exp.func_name.id.name)
                         return expr.Call(expr.GlobalVar(ident, None, None), params, None)
@@ -187,33 +204,64 @@ class R2Transformer(Transformer):
     def transform_type(self, ty: ast.Type) -> T:
         pass
 
+class TVMDiagnosticContext(synr.DiagnosticContext):
+    def __init__(self, tvm_diag_ctx):
+        self.tvm_diag_ctx = tvm_diag_ctx
+        self.str_to_source_name = {}
+
+    def add_source(self, name: str, source: str) -> None:
+        """Add a file with source code to the context. This will be called
+        before any call to :py:func:`emit` that contains a span in this
+        file.
+        """
+        src_name = self.tvm_diag_ctx.module.source_map.add(name, source)
+        self.str_to_source_name[name] = src_name
+
+    def emit(self, level: str, message: str, span: Span) -> None:
+        """Called when an error has occured."""
+
+        if level == "error":
+            level = diagnostics.DiagnosticLevel.ERROR
+        elif level == "bug":
+            level = diagnostics.DiagnosticLevel.BUG
+        elif level == "warning":
+            level = diagnostics.DiagnosticLevel.WARNING
+        else:
+            level = "error"
+
+        assert span, "Span must not be null"
+
+        diag = diagnostics.Diagnostic(level, span, message)
+
+        self.tvm_diag_ctx.emit(diag)
+
+    def render(self) -> Optional[Any]:
+        """Render out all error messages. Can either return a value or raise
+        and execption.
+        """
+        self.tvm_diag_ctx.render()
+
 class RelaxDecoratedFn:
-    def __init__(self, fn_ast):
-        self.fn_ast = fn_ast
+    def __init__(self, fn_name, relax_module, diag_ctx):
+        self.fn_name = fn_name
+        self.module = relax_module
+        self.diag_ctx = diag_ctx
 
     def __call__(self, *args):
-        compiler = Compiler(self, f.__name__)
+        compiler = Compiler(self.diag_ctx, self.module, self.fn_name)
         compiled_f = compiler.compile(execute=True)
         # Actually compute needed buffer sizes.
         out = tvm.nd.array(np.random.rand(10).astype('float32'))
         import pdb; pdb.set_trace()
-        compiled_f(*(list(inputs) + [out]))
+        compiled_f(*(list(args) + [out]))
         return out
 
-GLOBAL_MODULE = {}
-
-def add_to_global_module(new_fns):
-    global GLOBAL_MODULE
-    for fn_name in new_fns:
-        if fn_name in GLOBAL_MODULE:
-            raise Exception(f"duplicate name {fn_name}")
-        else:
-            GLOBAL_MODULE[fn_name] = new_fns[fn_name]
-
-
 def r2(f):
-    diag_cx = synr.PrinterDiagnosticContext()
-    ast = synr.to_ast(f, diag_cx)
-    module = R2Transformer().do_transform(ast, diag_cx)
-    import pdb; pdb.set_trace()
-    # add_to_global_module(module)
+    ir_module = tvm.IRModule({})
+    diag_ctx = diagnostics.DiagnosticContext(ir_module, diagnostics.get_renderer())
+    diag_ctx = TVMDiagnosticContext(diag_ctx)
+    ast = synr.to_ast(f, diag_ctx)
+    definition_scope = inspect.getmodule(f)
+    # Why have diag context at transform time? TK?
+    module = R2Transformer(definition_scope, diag_ctx).do_transform(ast, diag_ctx)
+    return RelaxDecoratedFn(f.__name__, module, diag_ctx)

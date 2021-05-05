@@ -144,7 +144,29 @@ in_ns(["relax", "expr"], [], [
             ObjectField("dtype", "Optional<Expr>")
         ]
     ),
-]))
+]) + in_ns(["relax", "vm"], [], [
+    ObjectDefinition(
+        name="Instruction",
+        fields=[
+            ObjectField("span", "Span")
+        ],
+        final = False,
+    ),
+    ObjectDefinition(
+        name="InvokedPacked",
+        inherits_from="Instruction",
+        fields=[
+            ObjectField()
+        ]
+    ),
+    ObjectDefinition(
+        name="",
+        inherits_from="Instruction",
+        fields=[
+            ObjectField()
+        ]
+    ),
+])
 
 # objectgen.from_python(config,
 # in_ns(["relax", "expr"], [], [
