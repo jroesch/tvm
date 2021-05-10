@@ -258,29 +258,5 @@ TVM_REGISTER_GLOBAL("relay.ir.TempExprRealize").set_body_typed([](TempExpr temp)
 
 TVM_REGISTER_GLOBAL("relay.ir.Any").set_body_typed([]() { return Any(); });
 
-void BinaryBroadcastShapeFn(int lhs_rank, int rhs_rank, int out_rank, void *lhs, void *rhs, void *out) {
-  std::cout << lhs_rank << std::endl;
-  std::cout << rhs_rank << std::endl;
-  std::cout << out_rank << std::endl;
-  int32_t* lhs_int = static_cast<int32_t*>(lhs);
-  int32_t* rhs_int = static_cast<int32_t*>(rhs);
-  int32_t* out_int = static_cast<int32_t*>(out);
-  if (lhs_rank == rhs_rank) {
-    CHECK_EQ(lhs_rank, out_rank);
-    for (int i = 0; i < lhs_rank; i++) {
-      if (lhs_int[i] == rhs_int[i]) {
-        out_int[i] = lhs_int[i];
-      } else {
-        LOG(FATAL) << "fix me " << lhs_int[i] << "\n" << rhs_int[i];
-      }
-    }
-  } else {
-    LOG(FATAL) << "yolo";
-  }
-}
-
-TVM_REGISTER_GLOBAL("relax.binary_broadcast_shape_fn")
-.set_body_typed(BinaryBroadcastShapeFn);
-
 }  // namespace relay
 }  // namespace tvm

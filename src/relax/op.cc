@@ -128,6 +128,11 @@ struct Op2ObjectPtr : public ObjectRef {
   static ObjectPtr<Object> Get(const Op& op) { return GetDataPtr<Object>(op); }
 };
 
+TVM_REGISTER_GLOBAL("relax.op.Register")
+.set_body_typed([](std::string op_name) {
+    ::tvm::relax::OpRegEntry::RegisterOrGet(op_name).set_name();
+});
+
 ObjectPtr<Object> CreateOp(const std::string& name) {
   // Hack use TVMRetValue as exchange
   auto op = Op::Get(name);

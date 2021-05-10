@@ -1,3 +1,6 @@
+from typing import Optional, Union, List
+import attr
+
 import tvm
 from tvm import tir, IRModule
 from tvm.driver.build_module import lower, build
@@ -58,8 +61,9 @@ def type_to_shape(diag_cx, ty):
             sh.append(elem.expr.value)
         return sh
     else:
-        diag_cx.emit('error', f"unspecified rank, and/or dimensions on tensor type found: {ty.shape}", ty.span)
-        diag_cx.render()
+        return None
+        # diag_cx.emit('error', f"unspecified rank, and/or dimensions on tensor type found: {ty.shape}", ty.span)
+        # diag_cx.render()
 
 def inline_tir(args, lowered_func):
     buffer_keys, buffer_values = zip(*lowered_func.buffer_map.items())
@@ -72,6 +76,79 @@ def inline_tir(args, lowered_func):
     kernel_impl = substitute(kernel_impl, subs)
     return kernel_impl
 
+@attr.s(auto_attribs=True)
+class Parameter:
+    data: tvm.tir.Var
+    rank: Union[tvm.tir.Var, int]
+    shape: Optional[List[tvm.tir.Var]]
+
+def create_fn_impl(compiler, inputs, outputs, func):
+    input_shape = (10, )
+    output_shape = (10, )
+    irb = ir_builder.create()
+    # import pdb; pdb.set_trace()
+    # irb_params = []
+    # for param in func.params:
+    #     buffer = tvm.tir.decl_buffer((10,), name=param.id.name_hint, dtype="float32")
+    #     irb_params.append(self.irb.buffer_ptr(buffer)
+    rank = 1
+    input_sh1 = irb.allocate("int32", (rank,), name="A", scope="local")
+    input_sh2 = irb.allocate("int32", (rank,), name="B", scope="local")
+    input_sh1[0] = 10
+    input_sh2[0] = 10
+    out_sh = irb.allocate("int32", (rank,), name="C", scope="local")
+    # irb.emit(tir.call_packed("relax.broadcast_shape", input_sh1, input_sh2))
+    irb.emit(tir.call_packed(
+    "relax.binary_broadcast_shape_fn",
+        rank,
+        rank,
+        rank,
+        input_sh1,
+        input_sh2,
+        out_sh))
+
+    irb.emit(tir.call_packed(
+        "relax.get_rank",
+        inputs[0]))
+
+    x = tvm.te.placeholder(input_shape, name="x")
+    y = tvm.te.placeholder(input_shape, name="y")
+    compute_output = tvm.te.compute(output_shape, lambda i: x[i] + y[i])
+    schedule = tvm.te.create_schedule([compute_output.op])
+    lowered = tvm.lower(schedule, [x, y, compute_output], simple_mode=False)
+    kernel_body = inline_tir(inputs + outputs, lowered["main"])
+    irb.emit(kernel_body)
+    # TOOD(@jroesch): improve TIR code generator
+    # gv = tvm.relay.GlobalVar("my_compute")
+    # compiler.ir_module[gv] = lowered["main"]
+
+    return irb.get()
+
+def mk_dynamic_rank(no_params, compute_rule):
+    fn_params = []
+
+    for i in range(no_params):
+        fn_params.append(tvm.tir.Var(f"param{i}", "handle"))
+
+    tvm.tir.PrimFunc(fn_params, body)
+    import pdb; pdb.set_trace()
+
+def mk_tir_function(compiler, params, func):
+    # import pdb; pdb.set_trace()
+    input_shape = (10, )
+    output_shape = (10, )
+    out = tvm.tir.decl_buffer(output_shape, name="output", dtype="float32")
+    name = func.name
+
+    return tvm.te.extern(
+        [out.shape],
+        params,
+        lambda ins, outs: create_fn_impl(compiler, ins, outs, func),
+        out_buffers=[out],
+        name=name,
+        tag=name,
+    )
+
 class Compiler:
     def __init__(self, diag_cx, module, main):
         self.diag_cx = diag_cx
@@ -83,6 +160,7 @@ class Compiler:
         for fn_name in self.module:
             func = self.module[fn_name]
             lowered_func = self.compile_func(func)
+            print(lowered_func)
             self.ir_module.update(lowered_func)
 
         if execute:
@@ -95,58 +173,6 @@ class Compiler:
         import pdb; pdb.set_trace()
 
     def lower_func(self, func):
-        def mk_tir_function(compiler, params, func):
-            def create_fn_impl(compiler, inputs, outputs, func):
-                irb = ir_builder.create()
-                # import pdb; pdb.set_trace()
-                # irb_params = []
-                # for param in func.params:
-                #     buffer = tvm.tir.decl_buffer((10,), name=param.id.name_hint, dtype="float32")
-                #     irb_params.append(self.irb.buffer_ptr(buffer)
-                rank = 1
-                input_sh1 = irb.allocate("int32", (rank,), name="A", scope="local")
-                input_sh2 = irb.allocate("int32", (rank,), name="B", scope="local")
-                input_sh1[0] = 10
-                input_sh2[0] = 10
-                out_sh = irb.allocate("int32", (rank,), name="C", scope="local")
-                # irb.emit(tir.call_packed("relax.broadcast_shape", input_sh1, input_sh2))
-                irb.emit(tir.call_packed(
-                "relax.binary_broadcast_shape_fn",
-                    rank,
-                    rank,
-                    rank,
-                    input_sh1,
-                    input_sh2,
-                    out_sh))
-
-                x = tvm.te.placeholder(input_shape, name="x")
-                y = tvm.te.placeholder(input_shape, name="y")
-                compute_output = tvm.te.compute(output_shape, lambda i: x[i] + y[i])
-                schedule = tvm.te.create_schedule([compute_output.op])
-                lowered = tvm.lower(schedule, [x, y, compute_output], simple_mode=False)
-                kernel_body = inline_tir(inputs + outputs, lowered["main"])
-                irb.emit(kernel_body)
-                # TOOD(@jroesch): improve TIR code generator
-                # gv = tvm.relay.GlobalVar("my_compute")
-                # compiler.ir_module[gv] = lowered["main"]
-
-                return irb.get()
-
-            input_shape = (10, )
-            output_shape = (10, )
-            out = tvm.tir.decl_buffer(output_shape, name="output", dtype="float32")
-            name = func.name
-
-
-            return tvm.te.extern(
-                [out.shape],
-                params,
-                lambda ins, outs: create_fn_impl(self, ins, outs, func),
-                out_buffers=[out],
-                name=name,
-                tag=name,
-            )
-
         inputs = []
         for param in func.params:
             name = param.id.name_hint
@@ -158,7 +184,13 @@ class Compiler:
             else:
                 raise Exception("invalid datatype")
 
-            inputs.append(tvm.te.placeholder(shape, name=name, dtype=dtype))
+            # Detect passing mode
+            # Dynamic Rank
+            # if shape is None:
+            #     length = tvm.te.var('k')
+            #     data = tvm.te.placeholder(length, name=name, dtype=dtype)
+            # else:
+            inputs.append(tvm.te.placeholder((10,), name=name, dtype=dtype))
 
         outputs = [mk_tir_function(self, inputs, func)]
         schedule = tvm.topi.generic.schedule_extern(outputs)

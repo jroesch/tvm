@@ -21,14 +21,19 @@ import tvm.ir
 from tvm.driver import lower, build
 from tvm.target import get_native_generic_func, GenericFunc
 from tvm.runtime import Object
-from . import _make
+from .. import expr
+from . import _ffi_api
 
-@tvm._ffi.register_object("Op")
-class Op(RelayExpr):
+@tvm._ffi.register_object("relax.Op")
+class Op(expr.Expr):
     """Primitive operator in the IR."""
 
     def __init__(self):
         raise RuntimeError("Cannot create op, use get instead")
+
+    @staticmethod
+    def register(op_name):
+        return _ffi_api.Register(op_name)
 
     @staticmethod
     def get(op_name):
@@ -158,84 +163,84 @@ class OpPattern(object):
     OPAQUE = 8
 
 
-@tvm._ffi.register_object("relay.OpImplementation")
-class OpImplementation(Object):
-    """Operator implementation"""
+# @tvm._ffi.register_object("relax.OpImplementation")
+# class OpImplementation(Object):
+#     """Operator implementation"""
 
-    def compute(self, attrs, inputs, out_type):
-        """Call compute function.
+#     def compute(self, attrs, inputs, out_type):
+#         """Call compute function.
 
-        Parameters
-        ----------
-        attrs : Attrs
-            Op attributes.
+#         Parameters
+#         ----------
+#         attrs : Attrs
+#             Op attributes.
 
-        inputs : list[te.tensor.Tensor]
-            The input tensors.
+#         inputs : list[te.tensor.Tensor]
+#             The input tensors.
 
-        out_type : relay.Type
-            The output type.
+#         out_type : relax.Type
+#             The output type.
 
-        Returns
-        -------
-        outs : list[te.tensor.Tensor]
-            The output tensors.
-        """
-        return _OpImplementationCompute(self, attrs, inputs, out_type)
+#         Returns
+#         -------
+#         outs : list[te.tensor.Tensor]
+#             The output tensors.
+#         """
+#         return _OpImplementationCompute(self, attrs, inputs, out_type)
 
-    def schedule(self, attrs, outs, target):
-        """Call schedule function.
+#     def schedule(self, attrs, outs, target):
+#         """Call schedule function.
 
-        Parameters
-        ----------
-        attrs : Attrs
-            Op attributes.
+#         Parameters
+#         ----------
+#         attrs : Attrs
+#             Op attributes.
 
-        outs : list[te.tensor.Tensor]
-            The output tensors.
+#         outs : list[te.tensor.Tensor]
+#             The output tensors.
 
-        target : tvm.target.Target
-            The target to schedule the op.
+#         target : tvm.target.Target
+#             The target to schedule the op.
 
-        Returns
-        -------
-        schedule : tvm.te.Schedule
-            The schedule.
-        """
-        return _OpImplementationSchedule(self, attrs, outs, target)
-
-
-@tvm._ffi.register_object("relay.OpSpecialization")
-class OpSpecialization(Object):
-    """Operator specialization"""
+#         Returns
+#         -------
+#         schedule : tvm.te.Schedule
+#             The schedule.
+#         """
+#         return _OpImplementationSchedule(self, attrs, outs, target)
 
 
-@tvm._ffi.register_object("relay.OpStrategy")
-class OpStrategy(Object):
-    """Operator strategy"""
+# @tvm._ffi.register_object("relax.OpSpecialization")
+# class OpSpecialization(Object):
+#     """Operator specialization"""
 
-    def __init__(self):
-        self.__init_handle_by_constructor__(_make.OpStrategy)
 
-    def add_implementation(self, compute, schedule, name="default", plevel=10):
-        """Add an implementation to the strategy
+# @tvm._ffi.register_object("relax.OpStrategy")
+# class OpStrategy(Object):
+#     """Operator strategy"""
 
-        Parameters
-        ----------
-        compute : function (attrs: Attrs, inputs: List[Tensor], out_type: Type)
-                           -> List[Tensor]
-            The compute function.
+#     def __init__(self):
+#         self.__init_handle_by_constructor__(_make.OpStrategy)
 
-        schedule : function (attrs: Attrs, outs: List[Tensor], target:Target) -> Schedule
-            The schedule function.
+#     def add_implementation(self, compute, schedule, name="default", plevel=10):
+#         """Add an implementation to the strategy
 
-        name : str
-            The name of implementation.
+#         Parameters
+#         ----------
+#         compute : function (attrs: Attrs, inputs: List[Tensor], out_type: Type)
+#                            -> List[Tensor]
+#             The compute function.
 
-        plevel : int
-            The priority level of implementation.
-        """
-        _OpStrategyAddImplementation(self, compute, schedule, name, plevel)
+#         schedule : function (attrs: Attrs, outs: List[Tensor], target:Target) -> Schedule
+#             The schedule function.
+
+#         name : str
+#             The name of implementation.
+
+#         plevel : int
+#             The priority level of implementation.
+#         """
+#         _OpStrategyAddImplementation(self, compute, schedule, name, plevel)
 
 
 def _wrap_default_fstrategy(compute, schedule, name):

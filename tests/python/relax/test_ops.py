@@ -2,14 +2,16 @@
 from __future__ import annotations
 import tvm
 from tvm.relay.base import Id
+import tvm.relax.op.operators
 from tvm.relax import expr, r2
+
 
 from typing import TypeVar, Generic, Union
 from io import StringIO
 import numpy
 
 @r2
-def add(x: Tensor, y: Tensor) -> Tensor:
+def add_compute(x: Tensor, y: Tensor) -> Tensor:
     out = broadcast_shape(x.shape, y.shape)
     return compute(out, lambda indicies: x[indicies] + y[indicies])
 

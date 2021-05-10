@@ -6,7 +6,7 @@ from io import StringIO
 
 import tvm
 from tvm.relay.base import Id
-from tvm.relax import expr
+from tvm.relax import expr, op
 from tvm.ir import diagnostics
 from tvm import tir
 
@@ -135,11 +135,15 @@ class R2Transformer(Transformer):
                         return self.str_to_var[exp.func_name.id.name]
                     else:
                         name = exp.func_name.id.name
-                        relax_fn = getattr(self.definition_scope, name)
-                        self.module[name] = relax_fn.module[name]
-                        # todo: globalvar equality? use global str -> id map?
-                        ident = Id(exp.func_name.id.name)
-                        return expr.Call(expr.GlobalVar(ident, None, None), params, None)
+                        relax_fn = getattr(self.definition_scope, name, None)
+                        # builtin operator
+                        if relax_fn is None:
+                            return expr.Call(op.Op.get(name), params, None)
+                        else:
+                            self.module[name] = relax_fn.module[name]
+                            # todo: globalvar equality? use global str -> id map?
+                            ident = Id(exp.func_name.id.name)
+                            return expr.Call(expr.GlobalVar(ident, None, None), params, None)
 
                     self._diagnostic_context.emit('error', f"unknown functionc all {len(params)}", exp.span)
                     self._diagnostic_context.render()

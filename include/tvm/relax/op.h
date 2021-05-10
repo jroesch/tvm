@@ -360,9 +360,9 @@ class OpAttrMap : public AttrRegistryMap<Op, ValueType> {
  *
  * \endcode
  */
-#define TVM_REGISTER_OP(OpName)                          \
+#define RELAX_REGISTER_OP(OpName)                          \
   TVM_STR_CONCAT(TVM_OP_REGISTER_VAR_DEF, __COUNTER__) = \
-      ::tvm::OpRegEntry::RegisterOrGet(OpName).set_name()
+      ::tvm::relax::OpRegEntry::RegisterOrGet(OpName).set_name()
 
 // implementations
 inline const OpNode* Op::operator->() const { return static_cast<const OpNode*>(get()); }
