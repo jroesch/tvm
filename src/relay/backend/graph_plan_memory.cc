@@ -34,10 +34,11 @@ namespace tvm {
 namespace relay {
 
 namespace backend {
-  StorageInfo::StorageInfo(std::vector<int64_t> storage_ids, std::vector<DLDeviceType> device_types) {
+  StorageInfo::StorageInfo(std::vector<int64_t> storage_ids, std::vector<DLDeviceType> device_types,  std::vector<int64_t> storage_sizes_in_bytes) {
     auto n = make_object<StorageInfoNode>();
     n->storage_ids = std::move(storage_ids);
     n->device_types = std::move(device_types);
+    n->storage_sizes_in_bytes = std::move(storage_sizes_in_bytes);
     data_ = std::move(n);
   }
 
@@ -233,7 +234,7 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
     for (const auto& kv : token_map_) {
       std::vector<int64_t> storage_ids;
       std::vector<DLDeviceType> device_types;
-      std::vector<Integer> sid_sizes_byte
+      std::vector<int64_t> sid_sizes_byte;
 
       for (StorageToken* tok : kv.second) {
         if (tok->device_type) {
@@ -243,7 +244,7 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
         storage_ids.push_back(tok->storage_id);
         device_types.push_back(static_cast<DLDeviceType>(tok->device_type));
       }
-      auto storage_info = backend::StorageInfo(storage_ids, device_types);
+      auto storage_info = backend::StorageInfo(storage_ids, device_types, sid_sizes_byte);
       smap.Set(GetRef<Expr>(kv.first), storage_info);
     }
     // Either all or none of the nodes should be annotated.

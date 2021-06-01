@@ -189,7 +189,7 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     targets_ = targets;
   }
 
-  /*!
+   /*!
    * \brief Update the "main" control function's metadata
    *
    * \param func The main function that contains calls to relay primitive functions
@@ -273,6 +273,9 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     }
 
     function_metadata_.Set(String(runtime::symbol::tvm_module_main), FunctionInfo(fi_node));
+  }
+
+
   StorageInfo GetStorageInfo(const Expr& e) {
     size_t count = memory_plan_->expr_to_storage_info.count(e);
     ICHECK_GT(count, 0) << "Expr is not existing in storage plan";
@@ -466,8 +469,7 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     return fields;
   }
 
-  std::vector<GraphNodeRef> GraphAddCallNode(const CallNode* op, const std::string& op_name,
-                                             const std::string& func_name, GraphAttrs attrs) {
+  std::vector<GraphNodeRef> GraphAddCallNode(const CallNode* op, const std::string& func_name, GraphAttrs op_attrs) {
     std::vector<GraphNodeRef> inputs;
     for (auto arg : op->args) {
       auto res = VisitExpr(arg);
@@ -475,7 +477,10 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
         inputs.push_back(nr);
       }
     }
-    auto node = GraphOpNode::make_node_ptr(op_name, GraphAttrs(), func_name, inputs, attrs);
+
+    // Compute the operator name, because we used the get unique name when generating the kernel.
+    auto op_name =_GetUniqueName(func_name);
+    auto node = GraphOpNode::make_node_ptr(op_name, GraphAttrs(), func_name, inputs, op_attrs);
     return AddNode(node, GetRef<Expr>(op));
   }
 
@@ -484,8 +489,8 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     if (auto global_node = call->op.as<GlobalVarNode>()) {
       auto prim_fn_name = global_node->name_hint;
 
-
-      return GraphAddCallNode(call_node, _GetUniqueName(prim_fn_name), prim_fn_name);
+      // TODO(@jroesch): attach attributes somehow
+      return GraphAddCallNode(call_node, prim_fn_name, GraphAttrs());
     } else {
       ICHECK(false) << "Non-primitive-call nodes should have been transformed away.\n"
                     << "The graph executor code generator expects all calls to have their callee "

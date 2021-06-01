@@ -330,7 +330,7 @@ class AOTExecutorCodegen : public ExprVisitor {
       fi_node->tir_primfuncs.Set(primfunc_target, primfunc);
       fi_node->relay_primfuncs.Set(primfunc_target, relay_func);
     }
-    function_metadata_.Set(cfunc->func_name, FunctionInfo(fi_node));
+    function_metadata_.Set(cfunc->prim_fn_var->name_hint, FunctionInfo(fi_node));
   }
 
   void VisitExpr_(const CallNode* op) override {
@@ -368,7 +368,7 @@ class AOTExecutorCodegen : public ExprVisitor {
       UpdateConstants(func, &params_);
 
       // Generate the TIR function call
-      CreateFuncCall(GetRef<Call>(op), ext_func->func_name);
+      CreateFuncCall(GetRef<Call>(op), ext_func->prim_fn_var->name_hint);
       return;
     }
 
@@ -403,7 +403,7 @@ class AOTExecutorCodegen : public ExprVisitor {
     UpdateFunctionMetadata(lowered_func, func, target);
 
     // Generate the TIR function call
-    CreateFuncCall(GetRef<Call>(op), lowered_func->func_name);
+    CreateFuncCall(GetRef<Call>(op), lowered_func->prim_fn_var->name_hint);
   }
 
   void VisitExpr_(const VarNode* op) override {

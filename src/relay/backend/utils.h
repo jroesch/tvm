@@ -99,6 +99,8 @@ class StorageInfoNode : public Object {
   std::vector<int64_t> storage_ids;
   /* \brief The type of "virtual devices" these expressions are stored on. */
   std::vector<DLDeviceType> device_types;
+  /* \brief The sizes of each storage element. */
+  std::vector<int64_t> storage_sizes_in_bytes;
 
   // TODO(@jroesch): expose the fields
   void VisitAttrs(AttrVisitor* v) {}
@@ -110,7 +112,7 @@ class StorageInfoNode : public Object {
 /*! \brief The storage information for a single expression. */
 class StorageInfo : public ObjectRef {
  public:
-  StorageInfo(std::vector<int64_t> storage_ids, std::vector<DLDeviceType> device_types);
+  StorageInfo(std::vector<int64_t> storage_ids, std::vector<DLDeviceType> device_types, std::vector<int64_t> storage_sizes_in_bytes);
   TVM_DEFINE_OBJECT_REF_METHODS(StorageInfo, ObjectRef, StorageInfoNode);
 };
 
