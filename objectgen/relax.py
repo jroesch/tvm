@@ -4,10 +4,10 @@ from objectgen import ObjectGenConfig, ObjectDefinition, ObjectField, in_ns
 # from tvm.runtime.object import Object
 
 config = ObjectGenConfig(
-    python_root = Path("./python/tvm/"),
-    cpp_include_root = Path("./include/tvm"),
+    python_root = Path("./python/"),
+    cpp_include_root = Path("./include"),
     cpp_source_root = Path("./src/"),
-    root_namespace = [])
+    root_namespace = ["tvm"])
 
 RegName = "tvm::runtime::vm::RegName"
 Index = "tvm::runtime::vm::Index"
@@ -181,7 +181,8 @@ relax_vm_imports = [
     ["tvm", "relay", "expr"],
     ["tvm", "ir", "expr"],
     ["tvm", "tir", "expr"],
-    ["tvm", "runtime", "vm"],
+    ["tvm", "runtime", "vm", "vm"],
+    ["tvm", "runtime", "vm", "bytecode"],
 ]
 
 relax_vm = in_ns(["relax", "vm"], relax_vm_imports, [
@@ -199,7 +200,7 @@ relax_vm = in_ns(["relax", "vm"], relax_vm_imports, [
             ObjectField("storage", RegName),
             ObjectField("offset", Index),
             ObjectField("shape_register", RegName),
-            ObjectField("dtype", "DLDataType")
+            # ObjectField("dtype", "DLDataType")
         ]
     ),
 ])

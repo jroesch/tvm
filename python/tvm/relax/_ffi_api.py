@@ -16,5 +16,5 @@
 # specific language governing permissions and limitations
 # under the License.
 from tvm import _ffi
-_ffi._init_api("relax", __name__)
+_ffi._init_api("tvm.relax", __name__)
 
