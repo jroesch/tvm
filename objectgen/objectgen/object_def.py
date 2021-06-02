@@ -14,6 +14,7 @@ Type = str
 class ObjectField:
     field_name: str
     field_type: Type
+    is_binding: bool = False
 
 @attr.s
 class ObjectMethod:

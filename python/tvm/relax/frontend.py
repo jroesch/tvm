@@ -40,9 +40,9 @@ def print_fn(func):
 
 expr.Function.__str__ = print_fn # type: ignore
 
-Module = Dict[str, relax.Function]
-
-class R2Transformer(Transformer[Module, relax.Function, relax.Expr, relax.Expr, relax.Expr, relax.Expr, relax.Type]):
+# Module = Dict[str, relax.Function]
+# Transformer[Module, relax.Function, relax.Expr, relax.Expr, relax.Expr, relax.Expr, relax.Type]):
+class R2Transformer(Transformer): # Transformer[Module, relax.Function, relax.Expr, relax.Expr, relax.Expr, relax.Expr, relax.Type]):
     def __init__(self, definition_scope, diag_ctx):
         self.definition_scope = definition_scope
         self.diag_ctx = diag_ctx
@@ -82,13 +82,13 @@ class R2Transformer(Transformer[Module, relax.Function, relax.Expr, relax.Expr, 
 
                 return expr.Tensor(expr.Tuple(dims, span=None), None, None)
 
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
-
-        self._diagnostic_context.emit('error', "invalid type", ty.span)
+        self._diagnostic_context.emit('error', "invalid type", self.span_to_span(ty.span))
         self._diagnostic_context.render()
 
     def transform_module(self, mod: ast.Module) -> Dict[str, relax.Function]:
+        print(mod)
         for func_name in mod.funcs:
             func = mod.funcs[func_name]
             self.module[func_name] = self.transform_function(func)
@@ -101,7 +101,9 @@ class R2Transformer(Transformer[Module, relax.Function, relax.Expr, relax.Expr, 
             param = self.decl_var(param.name, ty, None)
             params.append(param)
         new_body = self.transform_block(func.body)
-        return expr.Function(func.name, params, new_body, None, None)
+        ret_type = self.to_type(func.ret_type)
+        print(new_body)
+        return expr.Function(func.name, params, new_body, ret_type, None)
 
     def transform_stmt(self, stmt: ast.Stmt) -> relax.Expr:
         if isinstance(stmt, ast.Assign):
