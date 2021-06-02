@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import inspect
-from typing import TypeVar, Generic, Union
+from typing import TypeVar, Generic, Union, Dict
 from io import StringIO
 
 import tvm
 from tvm.relay.base import Id
 from tvm.relax import expr, op
 from tvm.ir import diagnostics
-from tvm import tir
+from tvm import tir, relax
 
 import numpy as np
 
@@ -37,9 +37,12 @@ def print_fn(func):
     buffer.write("}")
     return buffer.getvalue()
 
-expr.Function.__str__ = print_fn
 
-class R2Transformer(Transformer):
+expr.Function.__str__ = print_fn # type: ignore
+
+Module = Dict[str, relax.Function]
+
+class R2Transformer(Transformer[Module, relax.Function, relax.Expr, relax.Expr, relax.Expr, relax.Expr, relax.Type]):
     def __init__(self, definition_scope, diag_ctx):
         self.definition_scope = definition_scope
         self.diag_ctx = diag_ctx
@@ -85,13 +88,13 @@ class R2Transformer(Transformer):
         self._diagnostic_context.emit('error', "invalid type", ty.span)
         self._diagnostic_context.render()
 
-    def transform_module(self, mod: ast.Module) -> M:
+    def transform_module(self, mod: ast.Module) -> Dict[str, relax.Function]:
         for func_name in mod.funcs:
             func = mod.funcs[func_name]
             self.module[func_name] = self.transform_function(func)
         return self.module
 
-    def transform_function(self, func: ast.Function) -> F:
+    def transform_function(self, func: ast.Function) -> relax.Function:
         params = []
         for param in func.params:
             ty = self.to_type(param.ty)
@@ -100,7 +103,7 @@ class R2Transformer(Transformer):
         new_body = self.transform_block(func.body)
         return expr.Function(func.name, params, new_body, None, None)
 
-    def transform_stmt(self, stmt: ast.Stmt) -> S:
+    def transform_stmt(self, stmt: ast.Stmt) -> relax.Expr:
         if isinstance(stmt, ast.Assign):
             assert isinstance(stmt.lhs, ast.Var)
             lhs = self.decl_var(stmt.lhs.id.name, None, None)
@@ -113,7 +116,7 @@ class R2Transformer(Transformer):
             self._diagnostic_context.emit('error', "only variable left-hand sides are supported in Relay", stmt.span)
             self._diagnostic_context.render()
 
-    def transform_expr(self, exp: ast.Expr) -> E:
+    def transform_expr(self, exp: ast.Expr) -> relax.Expr:
         if isinstance(exp, ast.Call):
             if isinstance(exp.func_name, ast.Var):
                 params = []
@@ -190,7 +193,7 @@ class R2Transformer(Transformer):
         self.blocks.pop()
         return back
 
-    def transform_block(self, block: ast.Block) -> B:
+    def transform_block(self, block: ast.Block) -> relax.expr:
         self.enter_block()
 
         for stmt in block.stmts[:-1]:
@@ -202,10 +205,10 @@ class R2Transformer(Transformer):
         bindings = self.exit_block()
         return expr.Let(bindings, ret_expr, span=None)
 
-    def transform_parameter(self, expr: ast.Parameter) -> P:
+    def transform_parameter(self, expr: ast.Parameter) -> relax.Expr:
         pass
 
-    def transform_type(self, ty: ast.Type) -> T:
+    def transform_type(self, ty: ast.Type) -> relax.Type:
         pass
 
 class TVMDiagnosticContext(synr.DiagnosticContext):
