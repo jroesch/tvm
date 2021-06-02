@@ -140,6 +140,8 @@ format:
 	black .
 	cd rust; which cargo && cargo fmt --all; cd ..
 
+mypy-check:
+	mypy python
 
 # clean rule
 clean:

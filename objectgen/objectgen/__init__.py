@@ -23,6 +23,7 @@ specific language governing permissions and limitations
 under the License.
 """
 
+Namespace = List[str]
 Type = str
 
 # TODO:
@@ -45,8 +46,8 @@ class ObjectDefinition:
     fields: List[ObjectField]
     methods: List[ObjectMethod] = []
     inherits_from: str = "ObjectRef"
-    namespace: List[str] = []
-    imports: List[List[str]] = []
+    namespace: Namespace = []
+    imports: List[Namespace] = []
     final: bool = True
     docs: str = ""
 
@@ -181,21 +182,16 @@ class CPPGenerator(Generator):
         header_buf.write(f"#ifndef {header_value}\n")
         header_buf.write(f"#define {header_value}\n")
 
-        includes = [
-            "<tvm/ir/span.h>",
-            "<tvm/ir/type.h>",
-            "<tvm/node/node.h>",
-            "<tvm/runtime/container.h>",
-            "<tvm/runtime/object.h>",
-            "<tvm/relay/expr.h>",
-            "<tvm/ir/expr.h>",
-            "<tvm/tir/expr.h>",
-            f"\"{self.header_for(namespace)}\"",
-        ]
+        includes = []
 
         for defn in defs:
             for imp in defn.imports:
-                includes += [f"\"{self.header_for(imp)}\""]
+                header_path = "/".join(imp) + ".h"
+                includes += [f"<{header_path}>"]
+
+        includes += [f"\"{self.header_for(namespace)}\""]
+
+        import pdb; pdb.set_trace()
 
         source_buf.write("\n")
         header_buf.write("\n")

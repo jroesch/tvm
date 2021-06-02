@@ -39,6 +39,13 @@
 namespace tvm {
 namespace relax {
 
+enum OpKind {
+  Native,
+  ExternalCompute,
+  ExternalShape,
+  External,
+};
+
 // forward declare name.
 template <typename>
 class OpAttrMap;
@@ -57,6 +64,9 @@ class OpAttrMap;
  */
 class OpNode : public expr::ExprNode {
  public:
+  /*! \brief The kind of operator. */
+  OpKind kind;
+
   /*! \brief name of the operator */
   String name;
 
@@ -67,38 +77,11 @@ class OpNode : public expr::ExprNode {
    *  This can be used to generate docstring automatically for the operator.
    */
   String description;
-  /* \brief Information of input arguments to the operator */
-  Array<AttrFieldInfo> arguments;
-  /*!
-   * \brief The type key of the attribute field
-   *  This can be empty, in which case it defaults to anything.
-   */
-  String attrs_type_key;
-  /*!
-   * \brief attribute type index,
-   * this field varies in each run and is not exposed to frontend.
-   */
-  uint32_t attrs_type_index{0};
-  /*!
-   * \brief number of input arguments to the operator,
-   * -1 means it is variable length
-   */
-  int32_t num_inputs = -1;
-  /*!
-   * \brief support level of the operator,
-   *  The lower the more priority it contains.
-   *  This is in analogies to BLAS levels.
-   */
-  int32_t support_level = 10;
 
   void VisitAttrs(AttrVisitor* v) {
     v->Visit("name", &name);
     v->Visit("op_type", &op_type);
     v->Visit("description", &description);
-    v->Visit("arguments", &arguments);
-    v->Visit("attrs_type_key", &attrs_type_key);
-    v->Visit("num_inputs", &num_inputs);
-    v->Visit("support_level", &support_level);
   }
 
   bool SEqualReduce(const OpNode* other, SEqualReducer equal) const {
@@ -376,87 +359,6 @@ inline OpNode* OpRegEntry::get() { return const_cast<OpNode*>(op_.operator->());
 
 inline OpRegEntry& OpRegEntry::describe(const std::string& descr) {  // NOLINT(*)
   get()->description = descr;
-  return *this;
-}
-
-inline OpRegEntry& OpRegEntry::add_argument(const std::string& name, const std::string& type,
-                                            const std::string& description) {
-  auto n = make_object<AttrFieldInfoNode>();
-  n->name = name;
-  n->type_info = type;
-  n->description = description;
-  get()->arguments.push_back(AttrFieldInfo(n));
-  return *this;
-}
-
-inline OpRegEntry& OpRegEntry::add_type_rel(
-    const std::string& rel_name,
-    runtime::TypedPackedFunc<bool(const Array<Type>&, int, const Attrs&, const TypeReporter&)>
-        type_rel_func) {
-  auto func_name = std::string("tvm.relay.type_relation.") + rel_name;
-  TypeRelationFn env_type_rel_func;
-
-  if (runtime::Registry::Get(func_name)) {
-    auto env_func = EnvFunc::Get(func_name);
-    env_type_rel_func = env_func;
-  } else {
-    runtime::Registry::Register(func_name).set_body(type_rel_func.packed());
-    auto env_func = EnvFunc::Get(func_name);
-    env_type_rel_func = env_func;
-  }
-
-  Array<TypeVar> type_params;
-  Array<Type> arg_types;
-
-  // Add inputs.
-  std::string input_name_prefix = "in";
-  for (int i = 0; i < get()->num_inputs; i++) {
-    auto name = input_name_prefix + std::to_string(i);
-    auto param = TypeVar(name, TypeKind::kType);
-    type_params.push_back(param);
-    arg_types.push_back(param);
-  }
-
-  Array<Type> ty_call_args = arg_types;
-
-  // Add output type.
-  auto out_param = TypeVar("out", TypeKind::kType);
-  type_params.push_back(out_param);
-  // this will trigger copy on write.
-  ty_call_args.push_back(out_param);
-
-  // The attributes of primitive op is nullptr
-  //
-  // The attributes of primitive operator can vary at the call site.
-  // The type of sum is also dependent on Attrs being passed.
-  // So puting nullptr in the Attrs means that the operator is polymorphic on Attrs.
-  //
-  // A common example is sum(x, axis), where the choice of axis
-  // can affect the type of the function.
-  TypeConstraint type_rel =
-      TypeRelation(env_type_rel_func, ty_call_args, arg_types.size(), Attrs());
-
-  auto func_type = FuncType(arg_types, out_param, type_params, {type_rel});
-
-  get()->op_type = func_type;
-
-  return *this;
-}
-
-inline OpRegEntry& OpRegEntry::set_num_inputs(int32_t n) {  // NOLINT(*)
-  get()->num_inputs = n;
-  return *this;
-}
-
-template <typename AttrsType>
-inline OpRegEntry& OpRegEntry::set_attrs_type() {  // NOLINT(*)
-  get()->attrs_type_key = AttrsType::_type_key;
-  get()->attrs_type_index = AttrsType::RuntimeTypeIndex();
-  return *this;
-}
-
-inline OpRegEntry& OpRegEntry::set_support_level(int32_t n) {  // NOLINT(*)
-  get()->support_level = n;
   return *this;
 }
 

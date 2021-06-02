@@ -1,6 +1,7 @@
 from pathlib import Path
 import objectgen
 from objectgen import ObjectGenConfig, ObjectDefinition, ObjectField, in_ns
+# from tvm.runtime.object import Object
 
 config = ObjectGenConfig(
     python_root = Path("./python/tvm/"),
@@ -11,8 +12,17 @@ config = ObjectGenConfig(
 RegName = "tvm::runtime::vm::RegName"
 Index = "tvm::runtime::vm::Index"
 
-objectgen.from_python(config,
-in_ns(["relax", "expr"], [], [
+relax_expr_imports = [
+    ["tvm", "ir", "span"],
+    ["tvm", "node", "node"],
+    ["tvm", "runtime", "container"],
+    ["tvm", "runtime", "object"],
+    ["tvm", "relay", "expr"],
+    ["tvm", "ir", "expr"],
+    ["tvm", "tir", "expr"]
+]
+
+relax_expr = in_ns(["relax", "expr"], relax_expr_imports, [
     ObjectDefinition(
         name="Type",
         fields=[
@@ -42,6 +52,13 @@ in_ns(["relax", "expr"], [], [
             ObjectField("id", "relay::Id"),
             ObjectField("ty", "Optional<Type>"),
         ],
+    ),
+    ObjectDefinition(
+        name="Intrinsic",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("name", "runtime::String"),
+        ]
     ),
     ObjectDefinition(
         name="Binding",
@@ -130,6 +147,13 @@ in_ns(["relax", "expr"], [], [
         ]
     ),
     ObjectDefinition(
+        name="RelayPrimFn",
+        inherits_from="Expr",
+        fields=[
+            ObjectField("elements", "relay::Expr"),
+        ]
+    ),
+    ObjectDefinition(
         name="Dim",
         inherits_from="Type",
         fields=[],
@@ -147,7 +171,20 @@ in_ns(["relax", "expr"], [], [
             ObjectField("dtype", "Optional<Expr>")
         ]
     ),
-]) + in_ns(["relax", "vm"], [], [
+])
+
+relax_vm_imports = [
+    ["tvm", "ir", "span"],
+    ["tvm", "node", "node"],
+    ["tvm", "runtime", "container"],
+    ["tvm", "runtime", "object"],
+    ["tvm", "relay", "expr"],
+    ["tvm", "ir", "expr"],
+    ["tvm", "tir", "expr"],
+    ["tvm", "runtime", "vm"],
+]
+
+relax_vm = in_ns(["relax", "vm"], relax_vm_imports, [
     ObjectDefinition(
         name="Instruction",
         fields=[
@@ -167,6 +204,7 @@ in_ns(["relax", "expr"], [], [
     ),
 ])
 
+objectgen.from_python(config, relax_expr + relax_vm)
 
 # struct Instruction {
 #   /*! \brief The instruction opcode. */

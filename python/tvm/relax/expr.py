@@ -44,6 +44,12 @@ class GlobalVar(Expr):
         self.__init_handle_by_constructor__(_ffi_api.GlobalVar,  id,  ty,  span)
 
 
+@tvm._ffi.register_object("relax.expr.Intrinsic")
+class Intrinsic(Expr):
+    def __init__(self, name, span):
+        self.__init_handle_by_constructor__(_ffi_api.Intrinsic,  name,  span)
+
+
 @tvm._ffi.register_object("relax.expr.Binding")
 class Binding(ObjectRef):
     def __init__(self, var, val):
@@ -108,6 +114,12 @@ class TIRExpr(Expr):
 class Tuple(Expr):
     def __init__(self, elements, span):
         self.__init_handle_by_constructor__(_ffi_api.Tuple,  elements,  span)
+
+
+@tvm._ffi.register_object("relax.expr.RelayPrimFn")
+class RelayPrimFn(Expr):
+    def __init__(self, elements, span):
+        self.__init_handle_by_constructor__(_ffi_api.RelayPrimFn,  elements,  span)
 
 
 @tvm._ffi.register_object("relax.expr.Dim")
