@@ -196,7 +196,7 @@ class CPPGenerator(Generator):
                     else:
                         equal_method = "equal"
 
-                    header_buf.write(f" #{equal_method}({field.field_name}, other->{field.field_name})")
+                    header_buf.write(f" {equal_method}({field.field_name}, other->{field.field_name})")
                     if i != len(object_def.fields) - 1:
                         header_buf.write(" && ")
         else:
