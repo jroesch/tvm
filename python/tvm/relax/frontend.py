@@ -15,6 +15,7 @@ import numpy as np
 import synr
 from synr import ast, Transformer
 from synr.diagnostic_context import DiagnosticContext
+from tvm.script.utils import tvm_span_from_synr, synr_span_from_tvm
 
 from .compile import Compiler
 
@@ -51,11 +52,6 @@ class R2Transformer(Transformer): # Transformer[Module, relax.Function, relax.Ex
         self.module = {}
         super().__init__()
 
-    def span_to_span(self, span):
-        src_name = self.diag_ctx.str_to_source_name[span.filename]
-        tvm_span = tvm.ir.Span(src_name, span.start_line, span.end_line, span.start_column, span.end_column)
-        return tvm_span
-
     def decl_var(self, name, ty, span=None):
         identifier = Id(name)
         var = expr.Var(identifier, ty, span)
@@ -68,7 +64,7 @@ class R2Transformer(Transformer): # Transformer[Module, relax.Function, relax.Ex
 
         if isinstance(ty, ast.TypeVar):
             if ty.id.name == "Tensor":
-                span = self.span_to_span(ty.span)
+                span = tvm_span_from_synr(ty.span)
                 return expr.Tensor(None, None, span)
 
         if isinstance(ty, ast.TypeApply):
@@ -84,7 +80,7 @@ class R2Transformer(Transformer): # Transformer[Module, relax.Function, relax.Ex
 
         # import pdb; pdb.set_trace()
 
-        self._diagnostic_context.emit('error', "invalid type", self.span_to_span(ty.span))
+        self._diagnostic_context.emit('error', "invalid type", tvm_span_from_synr(ty.span))
         self._diagnostic_context.render()
 
     def transform_module(self, mod: ast.Module) -> Dict[str, relax.Function]:
@@ -226,7 +222,7 @@ class TVMDiagnosticContext(synr.DiagnosticContext):
         src_name = self.tvm_diag_ctx.module.source_map.add(name, source)
         self.str_to_source_name[name] = src_name
 
-    def emit(self, level: str, message: str, span: Span) -> None:
+    def emit(self, level: str, message: str, span: tvm.ir.Span) -> None:
         """Called when an error has occured."""
 
         if level == "error":
@@ -239,6 +235,7 @@ class TVMDiagnosticContext(synr.DiagnosticContext):
             level = "error"
 
         assert span, "Span must not be null"
+        assert isinstance(span, tvm.ir.span), "Expected tvm.ir.span, but got " + str(type(span))
 
         diag = diagnostics.Diagnostic(level, span, message)
 
