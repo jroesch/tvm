@@ -183,14 +183,14 @@ class CPPGenerator(Generator):
         header_buf.write(f"{4 * ' '}bool SEqualReduce(const {object_def.payload_name()}* other, SEqualReducer equal) const {{\n")
         header_buf.write(f"{8 * ' '}return")
 
-        check_equal_fields = [f for f in object_def.fields if f.check_equality]
+        check_equal_fields = [f for f in object_def.fields if f.use_in_sequal_reduce]
         if len(check_equal_fields):
             has_bindings = any([f.is_binding for f in check_equal_fields])
             if has_bindings:
                 raise Exception("add MarkNodeGraph")
 
             for i, field in enumerate(check_equal_fields):
-                if field.check_equality:  # Whether this field should be included in the structural equality
+                if field.use_in_sequal_reduce:  # Whether this field should be included in the structural equality
                     if has_bindings and field.is_binding:
                         equal_method = "DefEqual"
                     else:

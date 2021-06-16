@@ -15,7 +15,7 @@ class ObjectField:
     field_name: str
     field_type: Type
     is_binding: bool = False
-    check_equality: bool = True
+    use_in_sequal_reduce: bool = True
 
 @attr.s
 class ObjectMethod:

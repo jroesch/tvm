@@ -26,14 +26,14 @@ relax_expr = in_ns(["relax", "expr"], relax_expr_imports, [
     ObjectDefinition(
         name="Type",
         fields=[
-            ObjectField("span", "Span", check_equality=False)
+            ObjectField("span", "Span", use_in_sequal_reduce=False)
         ],
         final = False,
     ),
     ObjectDefinition(
         name="Expr",
         fields=[
-            ObjectField("span", "Span", check_equality=False)
+            ObjectField("span", "Span", use_in_sequal_reduce=False)
         ],
         final = False,
     ),
@@ -87,7 +87,7 @@ relax_expr = in_ns(["relax", "expr"], relax_expr_imports, [
         name="Function",
         inherits_from="Expr",
         fields=[
-            ObjectField("name", "Optional<runtime::String>", check_equality=False),
+            ObjectField("name", "Optional<runtime::String>", use_in_sequal_reduce=False),
             ObjectField("params", "runtime::Array<Var>"),
             ObjectField("body", "Expr"),
             ObjectField("ret_type", "Type"),
@@ -189,7 +189,7 @@ relax_vm = in_ns(["relax", "vm"], relax_vm_imports, [
     ObjectDefinition(
         name="Instruction",
         fields=[
-            ObjectField("span", "Span", check_equality=False)
+            ObjectField("span", "Span", use_in_sequal_reduce=False)
         ],
         final = False,
     ),
