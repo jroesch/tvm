@@ -26,7 +26,39 @@
 //! The TVM object system enables cross-language interoperability including that of closures for all
 //! supported languages including C++, and Python.
 
+// Macro to check the return call to TVM runtime shared library.
+
+#[macro_export]
+macro_rules! tvm_call {
+    ($e:expr) => {{
+        if unsafe { $e } != 0 {
+            Err($crate::get_last_error().into())
+        } else {
+            Ok(())
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! check_call {
+    ($e:expr) => {{
+        if unsafe { $e } != 0 {
+            panic!("{}", $crate::get_last_error());
+        }
+    }};
+}
+
+// Define all sumodules.
+pub mod array;
+pub mod device;
+pub mod errors;
+pub mod function;
+pub mod graph_rt;
+pub mod map;
+pub mod module;
 pub mod object;
+pub mod ndarray;
+mod to_function;
 pub mod string;
 
 pub use object::*;
@@ -52,28 +84,6 @@ use tvm_sys::ffi;
 
 pub use tvm_macros::external;
 
-// Macro to check the return call to TVM runtime shared library.
-
-#[macro_export]
-macro_rules! tvm_call {
-    ($e:expr) => {{
-        if unsafe { $e } != 0 {
-            Err($crate::get_last_error().into())
-        } else {
-            Ok(())
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! check_call {
-    ($e:expr) => {{
-        if unsafe { $e } != 0 {
-            panic!("{}", $crate::get_last_error());
-        }
-    }};
-}
-
 /// Gets the last error message.
 pub fn get_last_error() -> &'static str {
     unsafe {
@@ -91,14 +101,6 @@ pub(crate) fn set_last_error<E: std::error::Error>(err: &E) {
     }
 }
 
-pub mod array;
-pub mod device;
-pub mod errors;
-pub mod function;
-pub mod map;
-pub mod module;
-pub mod ndarray;
-mod to_function;
 
 /// Outputs the current TVM version.
 pub fn version() -> &'static str {

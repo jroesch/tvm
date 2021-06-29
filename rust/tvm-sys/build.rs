@@ -84,8 +84,14 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-changed={}", build_path.display());
     println!("cargo:rerun-if-changed={}/include", source_path.display());
 
+    let library_name = if cfg!(feature = "runtime-only") {
+        "tvm_runtime"
+    } else {
+        "tvm"
+    };
+
     if cfg!(feature = "static-linking") {
-        println!("cargo:rustc-link-lib=static=tvm");
+        println!("cargo:rustc-link-lib=static={}", library_name);
         // TODO(@jroesch): move this to tvm-build as library_path?
         println!(
             "cargo:rustc-link-search=native={}/build",
@@ -94,7 +100,7 @@ fn main() -> Result<()> {
     }
 
     if cfg!(feature = "dynamic-linking") {
-        println!("cargo:rustc-link-lib=dylib=tvm");
+        println!("cargo:rustc-link-lib=dylib={}", library_name);
         println!(
             "cargo:rustc-link-search=native={}/build",
             build_path.display()
