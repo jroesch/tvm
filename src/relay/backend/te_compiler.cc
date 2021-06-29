@@ -452,7 +452,8 @@ backend::FunctionInfo UpdateMainWorkspaceSize(const IRModule& mod, TargetMap tar
   // This is a Map<device, size_of_constants>
   std::unordered_map<DLDeviceType, int, EnumClassHash> device_consts;
 
-  // Initialize the maps to zero
+  // Initialize the mapping from all storage identifiers to workspace sizes,
+  // the amount of device io, and the device constants.
   for (const auto& kv : storage_info_map) {
     backend::StorageInfo storage_info = kv.second;
     std::vector<int64_t> storage_ids = storage_info->storage_ids;
@@ -466,25 +467,34 @@ backend::FunctionInfo UpdateMainWorkspaceSize(const IRModule& mod, TargetMap tar
     }
   }
 
-  // Collect sizes of tensors
-  std::cout << "Trying to loop through storage info map " << std::endl;
+  // Iterate the storage map to compute all the tensor sizes in the program.
+  // There are 3 cases in this code:
+  //
+  // First we need to compute the sizes of all
+  // inline constants.
+  //
+  // Second we compute the size of any bound variable as these are input and output
+  // sizes of the program.
+  //
+  // Finally for all other expressions we check which storage identifier they have
+  // been assigned and we compute the maximal size of the storage, as tensors can
+  // share storage with other tensors which are the same size or larger.
+  //
+  // In this final case there is only one allocation for all tensors which share storage
+  // which will be the maximal size of all tensors which were assigned to it.
   for (const auto& kv : storage_info_map) {
     Expr expr = kv.first;
     int64_t size_bytes = backend::CalculateRelayExprSizeBytes(expr->checked_type());
-    std::cout << "Expression size bytes is: " << size_bytes << std::endl;
-    std::cout << "Expression: " << PrettyPrint(expr) << std::endl;
     backend::StorageInfo storage_info = kv.second;
     std::vector<int64_t> storage_ids = storage_info->storage_ids;
     std::vector<DLDeviceType> devices = storage_info->device_types;
 
     if (expr->IsInstance<ConstantNode>()) {
-      std::cout << "Expr is const" << std::endl;
       for (const auto& dev : devices) {
         device_consts[dev] += size_bytes;
       }
       continue;
     } else if (expr->IsInstance<VarNode>() || expr.same_as(func->body)) {
-      std::cout << "Expr is var or func body" << std::endl;
       CHECK_GE(devices.size(), 1) << "must be at least one device";
       for (const auto& dev : devices) {
         device_io[dev] += size_bytes;
@@ -495,15 +505,11 @@ backend::FunctionInfo UpdateMainWorkspaceSize(const IRModule& mod, TargetMap tar
     // TODO(@electriclilies): This code is never being called which means sid_workspace is not
     // updated.. This means that storage info is probably not being created correctly. Or is not
     // equivalent to what was here previously
-    std::cout << "Looping through storage ids, compare sid to sid workspace thingy" << std::endl;
     for (uint32_t i = 0; i < storage_ids.size(); i++) {
       // Here we record the largest size of the tensor
       // that share the same storage id, because storage_id will
       // be shared between multiple tensors that are not live simultaneously.
-      std::cout << "size_bytes is: " << size_bytes;
-      std::cout << "sid workspace thing is: " << sid_workspace[devices[i]][storage_ids[i]];
       if (size_bytes > sid_workspace[devices[i]][storage_ids[i]]) {
-        std::cout << "UPdated sid workspace to " << size_bytes;
         sid_workspace[devices[i]][storage_ids[i]] = size_bytes;
       }
     }
@@ -516,7 +522,6 @@ backend::FunctionInfo UpdateMainWorkspaceSize(const IRModule& mod, TargetMap tar
     auto dev = dev_sid_size.first;
     device_workspace[dev] = 0;
     for (const auto& sid_size : dev_sid_size.second) {
-      std::cout << "the sid_size is: " << sid_size.second << std::endl;
       device_workspace[dev] += sid_size.second;
     }
   }
@@ -577,16 +582,19 @@ void UpdateFunctionMetadata(Function relay_func,
 
   Optional<Map<GlobalVar, tir::PrimFunc>> prim_fns =
       relay_func->GetAttr<Map<GlobalVar, tir::PrimFunc>>("prim_funcs");
-  CHECK(prim_fns) << "primitive functions not set on Relay function by TECompiler";
+  CHECK(prim_fns) << "primitive functions not set on Relay function by TECompiler.";
 
   Optional<GlobalVar> prim_fn_var = relay_func->GetAttr<GlobalVar>("prim_fn_var");
-  CHECK(prim_fn_var) << "prim_fn_var must be set on Relay functions by TECompiler";
+  CHECK(prim_fn_var) << "prim_fn_var must be set on Relay functions by TECompiler.";
 
   Optional<Target> relay_target = relay_func->GetAttr<Target>("target");
-  CHECK(relay_target) << "target must be set on Relay functions by the TECompiler";
+  CHECK(relay_target) << "target must be set on Relay functions by the TECompiler.";
 
   for (const auto& kv : prim_fns.value()) {
     auto prim_fn = Downcast<tir::PrimFunc>(kv.second);
+    CHECK(prim_fn.defined())
+      << "the primitive function must be defined";
+
     auto workspace_byte_alignment =
         relay_target.value()->GetAttr<Integer>("workspace_byte_alignment").value_or(16);
 
@@ -600,7 +608,6 @@ void UpdateFunctionMetadata(Function relay_func,
       prim_fn_target = relay_target.value();
     }
 
-    CHECK(prim_fn.defined()) << "must be set";
 
     workspace_sizes.Set(prim_fn_target, workspace_size);
 
@@ -630,16 +637,14 @@ void UpdateFunctionMetadata(Function relay_func,
 
   // The primitive function name here corresponds to the string we will use to generate
   // this Relay function at the low level.
-  std::cout << "THING: " << function_metadata << std::endl;
   function_metadata.Set(prim_fn_var.value()->name_hint, fi);
-  std::cout << "THING AFTER: " << function_metadata << std::endl;
 }
 
 LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap device_context_map,
                       std::function<void(Function)> process_fn,
                       backend::StaticMemoryPlan memory_plan) {
   TECompiler compiler;
-  std::cout << "LowerTE called" << std::endl;
+
   CHECK_EQ(module->functions.size(), 1)
       << "There should only be one function in the module passed to LowerTE";
 
@@ -658,7 +663,6 @@ LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap devic
       UpdateMainWorkspaceSize(module, targets, memory_plan->expr_to_storage_info);
 
   auto updated_module = pass(module);
-  std::cout << "UPdated module" << std::endl;
 
   LoweredModule lowered_module;
   lowered_module.main_module = updated_module;

@@ -195,7 +195,9 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     return storage_info;
   }
 
-  LoweredOutput Codegen(relay::Function func) {
+  LoweredOutput Codegen(relay::Function func, String mod_name) {
+    mod_name_ = mod_name;
+
     // TODO(@jroesch): we need to split device planning and memory planning
     // first we run device assignment, then we perform lowering, and then
     // storage planning in ideal world.
@@ -238,10 +240,8 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
         },
         memory_plan_);
 
-    std::cout << "RIGHT" << this->function_metadata_ << std::endl;
     function_metadata_.Set(runtime::symbol::tvm_module_main, lowered_module.main_func_info);
     auto main_module = lowered_module.main_module;
-    std::cout << "MainModule: " << main_module << std::endl;
     main_module = relay::transform::InferType()(main_module);
     relay::Function main_func = Downcast<relay::Function>(main_module->Lookup("main"));
 

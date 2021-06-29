@@ -307,11 +307,6 @@ def test_export_model_library_format_workspace(target):
         )
         assert (datetime.datetime.now() - export_datetime) < datetime.timedelta(seconds=60 * 5)
         assert metadata["target"] == {"1": str(_target)}
-        # print("Metadata is: ", metadata["memory"]["functions"]["main"])
-        # print("Expected metadata: ")
-        import pdb
-
-        pdb.set_trace()
         assert metadata["memory"]["functions"]["main"] == [
             {
                 "constants_size_bytes": 0,

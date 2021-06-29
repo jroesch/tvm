@@ -198,7 +198,7 @@ class CompileEngineImpl : public CompileEngineNode {
 
     ICHECK(!value->cached_func.defined());
     auto cfunc = PrimFuncFor(key->source_func, key->target,
-                             [&](std::string name) { return GetUniqueName(name, &name_map_); });
+                             [&](std::string name) { return GetUniqueName(mangle_fn(name), &name_map_); });
 
     // Skip lowering for device copy node.
     const Expr body = (key->source_func)->body;
@@ -208,7 +208,6 @@ class CompileEngineImpl : public CompileEngineNode {
         return value;
       }
     }
-    cache_node->func_name = GetUniqueName(mangle_fn(cache_node->func_name));
 
     // NOTE: array will copy on write.
     Array<te::Tensor> all_args = Array<te::Tensor>(cfunc->inputs);
