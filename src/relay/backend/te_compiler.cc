@@ -566,7 +566,7 @@ backend::FunctionInfo UpdateMainWorkspaceSize(const IRModule& mod, TargetMap tar
  * \param function_metadata The map that stores all the function metadatas
  */
 void UpdateFunctionMetadata(Function relay_func,
-                            Map<String, backend::FunctionInfo>& function_metadata) { // NOLINT(*)
+                            Map<String, backend::FunctionInfo>& function_metadata) {  // NOLINT(*)
   // Originally UpdateFunctionMetadata took in CCachedFunc and looped through all the funcs stored
   // there Now the goal is to take only one func because process_fn should be controlling the
   // iteration However, to do the workspace calculations we need the primfuncs. So process_fn needs
@@ -592,8 +592,7 @@ void UpdateFunctionMetadata(Function relay_func,
 
   for (const auto& kv : prim_fns.value()) {
     auto prim_fn = Downcast<tir::PrimFunc>(kv.second);
-    CHECK(prim_fn.defined())
-      << "the primitive function must be defined";
+    CHECK(prim_fn.defined()) << "the primitive function must be defined";
 
     auto workspace_byte_alignment =
         relay_target.value()->GetAttr<Integer>("workspace_byte_alignment").value_or(16);
@@ -607,7 +606,6 @@ void UpdateFunctionMetadata(Function relay_func,
     } else {
       prim_fn_target = relay_target.value();
     }
-
 
     workspace_sizes.Set(prim_fn_target, workspace_size);
 

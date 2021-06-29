@@ -197,8 +197,9 @@ class CompileEngineImpl : public CompileEngineNode {
     With<Target> target_scope(key->target);
 
     ICHECK(!value->cached_func.defined());
-    auto cfunc = PrimFuncFor(key->source_func, key->target,
-                             [&](std::string name) { return GetUniqueName(mangle_fn(name), &name_map_); });
+    auto cfunc = PrimFuncFor(key->source_func, key->target, [&](std::string name) {
+      return GetUniqueName(mangle_fn(name), &name_map_);
+    });
 
     // Skip lowering for device copy node.
     const Expr body = (key->source_func)->body;

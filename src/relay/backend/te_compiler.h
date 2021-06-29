@@ -160,7 +160,7 @@ struct LoweredModule {
  * \param function_metadata The map that stores all the function metadatas
  */
 void UpdateFunctionMetadata(Function relay_func,
-                            Map<String, backend::FunctionInfo>& function_metadata); // NOLINT(*)
+                            Map<String, backend::FunctionInfo>& function_metadata);  // NOLINT(*)
 
 /*!
  * \brief Obtain the Target from the device type.

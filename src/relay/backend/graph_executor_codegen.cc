@@ -222,7 +222,6 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
       device_context_map.insert({expr, dev});
     }
 
-
     auto lowered_module = tec::LowerTE(
         mod, targets_, device_context_map,
         [this](Function func) {
