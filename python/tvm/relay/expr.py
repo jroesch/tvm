@@ -542,6 +542,12 @@ def bind(expr, binds):
 
 @tvm._ffi.register_object("relay.StorageInfo")
 class StorageInfo(Node):
+    """StorageInfo
+
+    The static storage information produced by memory planning.
+    Contains the storage ids where expressions are stored, the
+    type of the "virtual devices" the expressions are stored on,
+    and the sizes of each storage element."""
     @property
     def storage_ids(self):
         return _ffi_api.StorageInfoStorageIds(self)
