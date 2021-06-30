@@ -333,7 +333,6 @@ class LowerTensorExpr : public ExprMutator {
       const auto& it = targets_.begin();
       target = (*it).second;
     } else {
-      std::cout << "DeviceType: " << call_dev_type << std::endl;
       // The heterogeneous execution case we have multiple targets
       // in this case.
       //
@@ -358,9 +357,7 @@ class LowerTensorExpr : public ExprMutator {
         LOG(FATAL) << msg.str();
       }
 
-      std::cout << "DeviceName: " << call_dev_name << std::endl;
       target = targets_[call_dev_type];
-      std::cout << "Target: " << target << std::endl;
     }
 
     CCacheKey key = CCacheKey(func, target);
@@ -385,7 +382,6 @@ class LowerTensorExpr : public ExprMutator {
 
     Attrs attrs;
     if (func->HasNonzeroAttr(attr::kReshapeOnly)) {
-      std::cout << "marking as reshape only" << std::endl;
       auto tir_call_attrs = make_object<TIRCallAttrs>();
       attrs = Attrs(tir_call_attrs);
     }

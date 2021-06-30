@@ -225,8 +225,6 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     auto lowered_module = tec::LowerTE(
         mod, targets_, device_context_map,
         [this](Function func) {
-          std::cout << "\n\n\n\n\n\nThe lambda is called\n\n\n\n\n\n" << std::endl;
-
           // We need to maintain the constant map for external functions so we pass this
           // processing function which allows us to process each function as we lower it.
           if (func->GetAttr<String>(attr::kCompiler).defined()) {
@@ -271,7 +269,6 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
           param.first,
           std::make_pair(static_cast<int>(param_storage_ids_[param.first]), param.second)));
     }
-    std::cout << function_metadata_ << std::endl;
     ret.function_metadata = std::move(function_metadata_);
     ret.lowered_funcs = lowered_module.per_target_module;
     ret.external_mods = lowered_module.external_mods;
@@ -395,8 +392,6 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     StorageInfo rit = GetStorageInfo(rhs);
     int64_t lhs_storage_id = lit->storage_ids[0];
     int64_t rhs_storage_id = rit->storage_ids[0];
-    std::cout << "lhs_storage_id " << lhs_storage_id << std::endl;
-    std::cout << "rhs_storage_id " << rhs_storage_id << std::endl;
     return lhs_storage_id == rhs_storage_id;
   }
 
@@ -414,15 +409,11 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     bool reshape_only = false;
     if (op->attrs.defined() && op->attrs.as<TIRCallAttrs>()) {
       reshape_only = true;
-      std::cout << "should reshape" << std::endl;
     }
 
-    std::cout << "Op: " << GetRef<Expr>(op) << std::endl;
-    std::cout << "First Arg: " << op->args[0] << std::endl;
     if (reshape_only && ShareSameStorage(GetRef<Expr>(op), op->args[0])) {
       auto node =
           GraphOpNode::make_node_ptr("reshape_nop", GraphAttrs(), "__nop", inputs, op_attrs);
-      std::cout << "Firing storage optimization" << std::endl;
       return AddNode(node, GetRef<Expr>(op));
     }
 
