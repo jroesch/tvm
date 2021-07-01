@@ -397,22 +397,7 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
 
   std::vector<GraphNodeRef> GraphAddCallNode(const CallNode* op, const std::string& func_name,
                                              GraphAttrs op_attrs) {
-    Expr expr = GetRef<Expr>(op);
-    GraphAttrs attrs = GraphAttrs();
-    if (op->op.as<FunctionNode>()) {
-      std::cout << "Is fn node, copying attrs" << std::endl;
-      Function func = GetRef<Function>(op->op.as<FunctionNode>());
-
-      // Copy attrs from function into the graph node
-      // For now we only handle strings
-      for (auto p : func->attrs->dict) {
-        if (p.second.as<StringObj>()) {
-          attrs[p.first] = std::string(Downcast<String>(p.second));
-        }
-      }
-    } else {
-      std::cout << "Not a function node" << std::endl;
-    }
+    GraphAttrs attrs;
 
     std::vector<GraphNodeRef> inputs;
     for (auto arg : op->args) {
@@ -424,8 +409,21 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
 
     /// An adapted version of the storage optimization for the time being.
     bool reshape_only = false;
-    if (op->attrs.defined() && op->attrs.as<TIRCallAttrs>()) {
-      reshape_only = true;
+    CHECK(op->attrs.defined())
+      << "must be defined";
+
+    if (auto tir_call_attrs = op->attrs.as<TIRCallAttrs>()) {
+      if (Downcast<tvm::Integer>(tir_call_attrs->metadata["reshape"])->value == 1)  {
+        reshape_only = true;
+      }
+
+      auto relay_attrs = Downcast<DictAttrs>(tir_call_attrs->metadata["relay_attrs"]);
+
+      for (auto p : relay_attrs->dict) {
+        if (p.second.as<StringObj>()) {
+          attrs[p.first] = std::string(Downcast<String>(p.second));
+        }
+      }
     }
 
     if (reshape_only && ShareSameStorage(GetRef<Expr>(op), op->args[0])) {

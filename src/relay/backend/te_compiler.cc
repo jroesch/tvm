@@ -380,13 +380,19 @@ class LowerTensorExpr : public ExprMutator {
     // act when we process a function.
     this->process_fn(func_with_metadata);
 
-    Attrs attrs;
+    auto tir_call_attrs = make_object<TIRCallAttrs>();
     if (func->HasNonzeroAttr(attr::kReshapeOnly)) {
+<<<<<<< Updated upstream
       auto tir_call_attrs = make_object<TIRCallAttrs>();
       attrs = Attrs(tir_call_attrs);
+=======
+      tir_call_attrs->metadata.Set(attr::kReshapeOnly, tvm::Integer(1));
+>>>>>>> Stashed changes
     }
 
-    Expr ret_call = Call(lowered_func->prim_fn_var, args, attrs);
+    tir_call_attrs->metadata.Set("relay_attrs", func->attrs);
+
+    Expr ret_call = Call(lowered_func->prim_fn_var, args, Attrs(tir_call_attrs));
     (*prim_fn_to_call)[func] = ret_call;
     return ret_call;
   }

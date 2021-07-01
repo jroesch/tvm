@@ -71,7 +71,7 @@ struct CompilerAttrs : public tvm::AttrsNode<CompilerAttrs> {
  * \brief Options for the operators used to annotate a compiler.
  */
 struct TIRCallAttrs : public tvm::AttrsNode<TIRCallAttrs> {
-  /*! \brief A 3rd party compiler for code generation. */
+  /*! \brief The metadata attached to the call node. */
   Map<String, ObjectRef> metadata;
 
   TVM_DECLARE_ATTRS(TIRCallAttrs, "relay.attrs.TIRCallAttrs") {
