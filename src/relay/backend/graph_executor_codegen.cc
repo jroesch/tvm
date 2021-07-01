@@ -397,6 +397,23 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
 
   std::vector<GraphNodeRef> GraphAddCallNode(const CallNode* op, const std::string& func_name,
                                              GraphAttrs op_attrs) {
+    Expr expr = GetRef<Expr>(op);
+    GraphAttrs attrs = GraphAttrs();
+    if (op->op.as<FunctionNode>()) {
+      std::cout << "Is fn node, copying attrs" << std::endl;
+      Function func = GetRef<Function>(op->op.as<FunctionNode>());
+
+      // Copy attrs from function into the graph node
+      // For now we only handle strings
+      for (auto p : func->attrs->dict) {
+        if (p.second.as<StringObj>()) {
+          attrs[p.first] = std::string(Downcast<String>(p.second));
+        }
+      }
+    } else {
+      std::cout << "Not a function node" << std::endl;
+    }
+
     std::vector<GraphNodeRef> inputs;
     for (auto arg : op->args) {
       auto res = VisitExpr(arg);
@@ -412,14 +429,13 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     }
 
     if (reshape_only && ShareSameStorage(GetRef<Expr>(op), op->args[0])) {
-      auto node =
-          GraphOpNode::make_node_ptr("reshape_nop", GraphAttrs(), "__nop", inputs, op_attrs);
+      auto node = GraphOpNode::make_node_ptr("reshape_nop", attrs, "__nop", inputs, op_attrs);
       return AddNode(node, GetRef<Expr>(op));
     }
 
     // Compute the operator name, because we used the get unique name when generating the kernel.
     auto op_name = _GetUniqueName(func_name);
-    auto node = GraphOpNode::make_node_ptr(op_name, GraphAttrs(), func_name, inputs, op_attrs);
+    auto node = GraphOpNode::make_node_ptr(op_name, attrs, func_name, inputs, op_attrs);
     return AddNode(node, GetRef<Expr>(op));
   }
 
