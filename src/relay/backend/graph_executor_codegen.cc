@@ -407,20 +407,21 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
 
     /// An adapted version of the storage optimization for the time being.
     bool reshape_only = false;
-    CHECK(op->attrs.defined()) << "must be defined";
+    if (op->attrs.defined()) {
 
-    if (auto tir_call_attrs = op->attrs.as<TIRCallAttrs>()) {
-      Map<String, ObjectRef> metadata = tir_call_attrs->metadata;
-      if (metadata.count(attr::kReshapeOnly) &&
-          Downcast<tvm::Integer>(metadata[attr::kReshapeOnly])->value == 1) {
-        reshape_only = true;
-      }
+      if (auto tir_call_attrs = op->attrs.as<TIRCallAttrs>()) {
+        Map<String, ObjectRef> metadata = tir_call_attrs->metadata;
+        if (metadata.count(attr::kReshapeOnly) &&
+            Downcast<tvm::Integer>(metadata[attr::kReshapeOnly])->value == 1) {
+          reshape_only = true;
+        }
 
-      auto relay_attrs = Downcast<DictAttrs>(tir_call_attrs->metadata["relay_attrs"]);
+        auto relay_attrs = Downcast<DictAttrs>(tir_call_attrs->metadata["relay_attrs"]);
 
-      for (auto p : relay_attrs->dict) {
-        if (p.second.as<StringObj>()) {
-          attrs[p.first] = std::string(Downcast<String>(p.second));
+        for (auto p : relay_attrs->dict) {
+          if (p.second.as<StringObj>()) {
+            attrs[p.first] = std::string(Downcast<String>(p.second));
+          }
         }
       }
     }
