@@ -408,7 +408,6 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     /// An adapted version of the storage optimization for the time being.
     bool reshape_only = false;
     if (op->attrs.defined()) {
-
       if (auto tir_call_attrs = op->attrs.as<TIRCallAttrs>()) {
         Map<String, ObjectRef> metadata = tir_call_attrs->metadata;
         if (metadata.count(attr::kReshapeOnly) &&
