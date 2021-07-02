@@ -415,7 +415,6 @@ GraphExecutor::CreateTVMOp(const TVMOpParam& param, const std::vector<DLTensor>&
     }
   }
 
-  std::cout << "Executing: " << param.func_name << std::endl;
   if (param.func_name == "__nop") {
     return {[]() {}, arg_ptr};
   } else if (param.func_name == "__copy") {

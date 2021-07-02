@@ -417,7 +417,6 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
       }
 
       auto relay_attrs = Downcast<DictAttrs>(tir_call_attrs->metadata["relay_attrs"]);
-      std::cout << "Attrs2: " << relay_attrs << std::endl;
 
       for (auto p : relay_attrs->dict) {
         if (p.second.as<StringObj>()) {

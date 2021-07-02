@@ -385,7 +385,6 @@ class LowerTensorExpr : public ExprMutator {
       tir_call_attrs->metadata.Set(attr::kReshapeOnly, tvm::Integer(1));
     }
 
-    std::cout << "Attrs: " << func->attrs << std::endl;
     tir_call_attrs->metadata.Set("relay_attrs", func->attrs);
 
     Expr ret_call = Call(lowered_func->prim_fn_var, args, Attrs(tir_call_attrs));
