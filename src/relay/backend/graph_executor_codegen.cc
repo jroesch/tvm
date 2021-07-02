@@ -407,20 +407,18 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
       }
     }
 
-    std::cout << "Size of inputs: " << inputs.size() << std::endl;
-
     /// An adapted version of the storage optimization for the time being.
     bool reshape_only = false;
-    CHECK(op->attrs.defined())
-      << "must be defined";
+    CHECK(op->attrs.defined()) << "must be defined";
 
     if (auto tir_call_attrs = op->attrs.as<TIRCallAttrs>()) {
-      if (Downcast<tvm::Integer>(tir_call_attrs->metadata["reshape"])->value == 1)  {
+      Map<String, ObjectRef> metadata = tir_call_attrs->metadata;
+      if (metadata.count(attr::kReshapeOnly) &&
+          Downcast<tvm::Integer>(metadata[attr::kReshapeOnly])->value == 1) {
         reshape_only = true;
       }
 
       auto relay_attrs = Downcast<DictAttrs>(tir_call_attrs->metadata["relay_attrs"]);
-
       for (auto p : relay_attrs->dict) {
         if (p.second.as<StringObj>()) {
           attrs[p.first] = std::string(Downcast<String>(p.second));
@@ -444,7 +442,6 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     if (auto global_node = call->op.as<GlobalVarNode>()) {
       auto prim_fn_name = global_node->name_hint;
 
-      // TODO(@jroesch): attach attributes somehow
       return GraphAddCallNode(call_node, prim_fn_name, GraphAttrs());
     } else {
       ICHECK(false) << "Non-primitive-call nodes should have been transformed away.\n"

@@ -26,6 +26,7 @@
 #include <tvm/relay/attrs/annotation.h>
 #include <tvm/relay/expr.h>
 #include <tvm/relay/expr_functor.h>
+#include <tvm/relay/transform.h>
 #include <tvm/tir/op.h>
 
 #include "../../support/arena.h"
@@ -52,16 +53,16 @@ struct StorageToken {
   int64_t storage_id{-1};
 };
 
-std::ostream& operator << (std::ostream& os, StorageToken tok) {
+std::ostream& operator<<(std::ostream& os, StorageToken tok) {
   return os << "StorageToken: " << std::endl
             << "ref_counter: " << tok.ref_counter << std::endl
             << "max_bytes: " << tok.max_bytes << std::endl
-            << "tttype: " << tok.ttype << std::endl
+            << "tttype: " << tok.ttype
+            << std::endl
             // ok idk how to print this properly
             << "tttype shape: " << tok.ttype->shape << std::endl
             << "device_type: " << tok.device_type << std::endl
             << "storage_id: " << tok.storage_id << std::endl;
-
 }
 
 class StorageAllocaBaseVisitor : public ExprVisitor {
@@ -296,11 +297,9 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
     // for each input, visit argument token.
     for (Expr arg : op->args) {
       for (StorageToken* tok : GetToken(arg)) {
-        std::cout << "Token is: " << *tok << std::endl;
         args.push_back(tok);
       }
     }
-    std::cout << "len of op args" << op->args.size() << std::endl;
 
     // Under the flat-memory setting.
     // we can force aliasing the input and output of reshape
@@ -348,8 +347,12 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
     if (const auto* fn = call->op.as<FunctionNode>()) {
       return fn->HasNonzeroAttr(attr::kReshapeOnly);
     }
-    if (call->attrs.defined() && call->attrs.as<TIRCallAttrs>()) {
-      return true;
+    if (call->attrs.defined()) {
+      if (auto tir_call_attrs = call->attrs.as<TIRCallAttrs>()) {
+        Map<String, ObjectRef> metadata = tir_call_attrs->metadata;
+        return metadata.count(attr::kReshapeOnly) &&
+               (Downcast<tvm::Integer>(metadata[attr::kReshapeOnly])->value == 1);
+      }
     }
     return false;
   }
