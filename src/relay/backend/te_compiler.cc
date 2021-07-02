@@ -324,7 +324,7 @@ class LowerTensorExpr : public ExprMutator {
 
       // Provide a callback hook which allows one-level up code generators to
       // act when we process a function.
-      this->process_fn(func);
+      this->process_fn(func_with_metadata);
 
       auto ret_call = Call(ext_func->prim_fn_var, args, {});
       (*prim_fn_to_call)[func] = ret_call;
