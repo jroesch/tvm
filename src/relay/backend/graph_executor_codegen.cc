@@ -396,9 +396,7 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
   }
 
   std::vector<GraphNodeRef> GraphAddCallNode(const CallNode* op, const std::string& func_name,
-                                             GraphAttrs op_attrs) {
-    GraphAttrs attrs;
-
+                                             GraphAttrs attrs) {
     std::vector<GraphNodeRef> inputs;
     for (auto arg : op->args) {
       auto res = VisitExpr(arg);
@@ -419,6 +417,8 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
       }
 
       auto relay_attrs = Downcast<DictAttrs>(tir_call_attrs->metadata["relay_attrs"]);
+      std::cout << "Attrs2: " << relay_attrs << std::endl;
+
       for (auto p : relay_attrs->dict) {
         if (p.second.as<StringObj>()) {
           attrs[p.first] = std::string(Downcast<String>(p.second));
@@ -427,13 +427,13 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
     }
 
     if (reshape_only && ShareSameStorage(GetRef<Expr>(op), op->args[0])) {
-      auto node = GraphOpNode::make_node_ptr("reshape_nop", attrs, "__nop", inputs, op_attrs);
+      auto node = GraphOpNode::make_node_ptr("reshape_nop", GraphAttrs(), "__nop", inputs, attrs);
       return AddNode(node, GetRef<Expr>(op));
     }
 
     // Compute the operator name, because we used the get unique name when generating the kernel.
     auto op_name = _GetUniqueName(func_name);
-    auto node = GraphOpNode::make_node_ptr(op_name, attrs, func_name, inputs, op_attrs);
+    auto node = GraphOpNode::make_node_ptr(op_name, GraphAttrs(), func_name, inputs, attrs);
     return AddNode(node, GetRef<Expr>(op));
   }
 
