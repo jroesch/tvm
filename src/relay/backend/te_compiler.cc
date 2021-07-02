@@ -310,7 +310,6 @@ class LowerTensorExpr : public ExprMutator {
       ICHECK(ext_func.defined()) << "Lowering returned undefined function for "
                                  << ext_func->prim_fn_var->name_hint;
 
-
       Map<GlobalVar, tir::PrimFunc> prim_fns;
 
       for (auto prim_fn : ext_func->funcs->functions) {
