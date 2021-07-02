@@ -309,6 +309,20 @@ class LowerTensorExpr : public ExprMutator {
       CachedFunc ext_func = compiler_->Lower(key);
       ICHECK(ext_func.defined()) << "Lowering returned undefined function for "
                                  << ext_func->prim_fn_var->name_hint;
+
+
+      Map<GlobalVar, tir::PrimFunc> prim_fns;
+
+      for (auto prim_fn : ext_func->funcs->functions) {
+        CHECK(prim_fn.second.as<tir::PrimFuncNode>()) << "must be a prim fn";
+        prim_fns.Set(prim_fn.first, Downcast<tir::PrimFunc>(prim_fn.second));
+      }
+
+      relay::Function func_with_metadata = func;
+      func_with_metadata = WithAttr(func_with_metadata, "prim_fn_var", ext_func->prim_fn_var);
+      func_with_metadata = WithAttr(func_with_metadata, "prim_funcs", prim_fns);
+      func_with_metadata = WithAttr(func_with_metadata, "target", ext_func->target);
+
       // Provide a callback hook which allows one-level up code generators to
       // act when we process a function.
       this->process_fn(func);
