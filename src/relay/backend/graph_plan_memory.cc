@@ -347,6 +347,7 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
     if (const auto* fn = call->op.as<FunctionNode>()) {
       return fn->HasNonzeroAttr(attr::kReshapeOnly);
     }
+
     if (call->attrs.defined()) {
       if (auto tir_call_attrs = call->attrs.as<TIRCallAttrs>()) {
         Map<String, ObjectRef> metadata = tir_call_attrs->metadata;
@@ -354,6 +355,7 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
                (Downcast<tvm::Integer>(metadata[attr::kReshapeOnly])->value == 1);
       }
     }
+
     return false;
   }
   /*!

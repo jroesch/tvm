@@ -383,8 +383,8 @@ class LowerTensorExpr : public ExprMutator {
     auto tir_call_attrs = make_object<TIRCallAttrs>();
     if (func->HasNonzeroAttr(attr::kReshapeOnly)) {
       tir_call_attrs->metadata.Set(attr::kReshapeOnly, tvm::Integer(1));
-    } else {
     }
+
     tir_call_attrs->metadata.Set("relay_attrs", func->attrs);
 
     Expr ret_call = Call(lowered_func->prim_fn_var, args, Attrs(tir_call_attrs));
