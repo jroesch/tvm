@@ -52,6 +52,18 @@ struct StorageToken {
   int64_t storage_id{-1};
 };
 
+std::ostream& operator << (std::ostream& os, StorageToken tok) {
+  return os << "StorageToken: " << std::endl
+            << "ref_counter: " << tok.ref_counter << std::endl
+            << "max_bytes: " << tok.max_bytes << std::endl
+            << "tttype: " << tok.ttype << std::endl
+            // ok idk how to print this properly
+            << "tttype shape: " << tok.ttype->shape << std::endl
+            << "device_type: " << tok.device_type << std::endl
+            << "storage_id: " << tok.storage_id << std::endl;
+
+}
+
 class StorageAllocaBaseVisitor : public ExprVisitor {
  public:
   // run the visitor on a function.
@@ -284,9 +296,11 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
     // for each input, visit argument token.
     for (Expr arg : op->args) {
       for (StorageToken* tok : GetToken(arg)) {
+        std::cout << "Token is: " << *tok << std::endl;
         args.push_back(tok);
       }
     }
+    std::cout << "len of op args" << op->args.size() << std::endl;
 
     // Under the flat-memory setting.
     // we can force aliasing the input and output of reshape
@@ -297,6 +311,10 @@ class StorageAllocator : public StorageAllocaBaseVisitor {
     // TODO(tvm-team) Update checks of flat memory enablement when we support
     // opaque-nd memory planning to skip this path.
     if (IsReshape(op)) {
+      // TODO(@electriclilies, jroesch): This check is failing because the size of args is 3
+      // I can't figure out where the extra args are coming from, I assume it must be related
+      // to the relay_attrs field we added to the TIRCallArgs, but I don't know where / how
+      // that's happening...
       ICHECK_EQ(args.size(), 1U);
       ReuseInputToken(op, args[0]);
     } else {

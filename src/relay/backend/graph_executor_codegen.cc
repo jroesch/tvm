@@ -407,6 +407,8 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
       }
     }
 
+    std::cout << "Size of inputs: " << inputs.size() << std::endl;
+
     /// An adapted version of the storage optimization for the time being.
     bool reshape_only = false;
     CHECK(op->attrs.defined())

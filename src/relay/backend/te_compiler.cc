@@ -297,6 +297,7 @@ class LowerTensorExpr : public ExprMutator {
 
     // Process inputs.
     Array<Expr> args;
+    std::cout << "expr args size: " << expr->args.size() << std::endl;
     for (size_t i = 0; i < expr->args.size(); i++) {
       args.push_back(VisitExpr(expr->args[i]));
     }
@@ -382,16 +383,12 @@ class LowerTensorExpr : public ExprMutator {
 
     auto tir_call_attrs = make_object<TIRCallAttrs>();
     if (func->HasNonzeroAttr(attr::kReshapeOnly)) {
-<<<<<<< Updated upstream
-      auto tir_call_attrs = make_object<TIRCallAttrs>();
-      attrs = Attrs(tir_call_attrs);
-=======
       tir_call_attrs->metadata.Set(attr::kReshapeOnly, tvm::Integer(1));
->>>>>>> Stashed changes
     }
 
     tir_call_attrs->metadata.Set("relay_attrs", func->attrs);
 
+    std::cout << "Args size is: " << args.size() << std::endl;
     Expr ret_call = Call(lowered_func->prim_fn_var, args, Attrs(tir_call_attrs));
     (*prim_fn_to_call)[func] = ret_call;
     return ret_call;
