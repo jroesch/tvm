@@ -62,9 +62,7 @@ class CompileEngineImpl : public CompileEngineNode {
   }
 
   CachedFunc Lower(const CCacheKey& key, const String mod_name) {
-    auto mangle_fn = [mod_name](String name) {
-        return runtime::get_name_mangled(mod_name, name);
-    };
+    auto mangle_fn = [mod_name](String name) { return runtime::get_name_mangled(mod_name, name); };
 
     return Lower(key, mangle_fn);
   }

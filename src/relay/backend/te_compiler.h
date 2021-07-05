@@ -191,8 +191,9 @@ Target GetTargetFromInteger(DLDeviceType dev_type, TargetMap targets);
  */
 // TODO(@electriclilies): Not sure if this default initialization is correct...
 LoweredModule LowerTE(
-    const IRModule& module, TargetMap targets, DeviceMap device_map, backend::StaticMemoryPlan memory_plan,
-    const String& module_name, ProcessFn process_fn = [](Function f) {});
+    const IRModule& module, TargetMap targets, DeviceMap device_map,
+    backend::StaticMemoryPlan memory_plan, const String& module_name,
+    ProcessFn process_fn = [](Function f) {});
 
 }  // namespace tec
 }  // namespace relay

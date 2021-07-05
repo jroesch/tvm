@@ -63,7 +63,7 @@ class CompileEngineNode : public Object {
    */
   virtual CachedFunc Lower(const CCacheKey& key, std::function<String(String)> mangle_fn) = 0;
 
-   /*!
+  /*!
    * \brief Get lowered result.
    * \param key The key to the cached function.
    * \param mod_name The module name to mangle the functions.

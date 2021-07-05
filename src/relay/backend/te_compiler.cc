@@ -67,8 +67,8 @@ class TECompilerImpl : public TECompilerNode {
 
   CachedFunc Lower(const CCacheKey& key, const String mod_name) {
     auto mangle_fn = [mod_name](String name) {
-        std::cout << "inner mod name" << mod_name << std::endl;
-        return runtime::get_name_mangled(mod_name, name);
+      std::cout << "inner mod name" << mod_name << std::endl;
+      return runtime::get_name_mangled(mod_name, name);
     };
 
     return Lower(key, mangle_fn);
@@ -172,7 +172,7 @@ class TECompilerImpl : public TECompilerNode {
 
  private:
   // implement lowered func
-  CCacheValue LowerInternal(const CCacheKey& key,  std::function<String(String)> mangle_fn) {
+  CCacheValue LowerInternal(const CCacheKey& key, std::function<String(String)> mangle_fn) {
     std::lock_guard<std::mutex> lock(mutex_);
     CCacheValue value;
     auto it = cache_.find(key);
@@ -207,11 +207,10 @@ class TECompilerImpl : public TECompilerNode {
     With<Target> target_scope(key->target);
 
     ICHECK(!value->cached_func.defined());
-    auto cfunc = PrimFuncFor(key->source_func, key->target,
-                             [&](std::string name) {
-        auto mangled = mangle_fn(name);
-        std::cout << "Mangled: " << mangled << std::endl;
-        return GetUniqueName(mangled, &name_map_);
+    auto cfunc = PrimFuncFor(key->source_func, key->target, [&](std::string name) {
+      auto mangled = mangle_fn(name);
+      std::cout << "Mangled: " << mangled << std::endl;
+      return GetUniqueName(mangled, &name_map_);
     });
 
     // Skip lowering for device copy node.
@@ -287,7 +286,8 @@ using AnalysisRemapping = std::unordered_map<Expr, Expr, ObjectHash, ObjectEqual
 class LowerTensorExpr : public ExprMutator {
  public:
   LowerTensorExpr(const IRModule& module, const TargetMap& targets, const DeviceMap& device_ctx_map,
-                  ProcessFn process_fn, AnalysisRemapping* prim_fn_to_call, const String &module_name, TECompiler compiler)
+                  ProcessFn process_fn, AnalysisRemapping* prim_fn_to_call,
+                  const String& module_name, TECompiler compiler)
       : module_(module),
         targets_(targets),
         device_context_map_(device_ctx_map),
@@ -668,8 +668,7 @@ void UpdateFunctionMetadata(Function relay_func,
 }
 
 LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap device_context_map,
-                      backend::StaticMemoryPlan memory_plan,
-                      const String& module_name,
+                      backend::StaticMemoryPlan memory_plan, const String& module_name,
                       std::function<void(Function)> process_fn) {
   TECompiler compiler;
 

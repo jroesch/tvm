@@ -362,9 +362,9 @@ def test_propogation():
         else:
             # device_copy op should be its dst_dev_type
             if isinstance(expr.attrs, tvm.relay.op.op_attrs.DeviceCopyAttrs):
-                assert storage_info.device_types[0]  == expr.attrs.dst_dev_type
+                assert storage_info.device_types[0] == expr.attrs.dst_dev_type
             else:
-                assert storage_info.device_types[0]  == expected_dev_type[expr.op.name].device_type
+                assert storage_info.device_types[0] == expected_dev_type[expr.op.name].device_type
 
 
 def run_fusible_network(dev, tgt):
