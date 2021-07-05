@@ -87,7 +87,14 @@ class TECompilerNode : public Object {
    * \param key The key to the cached function.
    * \return The result.
    */
-  virtual CachedFunc Lower(const CCacheKey& key) = 0;
+  virtual CachedFunc Lower(const CCacheKey& key, std::function<String(String)> mangle_fn) = 0;
+
+  /*!
+   * \brief Get lowered result.
+   * \param key The key to the cached function.
+   * \return The result.
+   */
+  virtual CachedFunc Lower(const CCacheKey& key, const String mod_name) = 0;
 
   /* Return all functions which have been lowered by the compiler, keyed by target. */
   virtual Map<String, IRModule> GetLoweredFunctions() = 0;
@@ -184,8 +191,8 @@ Target GetTargetFromInteger(DLDeviceType dev_type, TargetMap targets);
  */
 // TODO(@electriclilies): Not sure if this default initialization is correct...
 LoweredModule LowerTE(
-    const IRModule& module, TargetMap targets, DeviceMap device_map,
-    ProcessFn process_fn = [](Function f) {}, backend::StaticMemoryPlan memory_plan = {});
+    const IRModule& module, TargetMap targets, DeviceMap device_map, backend::StaticMemoryPlan memory_plan,
+    const String& module_name, ProcessFn process_fn = [](Function f) {});
 
 }  // namespace tec
 }  // namespace relay

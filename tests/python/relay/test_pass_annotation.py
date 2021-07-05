@@ -275,12 +275,14 @@ def test_conv_network():
         smap = relay.backend._backend.GraphPlanMemory(func)
         storage_ids = []
         device_types = []
-        for _, storage_dev_type in smap.items():
-            assert len(storage_dev_type) == 3
-            for sid in storage_dev_type[0]:
+        for _, storage_info in smap.expr_to_storage_info.items():
+
+            for sid in storage_info.storage_ids:
                 storage_ids.append(sid.value)
-            for did in storage_dev_type[1]:
+
+            for did in storage_info.device_types:
                 device_types.append(did.value)
+
         assert len(storage_ids) == 10
         assert len(set(storage_ids)) == 8
         assert len(set(device_types)) == 2
@@ -353,16 +355,16 @@ def test_propogation():
     assert tvm.ir.structural_equal(annotated_expr, expected_expr)
 
     smap = relay.backend._backend.GraphPlanMemory(annotated_expr)
-    for expr, storage_dev_type in smap.items():
+    for expr, storage_info in smap.expr_to_storage_info.items():
         # x is dev1 as output is dev1
         if isinstance(expr, tvm.relay.expr.Var):
-            assert storage_dev_type[1][0] == dev1.device_type
+            assert storage_info.device_types[0] == dev1.device_type
         else:
             # device_copy op should be its dst_dev_type
             if isinstance(expr.attrs, tvm.relay.op.op_attrs.DeviceCopyAttrs):
-                assert storage_dev_type[1][0] == expr.attrs.dst_dev_type
+                assert storage_info.device_types[0]  == expr.attrs.dst_dev_type
             else:
-                assert storage_dev_type[1][0] == expected_dev_type[expr.op.name].device_type
+                assert storage_info.device_types[0]  == expected_dev_type[expr.op.name].device_type
 
 
 def run_fusible_network(dev, tgt):

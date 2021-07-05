@@ -61,6 +61,14 @@ class CompileEngineImpl : public CompileEngineNode {
     return LowerInternal(key, mangle_fn)->cached_func;
   }
 
+  CachedFunc Lower(const CCacheKey& key, const String mod_name) {
+    auto mangle_fn = [mod_name](String name) {
+        return runtime::get_name_mangled(mod_name, name);
+    };
+
+    return Lower(key, mangle_fn);
+  }
+
   // For now, build one module per function.
   PackedFunc JIT(const CCacheKey& key) final {
     auto mangle_fn = [](String name) { return name; };
@@ -296,10 +304,7 @@ TVM_REGISTER_GLOBAL("relay.backend._CompileEngineClear").set_body_typed([](Compi
 
 TVM_REGISTER_GLOBAL("relay.backend._CompileEngineLower")
     .set_body_typed([](CompileEngine self, CCacheKey key, const String mod_name) {
-      auto mangle_fn = [mod_name](String name) {
-        return runtime::get_name_mangled(mod_name, name);
-      };
-      return self->Lower(key, mangle_fn);
+      return self->Lower(key, mod_name);
     });
 
 TVM_REGISTER_GLOBAL("relay.backend._CompileEngineLowerShapeFunc")

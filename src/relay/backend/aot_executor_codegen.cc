@@ -465,15 +465,13 @@ class AOTExecutorCodegen : public ExprVisitor {
                  << "(i.e functions composed of fusable operator invocations)";
     }
 
-    auto pf0 = GetPackedFunc("relay.backend._make_CCacheKey");
-    auto pf1 = GetPackedFunc("relay.backend._CompileEngineLower");
     Target target;
 
     // Handle external function
     if (func->GetAttr<String>(attr::kCompiler).defined()) {
       target = Target("ext_dev");
-      CCacheKey key = (*pf0)(func, target);
-      CachedFunc ext_func = (*pf1)(compile_engine_, key, mod_name_);
+      CCacheKey key = CCacheKey(func, target);
+      CachedFunc ext_func = compile_engine_->Lower(key, mod_name_);
       ICHECK(ext_func.defined()) << "External function is not defined.";
       UpdateConstants(func, &params_);
 
@@ -503,8 +501,10 @@ class AOTExecutorCodegen : public ExprVisitor {
       }
       target = targets_[call_dev_type];
     }
-    CCacheKey key = (*pf0)(func, target);
-    CachedFunc lowered_func = (*pf1)(compile_engine_, key, mod_name_);
+
+    CCacheKey key = CCacheKey(func, target);
+    CachedFunc lowered_func = compile_engine_->Lower(key, mod_name_);
+
     if (!lowered_funcs_.count(target->str())) {
       lowered_funcs_[target->str()] = IRModule(Map<GlobalVar, BaseFunc>({}));
     }

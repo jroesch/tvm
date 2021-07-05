@@ -198,6 +198,8 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
   LoweredOutput Codegen(relay::Function func, String mod_name) {
     mod_name_ = mod_name;
 
+    std::cout << "MODULE_NAME: " << mod_name_ << std::endl;
+
     // TODO(@jroesch): we need to split device planning and memory planning
     // first we run device assignment, then we perform lowering, and then
     // storage planning in ideal world.
@@ -224,6 +226,8 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
 
     auto lowered_module = tec::LowerTE(
         mod, targets_, device_context_map,
+        memory_plan_,
+        mod_name_,
         [this](Function func) {
           // We need to maintain the constant map for external functions so we pass this
           // processing function which allows us to process each function as we lower it.
@@ -234,8 +238,7 @@ class GraphExecutorCodegen : public backend::MemoizedExprTranslator<std::vector<
           // TODO(@areusch, @jroesch): We should refactor this to execute as a further pass,
           // instead writing data to the lowering process directly.
           UpdateFunctionMetadata(func, this->function_metadata_);
-        },
-        memory_plan_);
+        });
 
     function_metadata_.Set(runtime::symbol::tvm_module_main, lowered_module.main_func_info);
     auto main_module = lowered_module.main_module;

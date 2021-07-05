@@ -58,10 +58,18 @@ class CompileEngineNode : public Object {
   /*!
    * \brief Get lowered result.
    * \param key The key to the cached function.
-   * \param mod_name The module name to mangle the functions
+   * \param mod_name The mangling function for mangling names.
    * \return The result.
    */
   virtual CachedFunc Lower(const CCacheKey& key, std::function<String(String)> mangle_fn) = 0;
+
+   /*!
+   * \brief Get lowered result.
+   * \param key The key to the cached function.
+   * \param mod_name The module name to mangle the functions.
+   * \return The result.
+   */
+  virtual CachedFunc Lower(const CCacheKey& key, const String mangle_fn) = 0;
   /*!
    * \brief Just in time compile to get a PackedFunc.
    * \param key The key to the cached function.

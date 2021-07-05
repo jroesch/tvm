@@ -61,11 +61,23 @@ TVM_REGISTER_OBJECT_TYPE(TECompilerNode);
 class TECompilerImpl : public TECompilerNode {
  public:
   // Lower the function.
-  CachedFunc Lower(const CCacheKey& key) { return LowerInternal(key)->cached_func; }
+  CachedFunc Lower(const CCacheKey& key, std::function<String(String)> mangle_fn) {
+    return LowerInternal(key, mangle_fn)->cached_func;
+  }
+
+  CachedFunc Lower(const CCacheKey& key, const String mod_name) {
+    auto mangle_fn = [mod_name](String name) {
+        std::cout << "inner mod name" << mod_name << std::endl;
+        return runtime::get_name_mangled(mod_name, name);
+    };
+
+    return Lower(key, mangle_fn);
+  }
 
   // For now, build one module per function.
   PackedFunc JIT(const CCacheKey& key) final {
-    CCacheValue value = LowerInternal(key);
+    auto mangle_fn = [](String name) { return name; };
+    CCacheValue value = LowerInternal(key, mangle_fn);
     if (value->packed_func != nullptr) {
       return value->packed_func;
     }
@@ -160,7 +172,7 @@ class TECompilerImpl : public TECompilerNode {
 
  private:
   // implement lowered func
-  CCacheValue LowerInternal(const CCacheKey& key) {
+  CCacheValue LowerInternal(const CCacheKey& key,  std::function<String(String)> mangle_fn) {
     std::lock_guard<std::mutex> lock(mutex_);
     CCacheValue value;
     auto it = cache_.find(key);
@@ -190,12 +202,17 @@ class TECompilerImpl : public TECompilerNode {
       value->cached_func = CachedFunc(target, global_var, {}, {}, te::Schedule(), {}, ir_module);
       return value;
     }
+
     // Enforce use the target.
     With<Target> target_scope(key->target);
 
     ICHECK(!value->cached_func.defined());
     auto cfunc = PrimFuncFor(key->source_func, key->target,
-                             [&](std::string name) { return GetUniqueName(name, &name_map_); });
+                             [&](std::string name) {
+        auto mangled = mangle_fn(name);
+        std::cout << "Mangled: " << mangled << std::endl;
+        return GetUniqueName(mangled, &name_map_);
+    });
 
     // Skip lowering for device copy node.
     const Expr body = (key->source_func)->body;
@@ -270,12 +287,13 @@ using AnalysisRemapping = std::unordered_map<Expr, Expr, ObjectHash, ObjectEqual
 class LowerTensorExpr : public ExprMutator {
  public:
   LowerTensorExpr(const IRModule& module, const TargetMap& targets, const DeviceMap& device_ctx_map,
-                  ProcessFn process_fn, AnalysisRemapping* prim_fn_to_call, TECompiler compiler)
+                  ProcessFn process_fn, AnalysisRemapping* prim_fn_to_call, const String &module_name, TECompiler compiler)
       : module_(module),
         targets_(targets),
         device_context_map_(device_ctx_map),
         process_fn(process_fn),
         prim_fn_to_call(prim_fn_to_call),
+        module_name_(module_name),
         compiler_(compiler) {}
 
   Expr VisitExpr_(const CallNode* call) override {
@@ -306,7 +324,7 @@ class LowerTensorExpr : public ExprMutator {
     if (func->GetAttr<String>(attr::kCompiler).defined()) {
       target = Target("ext_dev");
       CCacheKey key = CCacheKey(func, target);
-      CachedFunc ext_func = compiler_->Lower(key);
+      CachedFunc ext_func = compiler_->Lower(key, module_name_);
       ICHECK(ext_func.defined()) << "Lowering returned undefined function for "
                                  << ext_func->prim_fn_var->name_hint;
 
@@ -374,7 +392,7 @@ class LowerTensorExpr : public ExprMutator {
     }
 
     CCacheKey key = CCacheKey(func, target);
-    CachedFunc lowered_func = compiler_->Lower(key);
+    CachedFunc lowered_func = compiler_->Lower(key, module_name_);
 
     Map<GlobalVar, tir::PrimFunc> prim_fns;
 
@@ -410,6 +428,7 @@ class LowerTensorExpr : public ExprMutator {
   DeviceMap device_context_map_;
   ProcessFn process_fn;
   AnalysisRemapping* prim_fn_to_call;
+  String module_name_;
   TECompiler compiler_;
 };
 
@@ -649,8 +668,9 @@ void UpdateFunctionMetadata(Function relay_func,
 }
 
 LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap device_context_map,
-                      std::function<void(Function)> process_fn,
-                      backend::StaticMemoryPlan memory_plan) {
+                      backend::StaticMemoryPlan memory_plan,
+                      const String& module_name,
+                      std::function<void(Function)> process_fn) {
   TECompiler compiler;
 
   CHECK_EQ(module->functions.size(), 1)
@@ -661,7 +681,7 @@ LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap devic
   auto pass = CreateFunctionPass(
       [=](Function func, IRModule module, PassContext ctx) {
         LowerTensorExpr lower_te(module, targets, device_context_map, process_fn,
-                                 prim_fn_to_call_map, compiler);
+                                 prim_fn_to_call_map, module_name, compiler);
         return Downcast<Function>(lower_te.VisitExpr(func));
       },
       0, "LowerTensorExpr", {});
