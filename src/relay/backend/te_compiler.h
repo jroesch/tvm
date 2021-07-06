@@ -117,6 +117,8 @@ class TECompilerNode : public Object {
    */
   virtual tvm::Array<tvm::runtime::Module> LowerExternalFunctions() = 0;
 
+  virtual std::unordered_map<std::string, int> GetOpWeights() = 0;
+
   /*! \brief clear the cache. */
   virtual void Clear() = 0;
 
@@ -133,8 +135,6 @@ class TECompiler : public ObjectRef {
   explicit TECompiler(ObjectPtr<Object> n) : ObjectRef(n) {}
   TECompilerNode* operator->() { return static_cast<TECompilerNode*>(get_mutable()); }
   using ContainerType = TECompilerNode;
-  /*! \brief The global compile engine. */
-  TVM_DLL static TECompiler& Global();
 };
 
 /*! \brief The result of lowering a module, for now we need to pass an aggregate data structure

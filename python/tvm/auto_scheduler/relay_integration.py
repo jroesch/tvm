@@ -232,7 +232,6 @@ class TracingEnvironment:
 @tvm._ffi.register_func("auto_scheduler.enter_layout_rewrite")
 def enter_layout_rewrite():
     """Enter layout rewrite tracing environment"""
-    # import pdb; pdb.set_trace()
     env = TracingEnvironment(TracingMode.PREPARE_LAYOUT_REWRITE)
     env.__enter__()
 
@@ -319,10 +318,12 @@ def auto_schedule_topi(func_name, outs):
         A tuned schedule or none (if not tuned) in the final build mode;
         None in the tracing mode so that the fallback topi schedule will be used.
     """
+
     # pylint: disable=import-outside-toplevel
     from tvm.auto_scheduler.measure import (
         prepare_input_map,
     )  # lazily import to avoid recursive dependency
+
 
     io_tensors, has_layout_free, has_complex_op = traverse_to_get_io_tensors(outs)
     if not io_tensors:  # The compute includes dynamic shapes which are not supported yet.
@@ -376,6 +377,12 @@ def auto_schedule_topi(func_name, outs):
 
     return schedule
 
+@tvm._ffi.register_func("auto_scheduler.relay_integration.te_compiler_update_weights")
+def te_compiler_update_weights(function_weights):
+    env = TracingEnvironment.current
+    if env is not None:
+        for key in env.wkl_key_to_weight:
+            env.wkl_key_to_weight[key] = function_weights[key[0]]
 
 def tensor_no_check_call(self, *indices):
     """An indexing function without any check.

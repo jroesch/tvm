@@ -182,10 +182,8 @@ class TECompilerImpl : public TECompilerNode {
       value = it->second;
     } else {
       value = CCacheValue(make_object<CCacheValueNode>());
-      value->use_count = 0;
-      if (!backend::IsCompileEngineCacheDisabled()) {
-        cache_[key] = value;
-      }
+      value->use_count = 1;
+      cache_[key] = value;
     }
     cur_ccache_key_ = key;
 
@@ -264,6 +262,16 @@ class TECompilerImpl : public TECompilerNode {
     return value;
   }
 
+  std::unordered_map<std::string, int> GetOpWeights() {
+    std::unordered_map<std::string, int> weights;
+    for (auto pair : cache_) {
+      auto value = pair.second;
+      auto name = value->cached_func->prim_fn_var->name_hint;
+      weights[name] = value->use_count;
+    }
+    return weights;
+  }
+
   /*! \brief compiler cache lock*/
   std::mutex mutex_;
   /*! \brief internal name map to get an unique name */
@@ -282,6 +290,21 @@ TECompiler::TECompiler() {
 }
 
 using AnalysisRemapping = std::unordered_map<Expr, Expr, ObjectHash, ObjectEqual>;
+
+std::tuple<bool, int, int> IsDeviceCopy(const Function& func) {
+  if (auto call_node = func->body.as<CallNode>()) {
+    if (auto op_node = call_node->op.as<OpNode>()) {
+      if (op_node->name == "device_copy") {
+        auto attrs = call_node->attrs.as<DeviceCopyAttrs>();
+        auto dst = attrs->dst_dev_type;
+        auto src = attrs->src_dev_type;
+        return { true, src, dst };
+      }
+    }
+  }
+
+  return { false, -1, -1 };
+}
 
 class LowerTensorExpr : public ExprMutator {
  public:
@@ -415,6 +438,17 @@ class LowerTensorExpr : public ExprMutator {
     if (func->HasNonzeroAttr(attr::kReshapeOnly)) {
       tir_call_attrs->metadata.Set(attr::kReshapeOnly, tvm::Integer(1));
     }
+
+    auto device_copy = IsDeviceCopy(func);
+    if (std::get<0>(device_copy)) {
+      std::cout << "DeviceCopy" << std::endl;
+      auto source_device = std::get<1>(device_copy);
+      auto dst_device = std::get<2>(device_copy);
+      tir_call_attrs->metadata.Set("source_device", tvm::Integer(source_device));
+      tir_call_attrs->metadata.Set("dst_device", tvm::Integer(dst_device));
+    }
+
+    std::cout << "Function: " << func << std::endl;
 
     tir_call_attrs->metadata.Set("relay_attrs", func->attrs);
 
@@ -685,11 +719,26 @@ LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap devic
       },
       0, "LowerTensorExpr", {});
 
+
   // TODO(@electriclilies, @jroesch): remove UpdateMainWorkspaceSize
   backend::FunctionInfo func_info =
       UpdateMainWorkspaceSize(module, targets, memory_plan->expr_to_storage_info);
 
   auto updated_module = pass(module);
+
+  const auto* te_compiler_update_weights =
+            runtime::Registry::Get("auto_scheduler.relay_integration.te_compiler_update_weights");
+
+  ICHECK(te_compiler_update_weights != nullptr)
+      << "auto_scheduler.relay_integration.te_compiler_update_weights";
+
+  Map<String, tvm::Integer> weight_map;
+
+  for (auto pair : compiler->GetOpWeights()) {
+    weight_map.Set(pair.first, pair.second);
+  }
+
+  (*te_compiler_update_weights)(weight_map);
 
   LoweredModule lowered_module;
   lowered_module.main_module = updated_module;
