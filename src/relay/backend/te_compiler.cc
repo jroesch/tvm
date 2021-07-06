@@ -299,12 +299,12 @@ std::tuple<bool, int, int> IsDeviceCopy(const Function& func) {
         auto attrs = call_node->attrs.as<DeviceCopyAttrs>();
         auto dst = attrs->dst_dev_type;
         auto src = attrs->src_dev_type;
-        return {true, src, dst};
+        return std::tuple<bool, int, int>(true, src, dst);
       }
     }
   }
 
-  return {false, -1, -1};
+  return std::tuple<bool, int, int>(false, -1, -1);
 }
 
 class LowerTensorExpr : public ExprMutator {
