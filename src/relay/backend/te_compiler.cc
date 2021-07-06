@@ -298,12 +298,12 @@ std::tuple<bool, int, int> IsDeviceCopy(const Function& func) {
         auto attrs = call_node->attrs.as<DeviceCopyAttrs>();
         auto dst = attrs->dst_dev_type;
         auto src = attrs->src_dev_type;
-        return { true, src, dst };
+        return {true, src, dst};
       }
     }
   }
 
-  return { false, -1, -1 };
+  return {false, -1, -1};
 }
 
 class LowerTensorExpr : public ExprMutator {
@@ -719,7 +719,6 @@ LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap devic
       },
       0, "LowerTensorExpr", {});
 
-
   // TODO(@electriclilies, @jroesch): remove UpdateMainWorkspaceSize
   backend::FunctionInfo func_info =
       UpdateMainWorkspaceSize(module, targets, memory_plan->expr_to_storage_info);
@@ -727,7 +726,7 @@ LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap devic
   auto updated_module = pass(module);
 
   const auto* te_compiler_update_weights =
-            runtime::Registry::Get("auto_scheduler.relay_integration.te_compiler_update_weights");
+      runtime::Registry::Get("auto_scheduler.relay_integration.te_compiler_update_weights");
 
   ICHECK(te_compiler_update_weights != nullptr)
       << "auto_scheduler.relay_integration.te_compiler_update_weights";

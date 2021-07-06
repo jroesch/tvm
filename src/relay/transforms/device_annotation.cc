@@ -61,8 +61,7 @@ bool IsDeviceCopyNode(const ExprNode* node) {
   auto tir_call_attrs = call_node->attrs.as<TIRCallAttrs>();
   if (tir_call_attrs) {
     auto metadata = tir_call_attrs->metadata;
-    return metadata.count("source_device") == 1 &&
-           metadata.count("dst_device") == 1;
+    return metadata.count("source_device") == 1 && metadata.count("dst_device") == 1;
   }
 
   return false;
@@ -420,8 +419,7 @@ class DeviceInfo {
             out_dev_type_ = attrs->dst_dev_type;
           } else {
             auto attrs = call_node->attrs.as<TIRCallAttrs>();
-            CHECK(attrs)
-              << "must be non-null";
+            CHECK(attrs) << "must be non-null";
             num_device_copy_ops_++;
             dev_type_ = Downcast<tvm::Integer>(attrs->metadata["source_device"]);
             for (auto& arg : call->args) {
