@@ -726,19 +726,23 @@ LoweredModule LowerTE(const IRModule& module, TargetMap targets, DeviceMap devic
 
   auto updated_module = pass(module);
 
-  const auto* te_compiler_update_weights =
-      runtime::Registry::Get("auto_scheduler.relay_integration.te_compiler_update_weights");
+  // A temporary solution until we can rewrite the auto-scheduler task extraction code to work
+  // in a more reasonable way.
+  if (backend::IsAutoSchedulerEnabled()) {
+    const auto* te_compiler_update_weights =
+        runtime::Registry::Get("auto_scheduler.relay_integration.te_compiler_update_weights");
 
-  ICHECK(te_compiler_update_weights != nullptr)
-      << "auto_scheduler.relay_integration.te_compiler_update_weights";
+    ICHECK(te_compiler_update_weights != nullptr)
+        << "auto_scheduler.relay_integration.te_compiler_update_weights";
 
-  Map<String, tvm::Integer> weight_map;
+    Map<String, tvm::Integer> weight_map;
 
-  for (auto pair : compiler->GetOpWeights()) {
-    weight_map.Set(pair.first, pair.second);
+    for (auto pair : compiler->GetOpWeights()) {
+      weight_map.Set(pair.first, pair.second);
+    }
+
+    (*te_compiler_update_weights)(weight_map);
   }
-
-  (*te_compiler_update_weights)(weight_map);
 
   LoweredModule lowered_module;
   lowered_module.main_module = updated_module;
